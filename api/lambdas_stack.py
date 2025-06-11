@@ -119,5 +119,5 @@ class LambdasStack(Stack):
         CfnOutput(
             self, "HttpApiEndpoint",
             value=http_api.url or "unknown",
-            export_name="HttpApiEndpoint"
+            export_name=f"{api_name}-HttpApiEndpoint"  # Make export name unique
         )

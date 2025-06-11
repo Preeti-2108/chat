@@ -1,0 +1,12 @@
+{
+  "name": "templatepythoncdk",
+  "version": "1.0.0",
+  "description": "Generate Swagger file",
+  "main": "src/index.js",
+  "scripts": {
+    "swagger": "swagger-jsdoc -d ./src/helpers/swagger.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC"
+}

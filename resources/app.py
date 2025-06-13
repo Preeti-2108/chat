@@ -1,6 +1,7 @@
 from aws_cdk import App
 from resources_stack import ResourcesStack
 import os
+import boto3
 
 app = App()
 
@@ -17,6 +18,25 @@ secret_name = get_env_var("SECRET_NAME")
 secret_value = get_env_var("SECRET_VALUE")
 user_pool_id = get_env_var("COGNITO_POOL_ID")
 
+def does_dynamodb_table_exist(name):
+    client = boto3.client("dynamodb")
+    try:
+        client.describe_table(TableName=name)
+        return True
+    except client.exceptions.ResourceNotFoundException:
+        return False
+
+def does_secret_exist(name):
+    client = boto3.client("secretsmanager")
+    try:
+        client.describe_secret(SecretId=name)
+        return True
+    except client.exceptions.ResourceNotFoundException:
+        return False
+
+create_table = not does_dynamodb_table_exist(table_name)
+create_secret = not does_secret_exist(secret_name)
+
 resources_stack = ResourcesStack(
     app,
     f"{api_name}-resources-{version}",
@@ -24,6 +44,8 @@ resources_stack = ResourcesStack(
     secret_name=secret_name,
     secret_value=secret_value,
     user_pool_id=user_pool_id,
+    create_table=create_table,
+    create_secret=create_secret,
 )
 
 app.synth()

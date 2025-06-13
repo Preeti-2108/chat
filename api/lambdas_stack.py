@@ -41,6 +41,8 @@ class LambdasStack(Stack):
             "COGNITO_POOL_ID": user_pool_id,
         }
 
+        repo = ecr.Repository.from_repository_name(self, "LambdaRepo", os.environ["AWS_ECR_FOLDER"])
+
         handlers = {
             "list_template_python": "src.list.handler.list",
             "post_template_python": "src.post.handler.create",
@@ -87,6 +89,11 @@ class LambdasStack(Stack):
         http_api = apigwv2.HttpApi(
             self, "HttpApi",
             api_name=api_name,
+            cors_preflight=apigwv2.CorsPreflightOptions(
+                allow_origins=["*"],  # Configure appropriately for production
+                allow_methods=[apigwv2.CorsHttpMethod.ANY],
+                allow_headers=["*"]
+            )
         )
 
         cfn_authorizer = apigwv2.CfnAuthorizer(
@@ -135,4 +142,10 @@ class LambdasStack(Stack):
             self, "HttpApiEndpoint",
             value=http_api.url or "unknown",
             export_name=f"{api_name}-HttpApiEndpoint"
+        )
+        
+        CfnOutput(
+            self, "HttpApiId",
+            value=http_api.http_api_id,
+            export_name=f"{api_name}-HttpApiId"
         )

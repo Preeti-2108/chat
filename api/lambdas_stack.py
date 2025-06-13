@@ -6,10 +6,11 @@ from aws_cdk import (
     aws_iam as iam,
     Duration,
     CfnOutput,
+    aws_ecr as ecr
 )
 from constructs import Construct
 import boto3
-
+import os
 
 def get_cognito_client_ids(user_pool_id):
     client = boto3.client('cognito-idp')
@@ -50,24 +51,38 @@ class LambdasStack(Stack):
 
         lambdas = {}
         for name, handler in handlers.items():
-            lambdas[name] = _lambda.Function(
+            lambdas[name] = _lambda.DockerImageFunction(
                 self, name,
-                runtime=_lambda.Runtime.PYTHON_3_10,
-                handler=handler,
-                code=_lambda.Code.from_asset(
-                    ".", exclude=["cdk.out", "*.pyc", "__pycache__"]
+                code=_lambda.DockerImageCode.from_ecr(
+                    repository=repo,
+                    tag_or_digest="latest",
+                    cmd=[handler],
                 ),
                 environment=lambda_env,
                 timeout=Duration.seconds(30),
+                # Add more memory if needed for dependencies
+                memory_size=512,
             )
 
+            # More specific IAM permissions
             lambdas[name].add_to_role_policy(iam.PolicyStatement(
-                actions=["dynamodb:*", "cognito-idp:*", "secretsmanager:*"],
-                resources=["*"]
+                actions=[
+                    "dynamodb:GetItem",
+                    "dynamodb:PutItem", 
+                    "dynamodb:UpdateItem",
+                    "dynamodb:DeleteItem",
+                    "dynamodb:Query",
+                    "dynamodb:Scan"
+                ],
+                resources=[f"arn:aws:dynamodb:{self.region}:{self.account}:table/{table_name}"]
+            ))
+            
+            lambdas[name].add_to_role_policy(iam.PolicyStatement(
+                actions=["cognito-idp:GetUser"],
+                resources=[f"arn:aws:cognito-idp:{self.region}:{self.account}:userpool/{user_pool_id}"]
             ))
 
         user_pool_client_ids = get_cognito_client_ids(user_pool_id)
-        user_pool = cognito.UserPool.from_user_pool_id(self, "ImportedUserPool", user_pool_id)
 
         http_api = apigwv2.HttpApi(
             self, "HttpApi",

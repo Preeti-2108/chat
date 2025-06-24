@@ -71,14 +71,15 @@ terraform {
     }
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = "=4.12.0"
+      version = "=3.73.0"
     }
   }
 }
 
 provider "azurerm" {
+  skip_provider_registration = true
   features {}
-  
+
   subscription_id = var.AZ_SUB_ID
   client_id       = var.AZ_CLIENT_ID
   client_secret   = var.AZ_CLIENT_SECRET

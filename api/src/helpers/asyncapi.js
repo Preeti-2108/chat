@@ -97,7 +97,7 @@ async function generateAsyncAPIDocument(baseDir = './src') {
     };
 
     // Écrire la documentation dans asyncapi.json
-    const outputPath = path.join(__dirname, 'src/api/asyncapi.json'); // <-- updated path
+    const outputPath = path.join(__dirname, '../api/asyncapi.json');
     try {
         await fs.promises.writeFile(outputPath, JSON.stringify(asyncAPIDocument, null, 2), 'utf-8');
         console.log('Created asyncapi.json file successfully.');

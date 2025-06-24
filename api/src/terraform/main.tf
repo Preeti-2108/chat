@@ -10,6 +10,7 @@ variable "APIM_NAME" {
   type = string
 }
 
+
 variable "AWS_DEFAULT_REGION" {
   type = string
 }
@@ -62,7 +63,21 @@ variable "SLS_NAME" {
 # ## Providers declaration
 # ######
 
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "=5.70.0"
+    }
+    azurerm = {
+      source  = "hashicorp/azurerm"
+      version = "=3.73.0"
+    }
+  }
+}
+
 provider "azurerm" {
+  skip_provider_registration = true
   features {}
 
   subscription_id = var.AZ_SUB_ID
@@ -82,13 +97,13 @@ terraform {
     region = "%AWS_DEFAULT_REGION%"
   }
 }
- 
+
 # ######
-# ## External data source to extract title from swagger.json
+# ## External data source to extract title from asyncapi.json
 # ######
 
-data "external" "swagger_title" {
-  program = ["sh", "-c", "jq -n --rawfile title ../api/swagger.json '{\"title\": ($title | fromjson | .info.title)}'"]
+data "external" "asyncapi_title" {
+  program = ["sh", "-c", "jq -n --rawfile title ../api/asyncapi.json '{\"title\": ($title | fromjson | .info.title)}'"]
 }
 
 # ######
@@ -100,22 +115,19 @@ resource "azurerm_api_management_api" "ics_api" {
   resource_group_name = var.APIM_RG
   api_management_name = var.APIM_NAME
   revision            = "1"
-  display_name        = "${data.external.swagger_title.result.title} - ${var.API_VERSION}"
+  display_name        = "${data.external.asyncapi_title.result.title} - ${var.API_VERSION}"
   path                = "api/${var.API_VERSION}/${var.API_SYSTEM_NAME}"
-  protocols           = ["https"]
+  protocols           = ["wss"]
   service_url         = var.API_GATEWAY_ENDPOINT
+  api_type            = "websocket" # Specify the API type as WebSocket
+
   subscription_key_parameter_names {
     header = "api-key"
     query  = "api-key"
   }
-}
+ 
+  description = "Documentation : https://${var.APIM_NAME}.blob.core.windows.net/${var.API_SYSTEM_NAME}/index.html"
 
-resource "azurerm_api_management_api_policy" "ics_policy" {
-  api_name            = azurerm_api_management_api.ics_api.name
-  api_management_name = var.APIM_NAME
-  resource_group_name = var.APIM_RG
-
-  xml_content = file("../api/policies.xml")
 }
 
 resource "azurerm_api_management_product_api" "ics_product_api" {
@@ -123,4 +135,48 @@ resource "azurerm_api_management_product_api" "ics_product_api" {
   product_id          = var.APIM_PRODUCT
   api_management_name = var.APIM_NAME
   resource_group_name = var.APIM_RG
+}
+
+resource "azurerm_storage_account" "ics_products_documentation" {
+  name                     = var.APIM_NAME
+  resource_group_name      = var.APIM_RG
+  location                 = "francecentral"
+  account_tier            = "Standard"
+  account_replication_type = "LRS"
+}
+
+resource "azurerm_storage_container" "docs" {
+  name                  = var.API_SYSTEM_NAME
+  storage_account_name  = azurerm_storage_account.ics_products_documentation.name
+  container_access_type = "blob"
+}
+
+resource "azurerm_storage_blob" "api_docs" {
+  count                 = length(tolist(fileset("output", "*")))
+  name                  = basename(tolist(fileset("output", "*"))[count.index])
+  storage_account_name  = azurerm_storage_account.ics_products_documentation.name
+  storage_container_name = azurerm_storage_container.docs.name
+  type                  = "Block"
+  source                = "output/${basename(tolist(fileset("output", "*"))[count.index])}"
+  content_type          = "text/html"
+}
+
+resource "azurerm_storage_blob" "api_docs_css" {
+  count                 = length(tolist(fileset("output/css", "*")))
+  name                  = "css/${basename(tolist(fileset("output/css", "*"))[count.index])}"
+  storage_account_name  = azurerm_storage_account.ics_products_documentation.name
+  storage_container_name = azurerm_storage_container.docs.name
+  type                  = "Block"
+  source                = "output/css/${basename(tolist(fileset("output/css", "*"))[count.index])}"
+  content_type          = "text/css"
+}
+
+resource "azurerm_storage_blob" "api_docs_js" {
+  count                 = length(tolist(fileset("output/js", "*")))
+  name                  = "js/${basename(tolist(fileset("output/js", "*"))[count.index])}"
+  storage_account_name  = azurerm_storage_account.ics_products_documentation.name
+  storage_container_name = azurerm_storage_container.docs.name
+  type                  = "Block"
+  source                = "output/js/${basename(tolist(fileset("output/js", "*"))[count.index])}"
+  content_type          = "application/javascript"
 }

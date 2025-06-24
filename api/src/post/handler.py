@@ -15,80 +15,72 @@ from src.helpers.schema_validation import validate_request_body_schema
 
 """
 /**
- * @openapi
- * /:
- *  post:
- *    summary: Post and initiate a new template.
- *    requestBody:
- *      description: Object containing initialization information for a template.
- *      required: true
- *      content:
- *        application/json:
- *          schema:
- *            type: object
- *            required:
- *              - templateCompany
- *              - templateAgent
- *              - templateActionsTag
- *              - templateActionsTimeStamp
- *            properties:
- *              templateCompany:
- *                type: string
- *                description: Template company name.
- *                example: Company Name
- *              templateAgent:
- *                type: string
- *                description: Template agent name.
- *                example: Agent Name
- *              templateRootCause:
- *                type: string
- *                description: Template root cause.
- *                example: Root Cause
- *              templateAgentValidation:
- *                type: boolean
- *                description: Template agent validation.
- *                example: true
- *              templateIntentFailed:
- *                type: boolean
- *                description: Template intent failed.
- *                example: false
- *              isActive:
- *                type: boolean
- *                description: Indicates if the template is active.
- *                example: true
- *              templateActions:
- *                type: array
- *                items:
- *                  type: object
- *                  properties:
- *                    templateActionsTimeStamp:
- *                      type: string
- *                      description: Timestamp of the action.
- *                      example: 1639172876
- *                    templateActionsTag:
- *                      type: string
- *                      description: Tag of the action.
- *                      example: Tag Action
- *              templateStatus:
- *                type: string
- *                description: Current status of the template.
- *                example: Template Status
- *    parameters:
- *      - in: header
- *        name: Authorization
- *        description: Access token required for authentication.
- *        required: true
- *        schema:
- *          type: string
- *    responses:
- *      '201':
- *        description: Success response indicating template creation.
- *        content:
- *          application/json:
- *            schema:
- *              $ref: '#/components/schemas/TemplatePython'
+ * @asyncapi
+ * channels:
+ *   newTemplateSample:
+ *     description: Channel for posting and initiating new template sample.
+ *     publish:
+ *       operationId: newTemplateSample
+ *       summary: Post and initiate a new template sample.
+ *       message:
+ *         messageId: newTemplateSample
+ *         contentType: application/json
+ *         payload:
+ *           type: object
+ *           required:
+ *             - templateSampleCompany
+ *             - templateSampleAgent
+ *             - templateSampleActionsTag
+ *             - templateSampleActionsTimeStamp
+ *           properties:
+ *             templateSampleCompany:
+ *               type: string
+ *               description: Template sample company name.
+ *               example: Company Name
+ *             templateSampleAgent:
+ *               type: string
+ *               description: Template sample agent name.
+ *               example: Agent Name
+ *             templateSampleRootCause:
+ *               type: string
+ *               description: Template sample root cause.
+ *               example: Root Cause
+ *             templateSampleAgentValidation:
+ *               type: boolean
+ *               description: Template sample agent validation.
+ *               example: true
+ *             templateSampleIntentFailed:
+ *               type: boolean
+ *               description: Template sample intent failed.
+ *               example: false
+ *             isActive:
+ *               type: boolean
+ *               description: Is active or not.
+ *               example: true
+ *             templateSampleActions:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   templateSampleActionsTimeStamp:
+ *                     type: string
+ *                     description: Timestamp of the action.
+ *                     example: 1639172876
+ *                   templateSampleActionsTag:
+ *                     type: string
+ *                     description: Tag of the action.
+ *                     example: Tag Action
+ *             templateSampleStatus:
+ *               type: string
+ *               description: Template sample status.
+ *               example: Template sample Status
+ *     subscribe:
+ *       operationId: newTemplateSampleResponse
+ *       summary: Receive response for the initiated template sample.
+ *       message:
+ *         $ref: '#/components/messages/NewTemplateSampleResponse'
  */
- """
+"""
 
 # Initialize logger for the module with a log level set from environment variables, defaulting to 'INFO'.
 logger = logging.getLogger(__name__)

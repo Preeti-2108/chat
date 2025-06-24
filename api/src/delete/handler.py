@@ -10,36 +10,32 @@ from src.helpers.schema_validation import validate_request_body_schema
 
 """
 /**
- * @openapi
- * /{id}:
- *  delete:
- *    summary: Delete a template by ID.
- *    description: This API endpoint deletes a template identified by its ID.
- *    parameters:
- *      - in: path
- *        name: id
- *        required: true
- *        schema:
- *          type: string
- *        description: The unique identifier of the template to be deleted.
- *        example: 184CF8DA-B821-4FF4-BD6C-CDAFA166E2E0
- *      - in: header
- *        name: Authorization
- *        description: Access token required for authentication.
- *        required: true
- *        schema:
- *          type: string
- *    responses:
- *      '200':
- *        description: Template successfully deleted.
- *        content:
- *          application/json:
- *            schema:
- *              $ref: '#/components/schemas/TemplatePython'
- *      '404':
- *        description: Template not found.
+ * @asyncapi
+ * channels:
+ *   templateSampleDeletion:
+ *     description: Channel for deleting a template sample by ID.
+ *     publish:
+ *       operationId: templateSampleDeletion
+ *       summary: Delete a template sample by ID.
+ *       message:
+ *         messageId: templateSampleDeletion
+ *         contentType: application/json
+ *         payload:
+ *           type: object
+ *           required:
+ *             - id
+ *           properties:
+ *             id:
+ *               type: string
+ *               description: Use template sample's ID.
+ *               example: 184CF8DA-B821-4FF4-BD6C-CDAFA166E2E0
+ *     subscribe:
+ *       operationId: templateSampleDeletionResponse
+ *       summary: Receive response for the deletion request.
+ *       message:
+ *         $ref: '#/components/messages/TemplateSampleDeletionResponse'
  */
- """
+"""
 
 # Configure logger for the module
 logger = logging.getLogger(__name__)

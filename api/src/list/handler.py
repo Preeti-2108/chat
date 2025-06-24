@@ -13,136 +13,74 @@ from src.helpers.schema_validation import validate_request_body_schema
 
 """
 /**
- * @openapi
- * /:
- *  get:
- *    summary: Return a list of templates based on query parameters.
- *    parameters:
- *      - in: query
- *        name: templateCompany
- *        schema:
- *          type: string
- *        description: Filter templates by company name.
- *        example: Company Name
- *      - in: query
- *        name: templateAgent
- *        schema:
- *          type: string
- *        description: Filter templates by agent name.
- *        example: Agent Name
- *      - in: query
- *        name: templateRootCause
- *        schema:
- *          type: string
- *        description: Filter templates by root cause.
- *        example: Root Cause
- *      - in: query
- *        name: templateAgentValidation
- *        schema:
- *          type: boolean
- *        description: Filter templates by agent validation status.
- *        example: true
- *      - in: query
- *        name: templateIntentFailed
- *        schema:
- *          type: boolean
- *        description: Filter templates by intent failure status.
- *        example: false
- *      - in: query
- *        name: isActive
- *        schema:
- *          type: boolean
- *        description: Filter templates by active status.
- *        example: true
- *      - in: query
- *        name: templateStatus
- *        schema:
- *          type: string
- *        description: Filter templates by completion status.
- *        example: Template Status
- *      - in: query
- *        name: createdBy
- *        schema:
- *          type: string
- *        description: Filter templates by creator's name.
- *        example: Firstname Lastname
- *      - in: query
- *        name: updatedBy
- *        schema:
- *          type: string
- *        description: Filter templates by modifier's name.
- *        example: Firstname Lastname
- *      - in: query
- *        name: createdAt
- *        schema:
- *          type: string
- *          format: date-time
- *        description: Filter templates by creation date.
- *        example: 2023-10-16T13:25:10.666Z
- *      - in: query
- *        name: updatedAt
- *        schema:
- *          type: string
- *          format: date-time
- *        description: Filter templates by modification date.
- *        example: 2023-10-16T13:28:40.028Z
- *      - in: query
- *        name: createdStart
- *        schema:
- *          type: string
- *          format: date-time
- *        description: Filter templates by start creation date.
- *        example: 2023-10-16T13:25:10.666Z
- *      - in: query
- *        name: createdEnd
- *        schema:
- *          type: string
- *          format: date-time
- *        description: Filter templates by end creation date.
- *        example: 2023-10-16T13:28:40.028Z
- *      - in: query
- *        name: updatedStart
- *        schema:
- *          type: string
- *          format: date-time
- *        description: Filter templates by start update date.
- *        example: 2023-10-16T13:25:10.666Z
- *      - in: query
- *        name: updatedEnd
- *        schema:
- *          type: string
- *          format: date-time
- *        description: Filter templates by end update date.
- *        example: 2023-10-16T13:28:40.028Z
- *      - in: query
- *        name: offset
- *        schema:
- *          type: integer
- *        description: Number of initial results to skip.
- *        example: 0
- *      - in: query
- *        name: limit
- *        schema:
- *          type: integer
- *        description: Maximum number of results to return.
- *        example: 5
- *      - in: header
- *        name: Authorization
- *        description: Access token required for authentication.
- *        required: true
- *        schema:
- *          type: string
- *    responses:
- *      '200':
- *        description: Successful retrieval of templates.
- *        content:
- *          application/json:
- *            schema:
- *              $ref: '#/components/schemas/TemplatePython'
- *      '404':
- *        description: No templates found matching the criteria.
+ * @asyncapi
+ * channels:
+ *   templateSampleList:
+ *     description: Channel for retrieving a list of template samples.
+ *     publish:
+ *       operationId: templateSampleList
+ *       summary: Return a list of template samples.
+ *       message:
+ *         messageId: templateSampleList
+ *         contentType: application/json
+ *         payload:
+ *           type: array
+ *           items:
+ *             type: object
+ *             properties:
+ *               templateSampleCompany:
+ *                 type: string
+ *                 description: Template sample company name.
+ *                 example: Company Name
+ *               templateSampleAgent:
+ *                 type: string
+ *                 description: Template sample agent name.
+ *                 example: Agent Name
+ *               templateSampleRootCause:
+ *                 type: string
+ *                 description: Template sample root cause.
+ *                 example: Root Cause
+ *               templateSampleAgentValidation:
+ *                 type: boolean
+ *                 description: Template sample agent validation.
+ *                 example: true
+ *               isActive:
+ *                 type: boolean
+ *                 description: Is active or not.
+ *                 example: true
+ *               templateSampleIntentFailed:
+ *                 type: boolean
+ *                 description: Template sample intent failed.
+ *                 example: false
+ *               templateSampleStatus:
+ *                 type: string
+ *                 description: Template sample status.
+ *                 example: Template sample Status
+ *               createdBy:
+ *                 type: string
+ *                 description: Template sample creator.
+ *                 example: Firstname Lastname
+ *               updatedBy:
+ *                 type: string
+ *                 description: Template sample modifier.
+ *                 example: Firstname Lastname
+ *               createdAt:
+ *                 type: string
+ *                 format: date-time
+ *                 description: Template sample creation date.
+ *                 example: 2023-10-16T13:25:10.666Z
+ *               updatedAt:
+ *                 type: string
+ *                 format: date-time
+ *                 description: Template sample modification date.
+ *                 example: 2023-10-16T13:28:40.028Z
+ *     subscribe:
+ *       operationId: templateSampleListResponse
+ *       summary: Retrieve template samples based on query parameters.
+ *       message:
+ *         $ref: '#/components/messages/TemplateSampleListResponse'
  */
- """
+"""
 
 # Initialize logger for the module
 logger = logging.getLogger(__name__)

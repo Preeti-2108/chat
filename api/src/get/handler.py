@@ -9,39 +9,32 @@ from src.helpers.schema_validation import validate_request_body_schema
 
 """
 /**
- * @openapi
- * /{id}:
- *  get:
- *    summary: Return a single template.
- *    parameters:
- *      - in: path
- *        name: id
- *        required: true
- *        schema:
- *          type: string
- *        description: Use template's ID.
- *        example: 184CF8DA-B821-4FF4-BD6C-CDAFA166E2E0
- *      - in: header
- *        name: Authorization
- *        description: Access token required for authentication.
- *        required: true
- *        schema:
- *          type: string
- *    responses:
- *      '200':
- *        description: success
- *        content:
- *          application/json:
- *            schema:
- *              $ref: '#/components/schemas/TemplatePython'
- *      '404':
- *        description: Template not found.
- *      '422':
- *        description: Validation errors.
- *      '500':
- *        description: Error during the execution.
+ * @asyncapi
+ * channels:
+ *   templateSampleRetrieval:
+ *     description: Channel for retrieving a single template sample by ID.
+ *     publish:
+ *       operationId: templateSampleRetrieval
+ *       summary: Return a single template sample.
+ *       message:
+ *         messageId: templateSampleRetrieval
+ *         contentType: application/json
+ *         payload:
+ *           type: object
+ *           required:
+ *             - id
+ *           properties:
+ *             id:
+ *               type: string
+ *               description: Use template sample's ID.
+ *               example: 184CF8DA-B821-4FF4-BD6C-CDAFA166E2E0
+ *     subscribe:
+ *       operationId: templateSampleRetrievalResponse
+ *       summary: Receive response for the retrieved template sample.
+ *       message:
+ *         $ref: '#/components/messages/TemplateSampleRetrievalResponse'
  */
- """
+"""
 
 # Initialize logger for the module
 logger = logging.getLogger(__name__)

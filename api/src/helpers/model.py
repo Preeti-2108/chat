@@ -1,84 +1,100 @@
 """
 /**
- * @openapi
- *
+ * @asyncapi
  * components:
+ *   messages:
+ *     NewTemplateSampleResponse:
+ *       messageId: newTemplateSampleResponse
+ *       contentType: application/json
+ *       payload:
+ *         $ref: '#/components/schemas/TemplateSample'
+ *     TemplateSampleUpdateResponse:
+ *       messageId: templateSampleUpdateResponse
+ *       contentType: application/json
+ *       payload:
+ *         $ref: '#/components/schemas/TemplateSample'
+ *     TemplateSampleRetrievalResponse:
+ *       messageId: templateSampleRetrievalResponse
+ *       contentType: application/json
+ *       payload:
+ *         $ref: '#/components/schemas/TemplateSample'
+ *     TemplateSampleDeletionResponse:
+ *       messageId: templateSampleDeletionResponse
+ *       contentType: application/json
+ *       payload:
+ *         $ref: '#/components/schemas/TemplateSample'
+ *     TemplateSampleListResponse:
+ *       messageId: templateSampleListResponse
+ *       contentType: application/json
+ *       payload:
+ *         $ref: '#/components/schemas/TemplateSample'
  *   schemas:
- *     TemplatePython:
+ *     TemplateSample:
  *       type: object
  *       properties:
  *         id:
  *           type: string
  *           format: uuid
- *           description: Unique identifier for the template.
+ *           description: Unique identifier for the template sample.
  *           example: 184CF8DA-B821-4FF4-BD6C-CDAFA166E2E0
- *         templateCompany:
+ *         templateSampleCompany:
  *           type: string
- *           description: Template company name.
+ *           description: Template sample company name.
  *           example: Company Name
- *         templateAgent:
+ *         templateSampleAgent:
  *           type: string
- *           description: Template agent name.
+ *           description: Template sample agent name.
  *           example: Agent Name
- *         templateRootCause:
+ *         templateSampleRootCause:
  *           type: string
- *           description: Template root cause.
+ *           description: Template sample root cause.
  *           example: Root Cause
- *         templateAgentValidation:
+ *         templateSampleAgentValidation:
  *           type: boolean
- *           description: Template agent validation.
- *           example: True
- *         templateIntentFailed:
+ *           description: Template sample agent validation.
+ *           example: true
+ *         templateSampleIntentFailed:
  *           type: boolean
- *           description: Template intent failed.
- *           example: False
+ *           description: Template sample intent failed.
+ *           example: false
  *         isActive:
  *           type: boolean
  *           description: Is active or not.
- *           example: True
- *         templateActions:
+ *           example: true
+ *         templateSampleActions:
  *           type: array
  *           items:
  *             type: object
  *             properties:
- *               templateActionsTimeStamp:
+ *               templateSampleActionsTimeStamp:
  *                 type: string
  *                 description: Timestamp of the action.
  *                 example: 1639172876
- *               templateActionsTag:
+ *               templateSampleActionsTag:
  *                 type: string
  *                 description: Tag of the action.
- *                 example: Tag Action 
- *         templateStatus:
+ *                 example: Tag Action
+ *         templateSampleStatus:
  *           type: string
- *           description: Template status.
- *           example: Template Status
+ *           description: Template sample status.
+ *           example: Template sample Status
  *         createdBy:
  *           type: string
- *           description: Identification of the person who created the template.
+ *           description: Identification of the person who created the template sample.
  *           example: Firstname Lastname
  *         updatedBy:
  *           type: string
- *           description: Identification of the person who updted the template.
+ *           description: Identification of the person who updated the template sample.
  *           example: Firstname Lastname
  *         createdAt:
  *           type: string
  *           format: date-time
- *           description: Date of creation of the template / date-time type.
+ *           description: Date of creation of the template sample / date-time type.
  *           example: 2023-10-16T13:25:10.666Z
  *         updatedAt:
  *           type: string
  *           format: date-time
- *           description: Date of modification of the template / date-time type.
+ *           description: Date of modification of the template sample / date-time type.
  *           example: 2023-10-16T13:28:40.028Z
- *     Success:
- *       properties:
- *         success:
- *           type: boolean
- *         message:
- *           type: string
- *         data:
- *           properties: {}
- *           type: object
  */
 """

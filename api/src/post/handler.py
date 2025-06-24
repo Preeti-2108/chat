@@ -20,7 +20,7 @@ from src.helpers.schema_validation import validate_request_body_schema
  *  post:
  *    summary: Post and initiate a new template.
  *    requestBody:
- *      description: Object containing initialization information for a sample.
+ *      description: Object containing initialization information for a template.
  *      required: true
  *      content:
  *        application/json:
@@ -105,8 +105,9 @@ def create(event, context):
     Returns:
         dict: Constructed API response indicating success or failure of the operation.
     """
+    logger.info('Received event: %s', event)  # Log the received event for debugging.
     logger.debug('logging event: %s', event)  # Log the incoming event for debugging purposes.
-    logger.info('Inside create function')  # Log entry into the create function.
+    logger.info('Inside create function!')  # Log entry into the create function.
 
     # Initialize DynamoDB resource and specify the table to interact with.
     dynamodb = boto3.resource('dynamodb')

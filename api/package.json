@@ -1,5 +1,5 @@
 {
-  "name": "templatepythoncdk",
+  "name": "templatepythoncdkwebsocket",
   "version": "1.0.0",
   "description": "Generate Swagger file",
   "main": "src/index.js",

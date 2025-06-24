@@ -1,5 +1,6 @@
 # Import necessary modules for environment variables, JSON handling, AWS SDK, logging, and string manipulation
 import os
+import re
 import boto3
 import logging
 from text_unidecode import unidecode
@@ -188,8 +189,8 @@ def list(event, context):
 
         # Construct parameters for DynamoDB scan operation based on query filters
         params = construct_params(query_parameters)
-        templates_samples = table.scan(**params)  # Execute scan operation on DynamoDB table
-        items = format_results(templates_samples, query_parameters)  # Format the results based on offset and limit
+        templates = table.scan(**params)  # Execute scan operation on DynamoDB table
+        items = format_results(templates, query_parameters)  # Format the results based on offset and limit
 
         # Determine response based on the number of items retrieved
         if items['count'] > 0:

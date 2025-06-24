@@ -15,7 +15,7 @@ servers.forEach((server, index) => {
 	const swaggerDefinition = {
 		openapi: '3.0.0',
 		info: {
-			title: 'Python Template CDK', // To customize
+			title: 'Python Template CDK Websocket', // To customize
 			version: '1.0.0', // To customize
 			description: 'The Python Template APIs is a collection of APIs calls that deal with system objects in the Agent Augemented system.', // To customize
 			termsOfService: 'https://www.soprasteria.com/footer/terms-of-use',

@@ -17,14 +17,14 @@ from src.helpers.schema_validation import validate_request_body_schema
  * @openapi
  * /{id}:
  *  put:
- *    summary: Update a template sample by ID.
+ *    summary: Update a template by ID.
  *    parameters:
  *      - in: path
  *        name: id
  *        required: true
  *        schema:
  *          type: string
- *        description: Use template sample's ID.
+ *        description: Use template's ID.
  *      - in: header
  *        name: Authorization
  *        description: Access token required for authentication.
@@ -38,53 +38,48 @@ from src.helpers.schema_validation import validate_request_body_schema
  *        application/json:
  *          schema:
  *            type: object
- *            required:
- *              - templateSampleCompany
- *              - templateSampleAgent
- *              - templateSampleActionsTag
- *              - templateSampleActionsTimeStamp
  *            properties:
- *              templateSampleCompany:
+ *              templateCompany:
  *                type: string
- *                description: Template sample company name.
+ *                description: Template company name.
  *                example: Company Name
- *              templateSampleAgent:
+ *              templateAgent:
  *                type: string
- *                description: Template sample agent name.
+ *                description: Template agent name.
  *                example: Agent Name
- *              templateSampleRootCause:
+ *              templateRootCause:
  *                type: string
- *                description: Template sample root cause.
+ *                description: Template root cause.
  *                example: Root Cause
- *              templateSampleAgentValidation:
+ *              templateAgentValidation:
  *                type: boolean
- *                description: Template sample agent validation.
+ *                description: Template agent validation.
  *                example: True
  *              isActive:
  *                type: boolean
  *                description: Is active or not.
  *                example: True
- *              templateSampleIntentFailed:
+ *              templateIntentFailed:
  *                type: boolean
- *                description: Template sample intent failed.
+ *                description: Template intent failed.
  *                example: False
- *              templateSampleActions:
+ *              templateActions:
  *                type: array
  *                items:
  *                  type: object
  *                  properties:
- *                    templateSampleActionsTimeStamp:
+ *                    templateActionsTimeStamp:
  *                      type: string
  *                      description: Timestamp of the action.
  *                      example: 1639172876
- *                    templateSampleActionsTag:
+ *                    templateActionsTag:
  *                      type: string
  *                      description: Tag of the action.
  *                      example: Tag Action
- *              templateSampleStatus:
+ *              templateStatus:
  *                type: string
- *                description: Template sample status.
- *                example: Template sample Status
+ *                description: Template status.
+ *                example: Template Status
  *    responses:
  *      '200':
  *        description: Successfully updated
@@ -115,7 +110,7 @@ def edit(event, context):
     - A constructed HTTP response indicating success or failure of the update operation.
     """
     logger.debug('logging event: %s', event)  # Log the incoming event for debugging
-    logger.info('Inside delete function')  # Log entry into the function
+    logger.info('Inside edit function')  # Log entry into the function
 
     # Initialize DynamoDB resource and specify the table to interact with
     dynamodb = boto3.resource('dynamodb')

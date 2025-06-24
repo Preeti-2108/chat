@@ -6,6 +6,12 @@ yarn-debug.log*
 yarn-error.log*
 lerna-debug.log*
 
+# Python cache and CDK output
+api/__pycache__/
+api/cdk.out/
+resources/__pycache__/
+resources/cdk.out/
+
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 

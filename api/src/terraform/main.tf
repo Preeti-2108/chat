@@ -78,7 +78,10 @@ terraform {
 
 provider "azurerm" {
   features {}
-  resource_provider_registrations = ["Microsoft.Storage", "Microsoft.ApiManagement"]
+  resource_provider_registrations = {
+    "Microsoft.Storage",
+    "Microsoft.ApiManagement"
+  }
   subscription_id = var.AZ_SUB_ID
   client_id       = var.AZ_CLIENT_ID
   client_secret   = var.AZ_CLIENT_SECRET

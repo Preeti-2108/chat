@@ -77,7 +77,7 @@ terraform {
 }
 
 provider "azurerm" {
-  resource_provider_registration = "disabled"
+  resource_provider_registrations = "disabled"
   features {}
 
   subscription_id = var.AZ_SUB_ID

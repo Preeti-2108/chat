@@ -73,9 +73,7 @@ terraform {
 }
 
 provider "azurerm" {
-  skip_provider_registration = true
   features {}
-
   subscription_id = var.AZ_SUB_ID
   client_id       = var.AZ_CLIENT_ID
   client_secret   = var.AZ_CLIENT_SECRET

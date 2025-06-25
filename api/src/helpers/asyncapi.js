@@ -7,7 +7,7 @@ const asyncapiDefinition = {
     "id": "urn:templatepython:api",
     "defaultContentType": "application/json",
     "info": {
-      "title": "Template Python API Websocket",
+      "title": "Python Template CDK Websocket",
       "version": "1.0.0",
       "description": "API for Template",
       "contact": {

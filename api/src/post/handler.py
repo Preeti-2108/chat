@@ -17,68 +17,68 @@ from src.helpers.schema_validation import validate_request_body_schema
 /**
  * @asyncapi
  * channels:
- *   newTemplateSample:
- *     description: Channel for posting and initiating new template sample.
+ *   newTemplate:
+ *     description: Channel for posting and initiating new template.
  *     publish:
- *       operationId: newTemplateSample
- *       summary: Post and initiate a new template sample.
+ *       operationId: newTemplate
+ *       summary: Post and initiate a new template.
  *       message:
- *         messageId: newTemplateSample
+ *         messageId: newTemplate
  *         contentType: application/json
  *         payload:
  *           type: object
  *           required:
- *             - templateSampleCompany
- *             - templateSampleAgent
- *             - templateSampleActionsTag
- *             - templateSampleActionsTimeStamp
+ *             - templateCompany
+ *             - templateAgent
+ *             - templateActionsTag
+ *             - templateActionsTimeStamp
  *           properties:
- *             templateSampleCompany:
+ *             templateCompany:
  *               type: string
- *               description: Template sample company name.
+ *               description: Template company name.
  *               example: Company Name
- *             templateSampleAgent:
+ *             templateAgent:
  *               type: string
- *               description: Template sample agent name.
+ *               description: Template agent name.
  *               example: Agent Name
- *             templateSampleRootCause:
+ *             templateRootCause:
  *               type: string
- *               description: Template sample root cause.
+ *               description: Template root cause.
  *               example: Root Cause
- *             templateSampleAgentValidation:
+ *             templateAgentValidation:
  *               type: boolean
- *               description: Template sample agent validation.
+ *               description: Template agent validation.
  *               example: true
- *             templateSampleIntentFailed:
+ *             templateIntentFailed:
  *               type: boolean
- *               description: Template sample intent failed.
+ *               description: Template intent failed.
  *               example: false
  *             isActive:
  *               type: boolean
  *               description: Is active or not.
  *               example: true
- *             templateSampleActions:
+ *             templateActions:
  *               type: array
  *               items:
  *                 type: object
  *                 properties:
- *                   templateSampleActionsTimeStamp:
+ *                   templateActionsTimeStamp:
  *                     type: string
  *                     description: Timestamp of the action.
  *                     example: 1639172876
- *                   templateSampleActionsTag:
+ *                   templateActionsTag:
  *                     type: string
  *                     description: Tag of the action.
  *                     example: Tag Action
- *             templateSampleStatus:
+ *             templateStatus:
  *               type: string
- *               description: Template sample status.
- *               example: Template sample Status
+ *               description: Template status.
+ *               example: Template Status
  *     subscribe:
- *       operationId: newTemplateSampleResponse
- *       summary: Receive response for the initiated template sample.
+ *       operationId: newTemplateResponse
+ *       summary: Receive response for the initiated template.
  *       message:
- *         $ref: '#/components/messages/NewTemplateSampleResponse'
+ *         $ref: '#/components/messages/NewTemplateResponse'
  */
 """
 

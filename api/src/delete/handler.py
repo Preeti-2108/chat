@@ -12,13 +12,13 @@ from src.helpers.schema_validation import validate_request_body_schema
 /**
  * @asyncapi
  * channels:
- *   templateSampleDeletion:
- *     description: Channel for deleting a template sample by ID.
+ *   templateDeletion:
+ *     description: Channel for deleting a template by ID.
  *     publish:
- *       operationId: templateSampleDeletion
- *       summary: Delete a template sample by ID.
+ *       operationId: templateDeletion
+ *       summary: Delete a template by ID.
  *       message:
- *         messageId: templateSampleDeletion
+ *         messageId: templateDeletion
  *         contentType: application/json
  *         payload:
  *           type: object
@@ -27,13 +27,13 @@ from src.helpers.schema_validation import validate_request_body_schema
  *           properties:
  *             id:
  *               type: string
- *               description: Use template sample's ID.
+ *               description: Use template's ID.
  *               example: 184CF8DA-B821-4FF4-BD6C-CDAFA166E2E0
  *     subscribe:
- *       operationId: templateSampleDeletionResponse
+ *       operationId: templateDeletionResponse
  *       summary: Receive response for the deletion request.
  *       message:
- *         $ref: '#/components/messages/TemplateSampleDeletionResponse'
+ *         $ref: '#/components/messages/TemplateDeletionResponse'
  */
 """
 

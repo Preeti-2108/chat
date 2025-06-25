@@ -3,23 +3,23 @@ const path = require('path');
 const yaml = require('js-yaml');
 
 const asyncapiDefinition = {
-    "asyncapi": "2.6.0",
+    "asyncapi": "3.0.1",
     "id": "urn:templatepython:api",
     "defaultContentType": "application/json",
     "info": {
-      "title": "Template Sample API",
+      "title": "Template Python API Websocket",
       "version": "1.0.0",
-      "description": "API for Sample Template",
+      "description": "API for Template",
       "contact": {
         "name": "API Support",
-        "email": "support@example.com",
+        "email": "support.dps.fr.api.contact@soprasteria.com",
         "url": "https://example.com/support"
       }
     },
     "tags": [
       {
-        "name": "Sample Template",
-        "description": "Operations related to template samples"
+        "name": "Template",
+        "description": "Operations related to template"
       }
     ],
     "servers": {

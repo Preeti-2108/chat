@@ -11,13 +11,13 @@ from src.helpers.schema_validation import validate_request_body_schema
 /**
  * @asyncapi
  * channels:
- *   templateSampleRetrieval:
- *     description: Channel for retrieving a single template sample by ID.
+ *   templateRetrieval:
+ *     description: Channel for retrieving a single template by ID.
  *     publish:
- *       operationId: templateSampleRetrieval
- *       summary: Return a single template sample.
+ *       operationId: templateRetrieval
+ *       summary: Return a single template.
  *       message:
- *         messageId: templateSampleRetrieval
+ *         messageId: templateRetrieval
  *         contentType: application/json
  *         payload:
  *           type: object
@@ -26,13 +26,13 @@ from src.helpers.schema_validation import validate_request_body_schema
  *           properties:
  *             id:
  *               type: string
- *               description: Use template sample's ID.
+ *               description: Use template's ID.
  *               example: 184CF8DA-B821-4FF4-BD6C-CDAFA166E2E0
  *     subscribe:
- *       operationId: templateSampleRetrievalResponse
- *       summary: Receive response for the retrieved template sample.
+ *       operationId: templateRetrievalResponse
+ *       summary: Receive response for the retrieved template.
  *       message:
- *         $ref: '#/components/messages/TemplateSampleRetrievalResponse'
+ *         $ref: '#/components/messages/TemplateRetrievalResponse'
  */
 """
 

@@ -3,98 +3,98 @@
  * @asyncapi
  * components:
  *   messages:
- *     NewTemplateSampleResponse:
- *       messageId: newTemplateSampleResponse
+ *     NewTemplateResponse:
+ *       messageId: newTemplateResponse
  *       contentType: application/json
  *       payload:
- *         $ref: '#/components/schemas/TemplateSample'
- *     TemplateSampleUpdateResponse:
- *       messageId: templateSampleUpdateResponse
+ *         $ref: '#/components/schemas/Template'
+ *     TemplateUpdateResponse:
+ *       messageId: templateUpdateResponse
  *       contentType: application/json
  *       payload:
- *         $ref: '#/components/schemas/TemplateSample'
- *     TemplateSampleRetrievalResponse:
- *       messageId: templateSampleRetrievalResponse
+ *         $ref: '#/components/schemas/Template'
+ *     TemplateRetrievalResponse:
+ *       messageId: templateRetrievalResponse
  *       contentType: application/json
  *       payload:
- *         $ref: '#/components/schemas/TemplateSample'
- *     TemplateSampleDeletionResponse:
- *       messageId: templateSampleDeletionResponse
+ *         $ref: '#/components/schemas/Template'
+ *     TemplateDeletionResponse:
+ *       messageId: templateDeletionResponse
  *       contentType: application/json
  *       payload:
- *         $ref: '#/components/schemas/TemplateSample'
- *     TemplateSampleListResponse:
- *       messageId: templateSampleListResponse
+ *         $ref: '#/components/schemas/Template'
+ *     TemplateListResponse:
+ *       messageId: templateListResponse
  *       contentType: application/json
  *       payload:
- *         $ref: '#/components/schemas/TemplateSample'
+ *         $ref: '#/components/schemas/Template'
  *   schemas:
- *     TemplateSample:
+ *     Template:
  *       type: object
  *       properties:
  *         id:
  *           type: string
  *           format: uuid
- *           description: Unique identifier for the template sample.
+ *           description: Unique identifier for the template.
  *           example: 184CF8DA-B821-4FF4-BD6C-CDAFA166E2E0
- *         templateSampleCompany:
+ *         templateCompany:
  *           type: string
- *           description: Template sample company name.
+ *           description: Template company name.
  *           example: Company Name
- *         templateSampleAgent:
+ *         templateAgent:
  *           type: string
- *           description: Template sample agent name.
+ *           description: Template agent name.
  *           example: Agent Name
- *         templateSampleRootCause:
+ *         templateRootCause:
  *           type: string
- *           description: Template sample root cause.
+ *           description: Template root cause.
  *           example: Root Cause
- *         templateSampleAgentValidation:
+ *         templateAgentValidation:
  *           type: boolean
- *           description: Template sample agent validation.
+ *           description: Template agent validation.
  *           example: true
- *         templateSampleIntentFailed:
+ *         templateIntentFailed:
  *           type: boolean
- *           description: Template sample intent failed.
+ *           description: Template intent failed.
  *           example: false
  *         isActive:
  *           type: boolean
  *           description: Is active or not.
  *           example: true
- *         templateSampleActions:
+ *         templateActions:
  *           type: array
  *           items:
  *             type: object
  *             properties:
- *               templateSampleActionsTimeStamp:
+ *               templateActionsTimeStamp:
  *                 type: string
  *                 description: Timestamp of the action.
  *                 example: 1639172876
- *               templateSampleActionsTag:
+ *               templateActionsTag:
  *                 type: string
  *                 description: Tag of the action.
  *                 example: Tag Action
- *         templateSampleStatus:
+ *         templateStatus:
  *           type: string
- *           description: Template sample status.
- *           example: Template sample Status
+ *           description: Template status.
+ *           example: Template Status
  *         createdBy:
  *           type: string
- *           description: Identification of the person who created the template sample.
+ *           description: Identification of the person who created the template.
  *           example: Firstname Lastname
  *         updatedBy:
  *           type: string
- *           description: Identification of the person who updated the template sample.
+ *           description: Identification of the person who updated the template.
  *           example: Firstname Lastname
  *         createdAt:
  *           type: string
  *           format: date-time
- *           description: Date of creation of the template sample / date-time type.
+ *           description: Date of creation of the template / date-time type.
  *           example: 2023-10-16T13:25:10.666Z
  *         updatedAt:
  *           type: string
  *           format: date-time
- *           description: Date of modification of the template sample / date-time type.
+ *           description: Date of modification of the template / date-time type.
  *           example: 2023-10-16T13:28:40.028Z
  */
 """

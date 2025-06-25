@@ -15,70 +15,70 @@ from src.helpers.schema_validation import validate_request_body_schema
 /**
  * @asyncapi
  * channels:
- *   templateSampleList:
- *     description: Channel for retrieving a list of template samples.
+ *   templateList:
+ *     description: Channel for retrieving a list of templates.
  *     publish:
- *       operationId: templateSampleList
- *       summary: Return a list of template samples.
+ *       operationId: templateList
+ *       summary: Return a list of templates.
  *       message:
- *         messageId: templateSampleList
+ *         messageId: templateList
  *         contentType: application/json
  *         payload:
  *           type: array
  *           items:
  *             type: object
  *             properties:
- *               templateSampleCompany:
+ *               templateCompany:
  *                 type: string
- *                 description: Template sample company name.
+ *                 description: Template company name.
  *                 example: Company Name
- *               templateSampleAgent:
+ *               templateAgent:
  *                 type: string
- *                 description: Template sample agent name.
+ *                 description: Template agent name.
  *                 example: Agent Name
- *               templateSampleRootCause:
+ *               templateRootCause:
  *                 type: string
- *                 description: Template sample root cause.
+ *                 description: Template root cause.
  *                 example: Root Cause
- *               templateSampleAgentValidation:
+ *               templateAgentValidation:
  *                 type: boolean
- *                 description: Template sample agent validation.
+ *                 description: Template agent validation.
  *                 example: true
  *               isActive:
  *                 type: boolean
  *                 description: Is active or not.
  *                 example: true
- *               templateSampleIntentFailed:
+ *               templateIntentFailed:
  *                 type: boolean
- *                 description: Template sample intent failed.
+ *                 description: Template intent failed.
  *                 example: false
- *               templateSampleStatus:
+ *               templateStatus:
  *                 type: string
- *                 description: Template sample status.
- *                 example: Template sample Status
+ *                 description: Template status.
+ *                 example: Template Status
  *               createdBy:
  *                 type: string
- *                 description: Template sample creator.
+ *                 description: Template creator.
  *                 example: Firstname Lastname
  *               updatedBy:
  *                 type: string
- *                 description: Template sample modifier.
+ *                 description: Template modifier.
  *                 example: Firstname Lastname
  *               createdAt:
  *                 type: string
  *                 format: date-time
- *                 description: Template sample creation date.
+ *                 description: Template creation date.
  *                 example: 2023-10-16T13:25:10.666Z
  *               updatedAt:
  *                 type: string
  *                 format: date-time
- *                 description: Template sample modification date.
+ *                 description: Template modification date.
  *                 example: 2023-10-16T13:28:40.028Z
  *     subscribe:
- *       operationId: templateSampleListResponse
- *       summary: Retrieve template samples based on query parameters.
+ *       operationId: templateListResponse
+ *       summary: Retrieve templates based on query parameters.
  *       message:
- *         $ref: '#/components/messages/TemplateSampleListResponse'
+ *         $ref: '#/components/messages/TemplateListResponse'
  */
 """
 

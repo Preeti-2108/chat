@@ -154,7 +154,7 @@ resource "azurerm_storage_container" "docs" {
 resource "azurerm_storage_blob" "api_docs" {
   count                 = length(tolist(fileset("output", "*")))
   name                  = basename(tolist(fileset("output", "*"))[count.index])
-  storage_account_id = azurerm_storage_account.ics_products_documentation.id
+  storage_account_name  = azurerm_storage_account.ics_products_documentation.name
   storage_container_name = azurerm_storage_container.docs.name
   type                  = "Block"
   source                = "output/${basename(tolist(fileset("output", "*"))[count.index])}"

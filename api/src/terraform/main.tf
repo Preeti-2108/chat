@@ -180,3 +180,4 @@ resource "azurerm_storage_blob" "api_docs_js" {
   source                = "output/js/${basename(tolist(fileset("output/js", "*"))[count.index])}"
   content_type          = "application/javascript"
 }
+

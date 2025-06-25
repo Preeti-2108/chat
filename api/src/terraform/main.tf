@@ -141,7 +141,7 @@ resource "azurerm_storage_account" "ics_products_documentation" {
 
 resource "azurerm_storage_container" "docs" {
   name                  = var.API_SYSTEM_NAME
-  storage_account_name  = azurerm_storage_account.ics_products_documentation.name
+  storage_account_id    = azurerm_storage_account.ics_products_documentation.id
   container_access_type = "blob"
 }
 

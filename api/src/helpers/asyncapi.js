@@ -3,7 +3,7 @@ const path = require('path');
 const yaml = require('js-yaml');
 
 const asyncapiDefinition = {
-    "asyncapi": "3.0.1",
+    "asyncapi": "2.6.0",
     "id": "urn:templatepython:api",
     "defaultContentType": "application/json",
     "info": {

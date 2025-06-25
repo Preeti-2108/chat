@@ -147,14 +147,14 @@ resource "azurerm_storage_account" "ics_products_documentation" {
 
 resource "azurerm_storage_container" "docs" {
   name                  = var.API_SYSTEM_NAME
-  storage_account_name  = azurerm_storage_account.ics_products_documentation.name
+  storage_account_id = azurerm_storage_account.ics_products_documentation.id
   container_access_type = "blob"
 }
 
 resource "azurerm_storage_blob" "api_docs" {
   count                 = length(tolist(fileset("output", "*")))
   name                  = basename(tolist(fileset("output", "*"))[count.index])
-  storage_account_name  = azurerm_storage_account.ics_products_documentation.name
+  storage_account_id = azurerm_storage_account.ics_products_documentation.id
   storage_container_name = azurerm_storage_container.docs.name
   type                  = "Block"
   source                = "output/${basename(tolist(fileset("output", "*"))[count.index])}"

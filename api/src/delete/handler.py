@@ -1,12 +1,13 @@
-# Import necessary modules for AWS DynamoDB interaction, logging, and error handling
+import json
 import os
 import boto3
 import logging
-
 from botocore.exceptions import ClientError
 from src.helpers.api_responses import Responses
 from src.helpers.construct_response import construct_response
-from src.helpers.schema_validation import validate_request_body_schema
+from src.helpers.schema_validation import validate_request_datas_schema
+from src.handler_websocket.handler import send_to_client
+from src.helpers.event_utils import extract_event_info 
 
 """
 /**
@@ -41,70 +42,78 @@ from src.helpers.schema_validation import validate_request_body_schema
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))  # Set log level based on environment variable
 
+# Set up logging
+logger = logging.getLogger(__name__)
+logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))
+
 def delete(event, context):
-    """
-    Handles the deletion of a template from DynamoDB based on the provided ID.
+    logger.debug('Event: %s', event)
+    logger.info('Inside delete function')
 
-    Parameters:
-    - event: dict, contains request data including path parameters and HTTP method.
-    - context: object, provides runtime information to the handler.
-
-    Returns:
-    - A structured HTTP response indicating the result of the delete operation.
-    """
-    logger.debug('logging event: %s', event)  # Log the incoming event for debugging
-    logger.info('Inside delete function')  # Log entry into the delete function
-
-    # Define HTTP status codes for various outcomes
+    # Define status codes
     STATUS_ERROR = 500
     STATUS_UNPROCESSABLE_ENTITY = 422
     STATUS_NOT_FOUND = 404
     STATUS_DELETED = 200
 
-    # Initialize DynamoDB resource and specify the table
+    # Initialize DynamoDB resource and table
     dynamodb = boto3.resource('dynamodb')
-    table = dynamodb.Table(os.getenv('TABLE'))  # Get table name from environment variable
+    table = dynamodb.Table(os.getenv('TABLE'))
 
-    # Extract the template ID from the path parameters
-    id = event['pathParameters']['id']
-    params = {
-        'id': id  # Key for DynamoDB operations
-    }
+    # Extract necessary information from the event
+    event_info = extract_event_info(event)
+    url = event_info.get('url')
+    connectionId = event_info.get('connectionId')
 
-    # Default error response setup
-    response_result = Responses.result_response(STATUS_ERROR, False, 'Error during the execution.')
+    # Retrieve the ID in the request body
+    body = json.loads(event.get('body', '{}'))
+    id = body.get('id')
+    if not id:
+        response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'ID parameter is required.')
+        send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+        return {
+            'statusCode': STATUS_UNPROCESSABLE_ENTITY,
+            'body': json.dumps('ID parameter is required.')
+        }
 
-    # Retrieve the HTTP method from the event context
-    http_method = event['requestContext']['http']['method']
+    params = {'id': id}
 
-    # Validate the request body schema based on the HTTP method and parameters
-    validation_schema = validate_request_body_schema(http_method, params)
+    # Default error response
+    response_result = Responses.result_response(STATUS_ERROR, False, 'Error during execution.')
+
+    # Get the action from the event
+    action = body.get('action')
+
+    # Validate the request
+    validation_schema = validate_request_datas_schema(action, params)
+    if not validation_schema['success']:
+        response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Validation errors.', validation_schema)
+        send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+        return {
+            'statusCode': STATUS_UNPROCESSABLE_ENTITY,
+            'body': json.dumps('Validation errors.')
+        }
 
     try:
-        # Check for validation errors and respond with a 422 status if any
-        if not validation_schema['success']:
-            response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Validation errors.', validation_schema)
-            return construct_response(response_result)
-
-        # Attempt to retrieve the item from DynamoDB using the provided ID
+        # Check if the item exists and delete it
         try:
             existing_item = table.get_item(Key=params)
-        except ClientError as e:
-            # Log the error message if a ClientError occurs
-            print(e.response['Error']['Message'])
-        else:
-            # Check if the item exists in the response
             if 'Item' not in existing_item:
-                # Respond with a 404 status if the item is not found
                 response_result = Responses.result_response(STATUS_NOT_FOUND, False, f'Template with ID {id} not found.')
             else:
-                # Delete the item from DynamoDB if it exists
                 table.delete_item(Key=params)
-                # Respond with a 200 status indicating successful deletion
                 response_result = Responses.result_response(STATUS_DELETED, True, f'Template with ID {id} successfully deleted.')
+        except ClientError as e:
+            logger.error(f"DynamoDB ClientError: {e.response['Error']['Message']}")
+            response_result = Responses.result_response(STATUS_ERROR, False, 'Error accessing DynamoDB.')
     except Exception as err:
-        # Handle any unexpected exceptions and respond with a 500 status
+        logger.error(f"Unexpected error: {str(err)}")
         response_result = Responses.result_response(STATUS_ERROR, False, str(err))
 
-    # Construct and return the final HTTP response
-    return construct_response(response_result)
+    # Send the response to the client
+    send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+
+    return {
+        'statusCode': 200,
+        'body': json.dumps('Message processed')
+    }

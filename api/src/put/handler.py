@@ -1,18 +1,14 @@
-# Import necessary modules for handling environment variables, JSON data, AWS services, logging, and regular expressions
 import os
 import json
 import boto3
 import logging
-import re
 from datetime import datetime
-
-# Import helper functions for authorization checks, API responses, response construction, and schema validation
 from src.helpers.check_authorization import check_authorization
 from src.helpers.api_responses import Responses
 from src.helpers.construct_response import construct_response
-from src.helpers.schema_validation import validate_request_body_schema
+from src.helpers.schema_validation import validate_request_datas_schema
 from src.handler_websocket.handler import send_to_client
-from src.helpers.event_utils import extract_event_info
+from src.helpers.event_utils import extract_event_info  # Custom helper to extract necessary information from the event
 
 """
 /**
@@ -91,73 +87,67 @@ from src.helpers.event_utils import extract_event_info
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))  # Set log level based on environment variable
 
+# Set up logging
+logger = logging.getLogger(__name__)
+logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))  # Set Log Level
+
 def edit(event, context):
-    """
-    Handles the update of a template in DynamoDB based on the provided ID.
-    
-    Parameters:
-    - event: Contains request data, including headers, path parameters, and body.
-    - context: Provides runtime information about the Lambda function execution.
+    logger.debug('Logging event: %s', event)
+    logger.info('Inside WebSocket edit function')
 
-    Returns:
-    - A constructed HTTP response indicating success or failure of the update operation.
-    """
-    logger.debug('logging event: %s', event)  # Log the incoming event for debugging
-    logger.info('Inside edit function')  # Log entry into the function
-
-    # Initialize DynamoDB resource and specify the table to interact with
+    # Initialize DynamoDB resource and table
     dynamodb = boto3.resource('dynamodb')
     table = dynamodb.Table(os.getenv('TABLE'))
 
-    # Define HTTP status codes for various response scenarios
+    # Define status codes
     STATUS_ERROR = 500
     STATUS_UNPROCESSABLE_ENTITY = 422
     STATUS_UPDATED = 200
     STATUS_NOT_FOUND = 404
 
-    # Parse the request body and ensure boolean values are correctly formatted
-    body = event['body']
-    body = re.sub('true', 'true', body, flags=re.IGNORECASE)
-    body = re.sub('false', 'false', body, flags=re.IGNORECASE)
-    request_body = json.loads(body)  # Convert JSON string to Python dictionary
-
-    # Extract HTTP method and path parameter ID from the event
-    http_method = event['requestContext']['http']['method']
-    id = event['pathParameters']['id']
-    request_body['id'] = id  # Add ID to request body for validation
-
-    # Validate the request body against the expected schema
-    validation_schema = validate_request_body_schema(http_method, request_body)
-    response_result = Responses.result_response(STATUS_ERROR, False, 'Error during the execution.')
+    # Extract necessary information from the event
+    event_info = extract_event_info(event)
+    url = event_info.get('url')
+    connectionId = event_info.get('connectionId')
 
     try:
-        # If validation fails, return a 422 response with validation error details
+        # Parse the WebSocket message (expecting a JSON payload in the body)
+        body = json.loads(event['body'])
+        datas = body.get('datas', {})
+        action = body.get('action')
+        id = body.get('id')  # Assuming the 'id' comes from the body
+
+        if not id:
+            response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'ID is required.')
+            return send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+
+        datas['id'] = id  # Ensure ID is part of the data
+
+        # Validate the request and retrieve validation errors
+        validation_schema = validate_request_datas_schema(action, datas)
         if not validation_schema['success']:
             response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Validation errors.', validation_schema)
-            return construct_response(response_result)
+            return send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
 
-        # Check authorization and retrieve the email of the user making the request
         email = check_authorization(event)
-        validation_schema['data']['updatedBy'] = email  # Record who updated the template
+        validation_schema['datas']['updatedBy'] = email
 
-        # Remove ID from request body and validation data to prevent overwriting
-        if 'id' in request_body:
-            del request_body['id']
-        if 'id' in validation_schema['data']:
-            del validation_schema['data']['id']
+        # Clean up the id field to prevent overwriting it
+        if 'id' in datas:
+            del datas['id']
+        if 'id' in validation_schema['datas']:
+            del validation_schema['datas']['id']
 
-        # Generate the update query for DynamoDB using the validated data
-        expression = generate_update_query(validation_schema['data'])
+        # Generate update expression for DynamoDB
+        expression = generate_update_query(validation_schema['datas'])
 
-        # Check if the item with the given ID exists in DynamoDB
+        # Check if the item exists in DynamoDB
         existing_item = table.get_item(Key={'id': id})
-
         if 'Item' not in existing_item:
-            # If item does not exist, return a 404 response
-            response_result = Responses.result_response(STATUS_NOT_FOUND, False, f'Template with ID {id} not found.')
+            response_result = Responses.result_response(STATUS_NOT_FOUND, False, f'Item with ID {id} not found.')
         else:
-            # Update the existing item in DynamoDB with new data
-            new_item = table.update_item(
+            # Update the item in DynamoDB
+            updated_item = table.update_item(
                 Key={'id': id},
                 ExpressionAttributeNames=expression['ExpressionAttributeNames'],
                 ExpressionAttributeValues=expression['ExpressionAttributeValues'],
@@ -165,43 +155,32 @@ def edit(event, context):
                 ReturnValues='ALL_NEW'
             )
 
-            # Return a 200 response with the updated item attributes
-            response_result = Responses.result_response(STATUS_UPDATED, True, f'Template with ID {id} updated successfully.', new_item['Attributes'])
+            # Build a successful response with the updated attributes
+            response_result = Responses.result_response(STATUS_UPDATED, True, f'Item with ID {id} updated successfully.', updated_item['Attributes'])
 
     except Exception as err:
-        # Handle any exceptions and return a 500 response with error details
-        response_result = Responses.result_response(STATUS_ERROR, False, str(err))
+        # In case of error, log and build an error response
+        logger.error(f"Error during item update: {str(err)}")
+        response_result = Responses.result_response(STATUS_ERROR, False, f"Error occurred: {str(err)}")
 
-    # Return the constructed response to the client
-    return construct_response(response_result)
+    # Send the constructed response via WebSocket
+    return send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
 
 def generate_update_query(fields):
-    """
-    Constructs a DynamoDB update expression from the provided fields.
-    
-    Parameters:
-    - fields: Dictionary containing field names and values to update.
-
-    Returns:
-    - A dictionary containing the update expression, attribute names, and attribute values for DynamoDB.
-    """
-    # Get the current date and time in RFC3339 format
+    # Set updated date
     rfc3339_date = datetime.now().isoformat()
-
-    # Initialize the update expression components
-    new_item = {
-        'UpdateExpression': 'set #updatedAt = :updatedAt,',  # Start with setting the updatedAt field
-        'ExpressionAttributeNames': {'#updatedAt': 'updatedAt'},  # Map attribute names to placeholders
-        'ExpressionAttributeValues': {':updatedAt': rfc3339_date},  # Map attribute values to placeholders
+    update_expression = {
+        'UpdateExpression': 'SET #updatedAt = :updatedAt,',
+        'ExpressionAttributeNames': {'#updatedAt': 'updatedAt'},
+        'ExpressionAttributeValues': {':updatedAt': rfc3339_date},
     }
 
-    # Iterate over fields to build the update expression dynamically
-    for key, item in fields.items():
-        new_item['UpdateExpression'] += f" #{key} = :{key},"  # Append each field to the update expression
-        new_item['ExpressionAttributeNames'][f"#{key}"] = key  # Add field name to attribute names
-        new_item['ExpressionAttributeValues'][f":{key}"] = item  # Add field value to attribute values
+    for key, value in fields.items():
+        update_expression['UpdateExpression'] += f" #{key} = :{key},"
+        update_expression['ExpressionAttributeNames'][f"#{key}"] = key
+        update_expression['ExpressionAttributeValues'][f":{key}"] = value
 
-    # Remove trailing comma from the update expression
-    new_item['UpdateExpression'] = new_item['UpdateExpression'][:-1]
+    # Remove trailing comma from the UpdateExpression
+    update_expression['UpdateExpression'] = update_expression['UpdateExpression'][:-1]
 
-    return new_item  # Return the constructed update expression
+    return update_expression

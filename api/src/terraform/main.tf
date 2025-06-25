@@ -65,13 +65,9 @@ variable "SLS_NAME" {
 
 terraform {
   required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "=5.70.0"
-    }
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = "=3.73.0"
+      version = ">= 3.80.0"
     }
   }
 }

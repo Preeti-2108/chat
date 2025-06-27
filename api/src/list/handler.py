@@ -127,14 +127,14 @@ def list(event, context):
 
         # Construct parameters for DynamoDB scan
         params = construct_params(datas)
-        templatess = table.scan(**params)
-        items = format_results(templatess, datas)
+        templates = table.scan(**params)
+        items = format_results(templates, datas)
         
         # Check if items were found and construct the appropriate response
         if items['count'] > 0:
-            response_result = Responses.result_response(STATUS_OK, True, 'Templatess retrieved successfully.', items)
+            response_result = Responses.result_response(STATUS_OK, True, 'Templates retrieved successfully.', items)
         else:
-            response_result = Responses.result_response(STATUS_OK, True, 'No templatess found with these filters.', items)
+            response_result = Responses.result_response(STATUS_OK, True, 'No templates found with these filters.', items)
     except Exception as err:
         response_result = Responses.result_response(STATUS_ERROR, False, str(err))
 

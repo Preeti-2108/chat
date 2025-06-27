@@ -87,6 +87,15 @@ logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))  # Set Log Level
 def create(event, context):
     """
     Main function to handle the creation of a new item.
+    
+    This function processes incoming events to create a new item in a DynamoDB table.
+    It validates the request data, checks authorization, constructs the item, and
+    inserts it into the database. It also handles errors and sends responses back to
+    the client via WebSocket.
+    
+    :param event: The event data received from the client.
+    :param context: The context in which the function is executed.
+    :return: A dictionary containing the status code and body message.
     """
     logger.debug('logging event: %s', event)  # Log the incoming event
     logger.info('Inside create function')  # Log entry into the function
@@ -165,6 +174,12 @@ def create(event, context):
 def construct_new_item(datas):
     """
     Construct a new item with a unique ID and the provided data.
+    
+    This function generates a unique identifier for the new item and prepares
+    the data for insertion into the database.
+    
+    :param datas: The data to be included in the new item.
+    :return: A dictionary representing the new item.
     """
     datas['id'] = str(uuid.uuid4())  # Generate a unique ID for the new item
     expression = generate_create_query(datas)  # Generate the item expression
@@ -173,6 +188,12 @@ def construct_new_item(datas):
 def generate_create_query(fields):
     """
     Generate a query expression for creating a new item.
+    
+    This function constructs a dictionary expression from the provided fields,
+    which is used to insert the item into the database.
+    
+    :param fields: The fields to be included in the query expression.
+    :return: A dictionary representing the query expression.
     """
     exp = {}
     for key, item in fields.items():

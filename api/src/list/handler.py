@@ -88,11 +88,18 @@ logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))  # Set Log Level
 def list(event, context):
     """
     Main function to handle the listing of items.
+    
+    This function processes incoming events to retrieve a list of templates from a DynamoDB table.
+    It validates the request, constructs query parameters, and formats the response to be sent back to the client.
+    
+    :param event: The event data received from the client, containing query parameters and action.
+    :param context: The context in which the function is executed, providing runtime information.
+    :return: A dictionary containing the HTTP status code and a message indicating the result of the operation.
     """
     logger.debug('logging event: %s', event)  # Log the incoming event
     logger.info('Inside list function')  # Log entry into the function
 
-    # Define status codes
+    # Define status codes for different outcomes
     STATUS_ERROR = 500
     STATUS_UNPROCESSABLE_ENTITY = 422
     STATUS_OK = 200
@@ -113,6 +120,7 @@ def list(event, context):
     # Validate the request and retrieve validation errors
     validation_schema = validate_request_datas_schema(action, datas)
 
+    # Default response in case of an error
     response_result = Responses.result_response(STATUS_ERROR, False, 'Error during the execution.')
 
     try:
@@ -127,8 +135,8 @@ def list(event, context):
 
         # Construct parameters for DynamoDB scan
         params = construct_params(datas)
-        templates = table.scan(**params)
-        items = format_results(templates, datas)
+        templates = table.scan(**params)  # Execute the scan operation
+        items = format_results(templates, datas)  # Format the results based on offset and limit
         
         # Check if items were found and construct the appropriate response
         if items['count'] > 0:
@@ -136,6 +144,7 @@ def list(event, context):
         else:
             response_result = Responses.result_response(STATUS_OK, True, 'No templates found with these filters.', items)
     except Exception as err:
+        # Handle any exceptions that occur during processing
         response_result = Responses.result_response(STATUS_ERROR, False, str(err))
 
     # Send the response to the client
@@ -149,6 +158,11 @@ def list(event, context):
 def construct_params(datas):
     """
     Construct parameters for DynamoDB scan based on provided query parameters.
+    
+    This function builds the filter expression and attribute mappings required for querying the DynamoDB table.
+    
+    :param datas: A dictionary containing query parameters extracted from the event.
+    :return: A dictionary containing the constructed parameters for the DynamoDB scan operation.
     """
     # Extract the relevant filters from the provided query parameters
     template_company = datas.get('templateCompany')
@@ -166,6 +180,7 @@ def construct_params(datas):
     updated_start = datas.get('updatedStart')
     updated_end = datas.get('updatedEnd')
 
+    # Initialize parameters for the scan operation
     params = {
         'TableName': os.getenv('TABLE'),
         'ExpressionAttributeValues': {},
@@ -195,6 +210,7 @@ def construct_params(datas):
     for filter in filters:
         if filter['value'] is not None:
             if filter['type'] == 'boolean':
+                # Convert string boolean values to actual boolean types
                 val = filter['value']
                 val = re.sub('true', 'true', val, flags=re.IGNORECASE)
                 val = re.sub('false', 'false', val, flags=re.IGNORECASE)
@@ -203,18 +219,22 @@ def construct_params(datas):
                 params['ExpressionAttributeNames'][filter['attribute']] = filter['name']
                 params['FilterExpression'] += f" AND {filter['attribute']} = :{filter['name']}" if params['FilterExpression'] else f"{filter['attribute']} = :{filter['name']}"
             elif filter['type'] == 'compare-date':
+                # Handle date comparisons
                 params['ExpressionAttributeValues'][f":{filter['name']}"] = filter['value'].upper()
                 params['ExpressionAttributeNames'][f"#{filter['comparateDate']}"] = filter['comparateDate']
                 params['FilterExpression'] += f" AND #{filter['comparateDate']} {filter['operator']} :{filter['name']}" if params['FilterExpression'] else f"#{filter['comparateDate']} {filter['operator']} :{filter['name']}"
             elif filter['type'] == 'string':
+                # Handle string comparisons, removing accents
                 params['ExpressionAttributeValues'][f":{filter['name']}"] = remove_accents(filter['value'].upper())
                 params['ExpressionAttributeNames'][filter['attribute']] = filter['name']
                 params['FilterExpression'] += f" AND {filter['attribute']} = :{filter['name']}" if params['FilterExpression'] else f"{filter['attribute']} = :{filter['name']}"
             elif filter['type'] == 'integer':
+                # Handle integer comparisons
                 params['ExpressionAttributeValues'][f":{filter['name']}"] = int(filter['value'])
                 params['ExpressionAttributeNames'][filter['attribute']] = filter['name']
                 params['FilterExpression'] += f" AND {filter['attribute']} = :{filter['name']}" if params['FilterExpression'] else f"{filter['attribute']} = :{filter['name']}"
             else:
+                # Default case for other types
                 params['ExpressionAttributeValues'][f":{filter['name']}"] = filter['value']
                 params['ExpressionAttributeNames'][filter['attribute']] = filter['name']
                 params['FilterExpression'] += f" AND {filter['attribute']} = :{filter['name']}" if params['FilterExpression'] else f"{filter['attribute']} = :{filter['name']}"
@@ -230,23 +250,34 @@ def construct_params(datas):
 def format_results(items, datas):
     """
     Format the results from DynamoDB scan based on offset and limit.
+    
+    This function slices the list of items based on the provided offset and limit to control pagination.
+    
+    :param items: The raw items retrieved from the DynamoDB scan.
+    :param datas: A dictionary containing query parameters, including offset and limit.
+    :return: A dictionary containing the formatted list of items and their count.
     """
-    items = items['Items'].copy()
-    offset = int(datas.get('offset', 0))
-    limit = int(datas.get('limit', len(items)))
+    items = items['Items'].copy()  # Copy the list of items to avoid modifying the original
+    offset = int(datas.get('offset', 0))  # Get the offset value, defaulting to 0
+    limit = int(datas.get('limit', len(items)))  # Get the limit value, defaulting to the length of items
 
     if offset:
-        items = items[offset:]
+        items = items[offset:]  # Apply offset to the list of items
     if limit:
-        items = items[:limit]
+        items = items[:limit]  # Apply limit to the list of items
 
     return {
         'items': items,
-        'count': len(items),
+        'count': len(items),  # Return the count of items after applying offset and limit
     }
 
 def remove_accents(input_str):
     """
     Remove accents from the input string.
+    
+    This function uses the unidecode library to convert accented characters to their unaccented counterparts.
+    
+    :param input_str: The string from which to remove accents.
+    :return: The unaccented version of the input string.
     """
     return unidecode(input_str)

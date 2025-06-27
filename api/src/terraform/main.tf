@@ -126,7 +126,7 @@ resource "azurerm_api_management_api" "ics_api" {
     query  = "api-key"
   }
  
-  description = "Documentation : https://${var.APIM_NAME}.blob.core.windows.net/${var.API_SYSTEM_NAME}/index.html"
+  description = "Documentation (CTRL+clic for open) : https://${var.APIM_NAME}.blob.core.windows.net/${var.API_SYSTEM_NAME}/index.html"
 
 }
 

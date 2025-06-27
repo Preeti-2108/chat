@@ -1,7 +1,7 @@
 {
   "name": "templatepythoncdkwebsocket",
   "version": "1.0.0",
-  "description": "Generate Swagger file",
+  "description": "Generate file",
   "main": "src/index.js",
   "scripts": {
     "asyncapi": "node ./src/helpers/asyncapi.js",

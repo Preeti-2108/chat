@@ -12,6 +12,22 @@ api/cdk.out/
 resources/__pycache__/
 resources/cdk.out/
 
+# Python virtual environments
+venv/
+env/
+**/venv/
+**/env/
+resources/venv/
+api/venv/
+
+# Python binaries and executables
+bin/
+**/bin/
+python
+python3
+pip
+pip3
+
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
@@ -79,6 +95,13 @@ web_modules/
 .env.test
 venv
 bin
+
+# Python virtual environments (additional patterns)
+pyvenv.cfg
+lib64/
+**/lib64/
+**/Scripts/
+Scripts/
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache

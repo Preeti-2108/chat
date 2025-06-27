@@ -1,3 +1,4 @@
+# Import necessary modules and packages
 import os
 import json
 import boto3
@@ -87,11 +88,18 @@ from src.helpers.event_utils import extract_event_info  # Custom helper to extra
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))  # Set log level based on environment variable
 
-# Set up logging
-logger = logging.getLogger(__name__)
-logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))  # Set Log Level
-
 def edit(event, context):
+    """
+    Handles the WebSocket edit operation for updating a template in DynamoDB.
+
+    This function processes incoming WebSocket events, validates the request data,
+    checks authorization, and updates the specified template in the DynamoDB table.
+    It sends a response back to the client via WebSocket.
+
+    :param event: The event data from the WebSocket request.
+    :param context: The context in which the function is called.
+    :return: The response sent to the client via WebSocket.
+    """
     logger.debug('Logging event: %s', event)
     logger.info('Inside WebSocket edit function')
 
@@ -99,7 +107,7 @@ def edit(event, context):
     dynamodb = boto3.resource('dynamodb')
     table = dynamodb.Table(os.getenv('TABLE'))
 
-    # Define status codes
+    # Define status codes for various outcomes
     STATUS_ERROR = 500
     STATUS_UNPROCESSABLE_ENTITY = 422
     STATUS_UPDATED = 200
@@ -117,6 +125,7 @@ def edit(event, context):
         action = body.get('action')
         id = body.get('id')  # Assuming the 'id' comes from the body
 
+        # Check if 'id' is provided in the request
         if not id:
             response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'ID is required.')
             return send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
@@ -129,6 +138,7 @@ def edit(event, context):
             response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Validation errors.', validation_schema)
             return send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
 
+        # Check authorization and get the email of the user
         email = check_authorization(event)
         validation_schema['datas']['updatedBy'] = email
 
@@ -167,7 +177,17 @@ def edit(event, context):
     return send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
 
 def generate_update_query(fields):
-    # Set updated date
+    """
+    Generates a DynamoDB update expression for the given fields.
+
+    This function constructs an update expression, along with attribute names and values,
+    to be used in a DynamoDB update operation. It ensures that the 'updatedAt' field is
+    always set to the current timestamp.
+
+    :param fields: A dictionary of fields to be updated in the DynamoDB item.
+    :return: A dictionary containing the update expression, attribute names, and values.
+    """
+    # Set updated date to current timestamp in RFC 3339 format
     rfc3339_date = datetime.now().isoformat()
     update_expression = {
         'UpdateExpression': 'SET #updatedAt = :updatedAt,',
@@ -175,6 +195,7 @@ def generate_update_query(fields):
         'ExpressionAttributeValues': {':updatedAt': rfc3339_date},
     }
 
+    # Construct the update expression for each field
     for key, value in fields.items():
         update_expression['UpdateExpression'] += f" #{key} = :{key},"
         update_expression['ExpressionAttributeNames'][f"#{key}"] = key

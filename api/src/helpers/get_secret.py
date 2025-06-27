@@ -1,5 +1,5 @@
-# Import necessary modules for environment variable access, AWS Secrets Manager interaction, 
-# base64 encoding/decoding, and JSON manipulation.
+# Import necessary modules for accessing environment variables, interacting with AWS Secrets Manager,
+# encoding/decoding binary data, and handling JSON data.
 import os
 import boto3
 import base64

@@ -220,7 +220,7 @@ This function is intended to be deployed as part of an AWS Lambda setup. It is t
    - If using AWS API Gateway, configure a new API or update an existing one to route unmatched requests to this Lambda function.
 
 4. **Test the Function**:
-   - Use the AWS Lambda console to test the function with sample events.
+   - Use the AWS Lambda console to test the function with events.
    - Verify that the function returns a response with a status code of 200 and the message "Default route".
 
 ### Function Parameters

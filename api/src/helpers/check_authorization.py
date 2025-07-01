@@ -3,6 +3,18 @@ import jwt
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
+class BadRequest(Exception):
+    """
+    Custom exception class for handling bad request errors.
+    
+    This exception is raised when there are issues with authorization,
+    token validation, or missing required parameters.
+    """
+    def __init__(self, message, status_code=400):
+        super().__init__(message)
+        self.message = message
+        self.status_code = status_code
+
 def check_authorization(event):
     """
     Validates the authorization token from an incoming event and retrieves the user ID.

@@ -1,5 +1,5 @@
-from helpers.api_responses import Responses
-from helpers.construct_response import construct_response
+from src.helpers.api_responses import Responses
+from src.helpers.construct_response import construct_response
 
 def default(event, context):
     """
@@ -18,8 +18,8 @@ def default(event, context):
     Returns:
     dict: A dictionary representing a WebSocket response.
     """
-    from helpers.event_utils import extract_event_info
-    from handler_websocket.handler import send_to_client
+    from src.helpers.event_utils import extract_event_info
+    from src.handler_websocket.handler import send_to_client
     import json
     
     # Extract connection information
@@ -31,6 +31,10 @@ def default(event, context):
         # Parse the message body
         body = json.loads(event.get('body', '{}'))
         action = body.get('action')
+        
+        # Add debug logging to see what we received
+        print(f"DEBUG - Received body: {json.dumps(body, indent=2)}")
+        print(f"DEBUG - Action: {action}")
         
         if not action:
             # Return an error response for missing action field

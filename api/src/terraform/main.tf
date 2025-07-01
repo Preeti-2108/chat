@@ -151,41 +151,32 @@ resource "azurerm_storage_container" "docs" {
   container_access_type = "blob"
 }
 
-locals {
-  html_files = fileset("output", "*.html")
-  css_files  = fileset("output/css", "*")
-  js_files   = fileset("output/js", "*")
-}
-
 resource "azurerm_storage_blob" "api_docs" {
-  count                 = length(local.html_files)
-  name                  = basename(tolist(local.html_files)[count.index])
+  count                 = length(tolist(fileset("output", "*")))
+  name                  = basename(tolist(fileset("output", "*"))[count.index])
   storage_account_name  = azurerm_storage_account.ics_products_documentation.name
   storage_container_name = azurerm_storage_container.docs.name
   type                  = "Block"
-  source                = "output/${basename(tolist(local.html_files)[count.index])}"
+  source                = "output/${basename(tolist(fileset("output", "*"))[count.index])}"
   content_type          = "text/html"
-  source_content_md5    = filemd5("output/${basename(tolist(local.html_files)[count.index])}")
 }
 
 resource "azurerm_storage_blob" "api_docs_css" {
-  count                 = length(local.css_files)
-  name                  = "css/${basename(tolist(local.css_files)[count.index])}"
+  count                 = length(tolist(fileset("output/css", "*")))
+  name                  = "css/${basename(tolist(fileset("output/css", "*"))[count.index])}"
   storage_account_name  = azurerm_storage_account.ics_products_documentation.name
   storage_container_name = azurerm_storage_container.docs.name
   type                  = "Block"
-  source                = "output/css/${basename(tolist(local.css_files)[count.index])}"
+  source                = "output/css/${basename(tolist(fileset("output/css", "*"))[count.index])}"
   content_type          = "text/css"
-  source_content_md5    = filemd5("output/css/${basename(tolist(local.css_files)[count.index])}")
 }
 
 resource "azurerm_storage_blob" "api_docs_js" {
-  count                 = length(local.js_files)
-  name                  = "js/${basename(tolist(local.js_files)[count.index])}"
+  count                 = length(tolist(fileset("output/js", "*")))
+  name                  = "js/${basename(tolist(fileset("output/js", "*"))[count.index])}"
   storage_account_name  = azurerm_storage_account.ics_products_documentation.name
   storage_container_name = azurerm_storage_container.docs.name
   type                  = "Block"
-  source                = "output/js/${basename(tolist(local.js_files)[count.index])}"
+  source                = "output/js/${basename(tolist(fileset("output/js", "*"))[count.index])}"
   content_type          = "application/javascript"
-  source_content_md5    = filemd5("output/js/${basename(tolist(local.js_files)[count.index])}")
 }

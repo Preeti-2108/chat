@@ -17,7 +17,11 @@ const asyncapiDefinition = {
       "contact": {
         "name": "API Support", // Contact name for API support
         "email": "support.dps.fr.api.contact@soprasteria.com", // Contact email for API support
-        // "url": "https://example.com/support" // Optional URL for support
+        "url": "https://example.com/support" // URL for support
+      },
+      "license": {
+        "name": "MIT", // License name
+        "url": "https://opensource.org/licenses/MIT" // License URL
       }
     },
     "tags": [
@@ -98,6 +102,46 @@ async function generateAsyncAPIDocument(baseDir = './src') {
     }
 
     await readFilesRecursively(baseDir); // Start reading files from the base directory
+
+    // Add missing message components that are referenced in channels
+    if (!components.messages) {
+        components.messages = {};
+    }
+
+    // Generate missing response messages
+    const missingMessages = [
+        'TemplateDeleteResponse',
+        'TemplateGetResponse',
+        'NewTemplateResponse',
+        'TemplateUpdateResponse',
+        'TemplateListResponse'
+    ];
+
+    missingMessages.forEach(messageName => {
+        if (!components.messages[messageName]) {
+            components.messages[messageName] = {
+                messageId: messageName,
+                contentType: "application/json",
+                payload: {
+                    type: "object",
+                    properties: {
+                        success: {
+                            type: "boolean",
+                            description: "Indicates if the operation was successful"
+                        },
+                        message: {
+                            type: "string",
+                            description: "Response message"
+                        },
+                        data: {
+                            type: "object",
+                            description: "Response data"
+                        }
+                    }
+                }
+            };
+        }
+    });
 
     let asyncAPIDocument = {
         ...asyncapiDefinition, // Spread the base AsyncAPI definition

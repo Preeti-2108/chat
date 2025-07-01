@@ -2,7 +2,7 @@ import os  # Provides a way of using operating system dependent functionality
 import json  # Provides methods to work with JSON data
 import boto3  # AWS SDK for Python to interact with AWS services
 import logging  # Provides a way to configure and use loggers
-from unidecode import unidecode  # Provides a way to remove accents from characters
+from text_unidecode import unidecode  # Provides a way to remove accents from characters
 from urllib.parse import parse_qs  # Provides methods to parse query strings
 from src.helpers.api_responses import Responses  # Custom helper for API responses
 from src.helpers.construct_response import construct_response  # Custom helper to construct responses

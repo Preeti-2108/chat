@@ -5,7 +5,7 @@ import jsonschema
 from jsonschema import validate, FormatChecker
 from jsonschema.exceptions import ValidationError
 from jsonschema.validators import Draft7Validator
-from unidecode import unidecode
+from text_unidecode import unidecode
 from datetime import datetime
 
 def validate_request_datas_schema(action, datas):

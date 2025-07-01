@@ -8,6 +8,9 @@ def default(event, context):
     This function is used as a fallback route when no other specific 
     route matches the incoming WebSocket message. It processes the message
     and routes it to the appropriate handler based on the 'action' field.
+    
+    Note: This should only be called when no specific route matches.
+    Valid routes are: create, update, delete, get, list, sendMessage
 
     Parameters:
     event (dict): Contains information about the WebSocket event, 
@@ -33,7 +36,7 @@ def default(event, context):
         action = body.get('action')
         
         # Add debug logging to see what we received
-        print(f"DEBUG - Received body: {json.dumps(body, indent=2)}")
+        print(f"DEBUG - Default handler called with body: {json.dumps(body, indent=2)}")
         print(f"DEBUG - Action: {action}")
         
         if not action:
@@ -41,7 +44,7 @@ def default(event, context):
             result = Responses.result_response(
                 status_code=422,
                 success=False,
-                message="Missing action field",
+                message="Missing action field. Valid actions are: create, update, delete, get, list, sendMessage",
                 data={}
             )
             
@@ -54,12 +57,19 @@ def default(event, context):
                 'body': json.dumps('Missing action field')
             }
         
-        # If action is provided but no specific route matches, return error
+        # List of valid actions that have specific routes
+        valid_actions = ['create', 'update', 'delete', 'get', 'list', 'sendMessage']
+        
+        # If action is provided but no specific route matches, provide helpful error
         result = Responses.result_response(
             status_code=400,
             success=False,
-            message=f"Unsupported action: {action}",
-            data={}
+            message=f"Unsupported action: '{action}'. Valid actions are: {', '.join(valid_actions)}",
+            data={
+                "receivedAction": action,
+                "validActions": valid_actions,
+                "note": "Make sure you're sending the action as the route key in your WebSocket message"
+            }
         )
         
         # Send response to WebSocket client

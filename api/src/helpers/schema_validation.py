@@ -13,14 +13,30 @@ def validate_request_datas_schema(action, datas):
     Validates the structure and content of request data based on the specified action.
     
     Parameters:
-    - action (str): The type of action being performed (e.g., 'POST', 'PUT', 'DELETE', 'GET').
+    - action (str): The type of action being performed (e.g., 'create', 'update', 'delete', 'get', 'list' for WebSocket or 'POST', 'PUT', 'DELETE', 'GET' for HTTP).
     - datas (dict): The data to be validated, structured as a dictionary.
     
     Returns:
     - dict: A dictionary indicating the success of the validation and any relevant messages or validated data.
     """
     
-    action = action.upper()  # Convert action to uppercase for consistency in comparisons
+    # Map WebSocket actions to HTTP methods for validation
+    action_mapping = {
+        'create': 'POST',
+        'update': 'PUT', 
+        'delete': 'DELETE',
+        'get': 'GET',
+        'list': 'GET'
+    }
+    
+    # Convert action to uppercase and map if needed
+    original_action = action
+    if isinstance(action, str):
+        # If it's a WebSocket action, map it to HTTP method
+        if action.lower() in action_mapping:
+            action = action_mapping[action.lower()]
+        else:
+            action = action.upper()  # Convert to uppercase for HTTP methods
     
     # Check if action is a string and datas is a dictionary
     if not isinstance(action, str):
@@ -129,4 +145,4 @@ def validate_request_datas_schema(action, datas):
     
     else:
         # Return an error message for unsupported actions
-        return {'success': False, 'message': 'Invalid action'}
+        return {'success': False, 'message': f'Invalid action: {original_action}. Valid actions are: create, update, delete, get, list'}

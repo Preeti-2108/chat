@@ -14,14 +14,14 @@ logging.basicConfig(level=logging.DEBUG)
 dynamodb = boto3.resource('dynamodb')
 
 # Retrieve environment variables for configuration
-connection_table_name = os.getenv('TABLE_NAME')  # DynamoDB table name for storing connections
+connection_table_name = os.getenv('TABLE')  # DynamoDB table name for storing connections
 user_pool_id = os.getenv('COGNITO_POOL_ID')  # Cognito User Pool ID for JWT validation
 region = os.getenv('REGION')  # AWS region for service endpoints
 websocket_endpoint_url = os.getenv('WEBSOCKET_ENDPOINT_URL')  # WebSocket endpoint URL
 
 # Ensure the connection table name is set in the environment
 if not connection_table_name:
-    raise ValueError("Environment variable TABLE_NAME is not set.")
+    raise ValueError("Environment variable TABLE is not set.")
 
 # Reference to the DynamoDB table for storing WebSocket connection details
 table_connection = dynamodb.Table(connection_table_name)

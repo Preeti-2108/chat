@@ -12,7 +12,7 @@ def get_env_var(var_name):
 
 api_name = get_env_var("API_NAME")
 version = get_env_var("API_VERSION")
-table_name = get_env_var("TABLE_NAME")
+table_name = get_env_var("TABLE")
 user_pool_id = get_env_var("COGNITO_POOL_ID")
 
 lambdas_stack = LambdasStack(

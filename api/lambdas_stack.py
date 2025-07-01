@@ -57,7 +57,7 @@ class LambdasStack(Stack):
             "update": "src.put.handler.edit",
             "delete": "src.delete.handler.delete",
             "get": "src.get.handler.get",
-            "list": "src.get.handler.list"
+            "list": "src.list.handler.list"
         }
 
         lambdas = {}
@@ -91,6 +91,14 @@ class LambdasStack(Stack):
             lambdas[name].add_to_role_policy(iam.PolicyStatement(
                 actions=["cognito-idp:GetUser"],
                 resources=[f"arn:aws:cognito-idp:{self.region}:{self.account}:userpool/{user_pool_id}"]
+            ))
+            
+            # Add WebSocket API permissions for sending messages to connections
+            lambdas[name].add_to_role_policy(iam.PolicyStatement(
+                actions=[
+                    "execute-api:ManageConnections"
+                ],
+                resources=[f"arn:aws:execute-api:{self.region}:{self.account}:*/*/*"]
             ))
 
         # WebSocket API
@@ -170,6 +178,11 @@ class LambdasStack(Stack):
             stage_name="prod",
             auto_deploy=True
         )
+
+        # Update environment variables for all lambdas with WebSocket endpoint
+        websocket_endpoint = ws_stage.url
+        for name, lambda_func in lambdas.items():
+            lambda_func.add_environment("WEBSOCKET_ENDPOINT_URL", websocket_endpoint)
 
         CfnOutput(
             self, "WebSocketApiEndpoint",

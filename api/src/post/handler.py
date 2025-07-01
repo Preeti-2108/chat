@@ -26,52 +26,61 @@ from src.helpers.event_utils import extract_event_info  # Custom helper to extra
  *         payload:
  *           type: object
  *           required:
- *             - templateCompany
- *             - templateAgent
- *             - templateActionsTag
- *             - templateActionsTimeStamp
+ *             - action
+ *             - datas
  *           properties:
- *             templateCompany:
+ *             action:
  *               type: string
- *               description: Template company name.
- *               example: Company Name
- *             templateAgent:
- *               type: string
- *               description: Template agent name.
- *               example: Agent Name
- *             templateRootCause:
- *               type: string
- *               description: Template root cause.
- *               example: Root Cause
- *             templateAgentValidation:
- *               type: boolean
- *               description: Template agent validation.
- *               example: true
- *             templateIntentFailed:
- *               type: boolean
- *               description: Template intent failed.
- *               example: false
- *             isActive:
- *               type: boolean
- *               description: Is active or not.
- *               example: true
- *             templateActions:
- *               type: array
- *               items:
- *                 type: object
- *                 properties:
- *                   templateActionsTimeStamp:
- *                     type: string
- *                     description: Timestamp of the action.
- *                     example: 1639172876
- *                   templateActionsTag:
- *                     type: string
- *                     description: Tag of the action.
- *                     example: Tag Action
- *             templateStatus:
- *               type: string
- *               description: Template status.
- *               example: Template Status
+ *               description: The action to perform.
+ *               example: create
+ *             datas:
+ *               type: object
+ *               required:
+ *                 - templateCompany
+ *                 - templateAgent
+ *                 - templateActions
+ *               properties:
+ *                 templateCompany:
+ *                   type: string
+ *                   description: Template company name.
+ *                   example: Company Name
+ *                 templateAgent:
+ *                   type: string
+ *                   description: Template agent name.
+ *                   example: Agent Name
+ *                 templateRootCause:
+ *                   type: string
+ *                   description: Template root cause.
+ *                   example: Root Cause
+ *                 templateAgentValidation:
+ *                   type: boolean
+ *                   description: Template agent validation.
+ *                   example: true
+ *                 templateIntentFailed:
+ *                   type: boolean
+ *                   description: Template intent failed.
+ *                   example: false
+ *                 isActive:
+ *                   type: boolean
+ *                   description: Is active or not.
+ *                   example: true
+ *                 templateActions:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       templateActionsTimeStamp:
+ *                         type: integer
+ *                         description: Timestamp of the action.
+ *                         example: 1639172876
+ *                       templateActionsTag:
+ *                         type: string
+ *                         description: Tag of the action.
+ *                         example: Tag Action
+ *                 templateStatus:
+ *                   type: string
+ *                   description: Template status.
+ *                   example: Template Status
  *     subscribe:
  *       operationId: newTemplateResponse
  *       summary: Receive response for the initiated template.
@@ -120,9 +129,17 @@ def create(event, context):
         action = body.get('action')
         datas = body.get('datas')
 
+        # Check if action parameter is provided (mandatory)
+        if not action:
+            response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Action parameter is required.')
+            send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+            return {
+                'statusCode': STATUS_UNPROCESSABLE_ENTITY,
+                'body': json.dumps('Action parameter is required.')
+            }
+
         print('action:', action)
         print('datas:', datas)
-        print('toto')
 
         # Validate the request data schema
         validation_schema = validate_request_datas_schema(action, datas)

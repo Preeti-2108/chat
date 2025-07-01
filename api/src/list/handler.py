@@ -2,6 +2,7 @@ import os  # Provides a way of using operating system dependent functionality
 import json  # Provides methods to work with JSON data
 import boto3  # AWS SDK for Python to interact with AWS services
 import logging  # Provides a way to configure and use loggers
+import re  # Provides regular expression matching operations
 from text_unidecode import unidecode  # Provides a way to remove accents from characters
 from urllib.parse import parse_qs  # Provides methods to parse query strings
 from src.helpers.api_responses import Responses  # Custom helper for API responses
@@ -23,56 +24,87 @@ from src.helpers.event_utils import extract_event_info  # Custom helper to extra
  *         messageId: templateList
  *         contentType: application/json
  *         payload:
- *           type: array
- *           items:
- *             type: object
- *             properties:
- *               templateCompany:
- *                 type: string
- *                 description: Template company name.
- *                 example: Company Name
- *               templateAgent:
- *                 type: string
- *                 description: Template agent name.
- *                 example: Agent Name
- *               templateRootCause:
- *                 type: string
- *                 description: Template root cause.
- *                 example: Root Cause
- *               templateAgentValidation:
- *                 type: boolean
- *                 description: Template agent validation.
- *                 example: true
- *               isActive:
- *                 type: boolean
- *                 description: Is active or not.
- *                 example: true
- *               templateIntentFailed:
- *                 type: boolean
- *                 description: Template intent failed.
- *                 example: false
- *               templateStatus:
- *                 type: string
- *                 description: Template status.
- *                 example: Template Status
- *               createdBy:
- *                 type: string
- *                 description: Template creator.
- *                 example: Firstname Lastname
- *               updatedBy:
- *                 type: string
- *                 description: Template modifier.
- *                 example: Firstname Lastname
- *               createdAt:
- *                 type: string
- *                 format: date-time
- *                 description: Template creation date.
- *                 example: 2023-10-16T13:25:10.666Z
- *               updatedAt:
- *                 type: string
- *                 format: date-time
- *                 description: Template modification date.
- *                 example: 2023-10-16T13:28:40.028Z
+ *           type: object
+ *           required:
+ *             - action
+ *           properties:
+ *             action:
+ *               type: string
+ *               description: The action to perform.
+ *               example: list
+ *             datas:
+ *               type: object
+ *               properties:
+ *                 templateCompany:
+ *                   type: string
+ *                   description: Filter by template company name.
+ *                   example: Company Name
+ *                 templateAgent:
+ *                   type: string
+ *                   description: Filter by template agent name.
+ *                   example: Agent Name
+ *                 templateRootCause:
+ *                   type: string
+ *                   description: Filter by template root cause.
+ *                   example: Root Cause
+ *                 templateAgentValidation:
+ *                   type: boolean
+ *                   description: Filter by template agent validation.
+ *                   example: true
+ *                 templateIntentFailed:
+ *                   type: boolean
+ *                   description: Filter by template intent failed.
+ *                   example: false
+ *                 templateStatus:
+ *                   type: string
+ *                   description: Filter by template status.
+ *                   example: Template Status
+ *                 createdBy:
+ *                   type: string
+ *                   description: Filter by template creator.
+ *                   example: Firstname Lastname
+ *                 updatedBy:
+ *                   type: string
+ *                   description: Filter by template modifier.
+ *                   example: Firstname Lastname
+ *                 createdAt:
+ *                   type: string
+ *                   format: date-time
+ *                   description: Filter by template creation date.
+ *                   example: 2023-10-16T13:25:10.666Z
+ *                 updatedAt:
+ *                   type: string
+ *                   format: date-time
+ *                   description: Filter by template modification date.
+ *                   example: 2023-10-16T13:28:40.028Z
+ *                 createdStart:
+ *                   type: string
+ *                   format: date-time
+ *                   description: Filter by creation date start range.
+ *                   example: 2023-10-16T00:00:00.000Z
+ *                 createdEnd:
+ *                   type: string
+ *                   format: date-time
+ *                   description: Filter by creation date end range.
+ *                   example: 2023-10-16T23:59:59.999Z
+ *                 updatedStart:
+ *                   type: string
+ *                   format: date-time
+ *                   description: Filter by update date start range.
+ *                   example: 2023-10-16T00:00:00.000Z
+ *                 updatedEnd:
+ *                   type: string
+ *                   format: date-time
+ *                   description: Filter by update date end range.
+ *                   example: 2023-10-16T23:59:59.999Z
+ *                 offset:
+ *                   type: integer
+ *                   description: Number of items to skip for pagination.
+ *                   example: 0
+ *                 limit:
+ *                   type: integer
+ *                   description: Maximum number of items to return.
+ *                   example: 10
  *     subscribe:
  *       operationId: templateListResponse
  *       summary: Retrieve templates based on query parameters.
@@ -113,9 +145,35 @@ def list(event, context):
     url = event_info.get('url')
     connectionId = event_info.get('connectionId')
 
-    # Parse the body of the event and extract data
-    datas = {k: int(v[0]) if v[0].isdigit() else v[0] for k, v in parse_qs(event.get('body', {}).get('datas')).items()}
-    action = event.get('body', {}).get('action')
+    try:
+        # Parse the body of the event
+        body = json.loads(event.get('body', '{}'))
+        action = body.get('action')
+        datas = body.get('datas', {})
+
+        # Check if action parameter is provided (mandatory)
+        if not action:
+            response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Action parameter is required.')
+            send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+            return {
+                'statusCode': STATUS_UNPROCESSABLE_ENTITY,
+                'body': json.dumps('Action parameter is required.')
+            }
+
+        # Convert query string format to dictionary if datas is a string
+        if isinstance(datas, str):
+            datas = {k: int(v[0]) if v[0].isdigit() else v[0] for k, v in parse_qs(datas).items()}
+        elif not isinstance(datas, dict):
+            datas = {}
+
+    except json.JSONDecodeError:
+        # Handle JSON parsing errors
+        response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Invalid JSON format.')
+        send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+        return {
+            'statusCode': STATUS_UNPROCESSABLE_ENTITY,
+            'body': json.dumps('Invalid JSON format.')
+        }
 
     # Validate the request and retrieve validation errors
     validation_schema = validate_request_datas_schema(action, datas)

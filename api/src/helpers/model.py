@@ -67,7 +67,7 @@
  *             type: object
  *             properties:
  *               templateActionsTimeStamp:
- *                 type: string
+ *                 type: integer
  *                 description: Timestamp of the action.
  *                 example: 1639172876
  *               templateActionsTag:

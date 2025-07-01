@@ -14,8 +14,39 @@ from src.helpers.event_utils import extract_event_info
 """
 /**
  * @asyncapi
- * Defines the AsyncAPI specification for the template retrieval channel.
- * This includes operations for publishing and subscribing to messages related to template retrieval.
+ * channels:
+ *   templateGet:
+ *     description: Channel for retrieving a specific template by ID.
+ *     publish:
+ *       operationId: templateGet
+ *       summary: Get a specific template.
+ *       message:
+ *         messageId: templateGet
+ *         contentType: application/json
+ *         payload:
+ *           type: object
+ *           required:
+ *             - action
+ *             - datas
+ *           properties:
+ *             action:
+ *               type: string
+ *               description: The action to perform.
+ *               example: get
+ *             datas:
+ *               type: object
+ *               required:
+ *                 - id
+ *               properties:
+ *                 id:
+ *                   type: string
+ *                   description: The unique identifier of the template to retrieve.
+ *                   example: 123e4567-e89b-12d3-a456-426614174000
+ *     subscribe:
+ *       operationId: templateGetResponse
+ *       summary: Receive response for the retrieved template.
+ *       message:
+ *         $ref: '#/components/messages/TemplateGetResponse'
  */
 """
 
@@ -52,19 +83,33 @@ def get(event, context):
     url = event_info.get('url')
     connectionId = event_info.get('connectionId')
 
-    # Retrieve the ID from the body of the WebSocket event
+    # Parse the body of the WebSocket event
     body = event.get('body', {})
     if isinstance(body, str):
         body = json.loads(body)  # Convert JSON string to dictionary if necessary
 
-    id = body.get('id')  # Extract the 'id' parameter from the request body
-    if not id:
-        # If 'id' is missing, send an error response to the client
-        response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'ID parameter is required.')
+    # Extract action and datas from the request body
+    action = body.get('action')
+    datas = body.get('datas', {})
+
+    # Check if action parameter is provided (mandatory)
+    if not action:
+        response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Action parameter is required.')
         send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
         return {
             'statusCode': STATUS_UNPROCESSABLE_ENTITY,
-            'body': json.dumps('ID parameter is required.')
+            'body': json.dumps('Action parameter is required.')
+        }
+
+    # Extract the ID from datas
+    id = datas.get('id')
+    if not id:
+        # If 'id' is missing, send an error response to the client
+        response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'ID parameter is required in datas.')
+        send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+        return {
+            'statusCode': STATUS_UNPROCESSABLE_ENTITY,
+            'body': json.dumps('ID parameter is required in datas.')
         }
 
     params = {'id': id}  # Prepare parameters for DynamoDB query
@@ -72,11 +117,8 @@ def get(event, context):
     # Default error response in case of failure
     response_result = Responses.result_response(STATUS_ERROR, False, 'Error during execution.')
 
-    # Retrieve the action from the request body
-    action = body.get('action')
-
     # Validate the request data against a predefined schema
-    validation_schema = validate_request_datas_schema(action, params)
+    validation_schema = validate_request_datas_schema(action, datas)
     if not validation_schema['success']:
         # If validation fails, send an error response to the client
         response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Validation errors.', validation_schema)

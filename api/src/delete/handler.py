@@ -13,8 +13,39 @@ from src.helpers.event_utils import extract_event_info  # Utility to extract inf
 """
 /**
  * @asyncapi
- * This section defines the AsyncAPI specification for the template deletion channel.
- * It describes the publish and subscribe operations for deleting a template by ID.
+ * channels:
+ *   templateDelete:
+ *     description: Channel for deleting a specific template by ID.
+ *     publish:
+ *       operationId: templateDelete
+ *       summary: Delete a specific template.
+ *       message:
+ *         messageId: templateDelete
+ *         contentType: application/json
+ *         payload:
+ *           type: object
+ *           required:
+ *             - action
+ *             - datas
+ *           properties:
+ *             action:
+ *               type: string
+ *               description: The action to perform.
+ *               example: delete
+ *             datas:
+ *               type: object
+ *               required:
+ *                 - id
+ *               properties:
+ *                 id:
+ *                   type: string
+ *                   description: The unique identifier of the template to delete.
+ *                   example: 123e4567-e89b-12d3-a456-426614174000
+ *     subscribe:
+ *       operationId: templateDeleteResponse
+ *       summary: Receive response for the deleted template.
+ *       message:
+ *         $ref: '#/components/messages/TemplateDeleteResponse'
  */
 """
 
@@ -51,16 +82,29 @@ def delete(event, context):
     url = event_info.get('url')  # WebSocket URL for client communication
     connectionId = event_info.get('connectionId')  # WebSocket connection ID
 
-    # Retrieve the ID from the request body
+    # Parse the request body
     body = json.loads(event.get('body', '{}'))
-    id = body.get('id')
-    if not id:
-        # Respond with an error if ID is not provided
-        response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'ID parameter is required.')
+    action = body.get('action')
+    datas = body.get('datas', {})
+
+    # Check if action parameter is provided (mandatory)
+    if not action:
+        response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Action parameter is required.')
         send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
         return {
             'statusCode': STATUS_UNPROCESSABLE_ENTITY,
-            'body': json.dumps('ID parameter is required.')
+            'body': json.dumps('Action parameter is required.')
+        }
+
+    # Extract ID from datas
+    id = datas.get('id')
+    if not id:
+        # Respond with an error if ID is not provided
+        response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'ID parameter is required in datas.')
+        send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+        return {
+            'statusCode': STATUS_UNPROCESSABLE_ENTITY,
+            'body': json.dumps('ID parameter is required in datas.')
         }
 
     params = {'id': id}  # Parameters for DynamoDB operations
@@ -68,11 +112,8 @@ def delete(event, context):
     # Default error response setup
     response_result = Responses.result_response(STATUS_ERROR, False, 'Error during execution.')
 
-    # Get the action from the event body
-    action = body.get('action')
-
     # Validate the request against a predefined schema
-    validation_schema = validate_request_datas_schema(action, params)
+    validation_schema = validate_request_datas_schema(action, datas)
     if not validation_schema['success']:
         # Respond with validation errors if schema validation fails
         response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Validation errors.', validation_schema)

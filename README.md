@@ -422,7 +422,7 @@ This script is designed to manage WebSocket connections using AWS services. It h
 
 Before using the script, ensure the following environment variables are set:
 
-- `CONNECTION_TABLE`: The name of the DynamoDB table for storing WebSocket connection details.
+- `TABLE_NAME`: The name of the DynamoDB table for storing WebSocket connection details.
 - `COGNITO_POOL_ID`: The Cognito User Pool ID for JWT validation.
 - `REGION`: The AWS region for service endpoints.
 - `WEBSOCKET_ENDPOINT_URL`: The WebSocket endpoint URL for sending messages.
@@ -699,7 +699,7 @@ This script is designed to interact with AWS services, specifically AWS API Gate
 
 3. **Retrieve Access Token**:
    - If a connection ID is present, the script attempts to retrieve an associated access token from a DynamoDB table.
-   - It queries the DynamoDB table specified by the environment variable `CONNECTION_TABLE` to fetch the access token.
+   - It queries the DynamoDB table specified by the environment variable `TABLE_NAME` to fetch the access token.
 
 4. **Error Handling**:
    - The script includes error handling to manage exceptions that may occur during the retrieval of the access token from DynamoDB.
@@ -709,13 +709,13 @@ This script is designed to interact with AWS services, specifically AWS API Gate
 ### Prerequisites
 
 - **AWS Credentials**: Ensure that your AWS credentials are configured properly to allow access to DynamoDB and API Gateway.
-- **Environment Variable**: Set the environment variable `CONNECTION_TABLE` to the name of your DynamoDB table that stores connection information.
+- **Environment Variable**: Set the environment variable `TABLE_NAME` to the name of your DynamoDB table that stores connection information.
 
 ### Steps
 
 1. **Setup Environment**:
    - Ensure that Python and Boto3 are installed in your environment.
-   - Set the `CONNECTION_TABLE` environment variable to point to your DynamoDB table.
+   - Set the `TABLE_NAME` environment variable to point to your DynamoDB table.
 
 2. **Invoke the Function**:
    - The function `extract_event_info(event)` should be called with an event dictionary that contains the request context from AWS API Gateway.

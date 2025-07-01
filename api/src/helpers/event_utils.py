@@ -5,8 +5,8 @@ from botocore.exceptions import ClientError
 # Initialize a DynamoDB resource using Boto3
 dynamodb = boto3.resource('dynamodb')
 
-# Access the DynamoDB table specified by the environment variable 'CONNECTION_TABLE'
-table_connection = dynamodb.Table(os.getenv('CONNECTION_TABLE'))
+# Access the DynamoDB table specified by the environment variable 'TABLE_NAME'
+table_connection = dynamodb.Table(os.getenv('TABLE_NAME'))
 
 def extract_event_info(event):
     """

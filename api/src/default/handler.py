@@ -17,9 +17,9 @@ def default(event, context):
     dict: A dictionary representing an HTTP response with a status 
           code and a body message.
     """
-    # Return a successful HTTP response with a status code of 200
-    # and a body message indicating the default route.
+    # Return an error HTTP response with a status code of 422
+    # indicating that the action field is missing.
     return {
-        "statusCode": 200,  # HTTP status code indicating success
-        "body": "Default route"  # Message returned in the response body
+        "statusCode": 422,  # HTTP status code indicating unprocessable entity
+        "body": "Missing action field"  # Error message returned in the response body
     }

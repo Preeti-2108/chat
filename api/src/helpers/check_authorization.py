@@ -19,12 +19,12 @@ def check_authorization(event):
     """
     Validates the authorization token from an incoming event and retrieves the user ID.
     
-    This function checks for the presence of an authorization token in the event headers,
-    decodes the token to extract user information, and verifies the user's AWS account
-    using AWS Cognito if necessary.
-
+    This function checks for the presence of an authorization token in the event data.
+    For WebSocket events, it looks for the token in the message body.
+    For HTTP events, it looks in the headers.
+    
     Parameters:
-    event (dict): The event data containing headers with the authorization token.
+    event (dict): The event data containing the authorization token.
 
     Returns:
     str: The user ID extracted from the token or AWS Cognito.
@@ -32,9 +32,22 @@ def check_authorization(event):
     Raises:
     BadRequest: If the authorization token is missing, invalid, or lacks necessary information.
     """
-
-    # Retrieve the authorization header from the event, if present
-    authorization_header = event['headers']['authorization'] if 'authorization' in event['headers'] else None
+    
+    authorization_header = None
+    
+    # Check if this is a WebSocket event (has body) or HTTP event (has headers)
+    if 'body' in event and event.get('body'):
+        try:
+            import json
+            body = json.loads(event.get('body', '{}'))
+            # Look for authorization token in the message body
+            authorization_header = body.get('authorization') or body.get('token')
+        except (json.JSONDecodeError, TypeError):
+            pass
+    
+    # Fallback to headers for HTTP requests
+    if not authorization_header and 'headers' in event:
+        authorization_header = event['headers'].get('authorization') or event['headers'].get('Authorization')
 
     # Raise an error if the authorization token is missing
     if not authorization_header:

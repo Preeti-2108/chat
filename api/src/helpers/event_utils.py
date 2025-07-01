@@ -32,24 +32,27 @@ def extract_event_info(event):
     # Extract connection ID from the event's request context
     connection_id = event.get('requestContext', {}).get('connectionId')
 
-    # Initialize access token as None; will attempt to retrieve from DynamoDB
+    # Initialize access token as None
+    # TODO: Implement proper token storage/retrieval mechanism for WebSocket connections
     access_token = None
     
+    # For now, we disable the access token retrieval to avoid schema mismatch errors
+    # This should be implemented with a proper connections table if needed
+    
     # If a connection ID is present, attempt to retrieve the associated access token from DynamoDB
-    if connection_id:
-        try:
-            # Query DynamoDB for the item with the specified connection ID
-            response = table_connection.get_item(
-                Key={
-                    'connectionId': connection_id
-                }
-            )
-            # Extract the access token from the retrieved item, if available
-            access_token = response.get('Item', {}).get('access_token')
-            print(f"Access token for connection ID {connection_id}: {access_token}")
-        except ClientError as e:
-            # Log an error message if there is an issue retrieving the access token
-            print(f"Error retrieving access token: {e}")
+    # DISABLED: This causes schema errors because the main table uses 'id' not 'connectionId'
+    # if connection_id:
+    #     try:
+    #         response = table_connection.get_item(
+    #             Key={
+    #                 'connectionId': connection_id
+    #             }
+    #         )
+    #         access_token = response.get('Item', {}).get('access_token')
+    #         print(f"Access token for connection ID {connection_id}: {access_token}")
+    #     except ClientError as e:
+    #         print(f"Error retrieving access token: {e}")
+    #         access_token = None
     
     # Return a dictionary containing the URL, connection ID, and access token
     return {

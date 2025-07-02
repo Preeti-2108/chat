@@ -108,15 +108,24 @@ def edit(event, context):
     logger.debug('Logging event: %s', event)
     logger.info('Inside WebSocket edit function')
 
-    # Initialize DynamoDB resource and table
-    dynamodb = boto3.resource('dynamodb')
-    table = dynamodb.Table(os.getenv('TABLE'))
-
     # Define status codes for various outcomes
     STATUS_ERROR = 500
     STATUS_UNPROCESSABLE_ENTITY = 422
     STATUS_UPDATED = 200
     STATUS_NOT_FOUND = 404
+
+    # Initialize DynamoDB resource and table
+    table_name = os.getenv('TABLE')
+    if not table_name:
+        logger.error("TABLE environment variable is not set")
+        response_result = Responses.result_response(STATUS_ERROR, False, 'Configuration error: TABLE environment variable not set.')
+        return {
+            'statusCode': STATUS_ERROR,
+            'body': json.dumps('Configuration error')
+        }
+    
+    dynamodb = boto3.resource('dynamodb')
+    table = dynamodb.Table(table_name)
 
     # Extract necessary information from the event
     event_info = extract_event_info(event)
@@ -146,7 +155,6 @@ def edit(event, context):
             response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Validation errors.', validation_schema)
             return send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
 
-        # Check authorization and get the email of the user
         email = "toto"
         validation_schema['datas']['updatedBy'] = email
 

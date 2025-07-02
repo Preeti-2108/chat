@@ -195,17 +195,9 @@ def create(event, context):
                 'body': json.dumps('Validation failed')
             }
 
-        # Check authorization and add metadata to the data
-        try:
-            email = "toto"
-        except Exception as auth_err:
-            logger.error(f"Error during authorization check: {str(auth_err)}")
-            response_result = Responses.result_response(STATUS_ERROR, False, 'Authorization error.')
-            send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
-            return {
-                'statusCode': STATUS_ERROR,
-                'body': json.dumps('Authorization error')
-            }
+        
+        email = "toto"
+        
         validation_schema['datas']['createdBy'] = email
         validation_schema['datas']['updatedBy'] = email
         validation_schema['datas']['createdAt'] = datetime.now().isoformat()
@@ -247,7 +239,7 @@ def create(event, context):
         # Don't return error here as the main operation might have succeeded
 
     return {
-        'statusCode': 200,
+        'statusCode': STATUS_CREATED,
         'body': json.dumps('Message processed')
     }
 

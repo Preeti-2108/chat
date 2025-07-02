@@ -58,14 +58,10 @@ def connect(event, context, token=None):
             logger.warning(warning_message)
             logger.warning(f"Available parameters: {list(query_params.keys())}")
             logger.warning("Expected parameters: 'token' in query string, or 'Authorization' header")
+            logger.warning(f"Full event queryStringParameters: {event.get('queryStringParameters')}")
+            logger.warning(f"Full event headers: {event.get('headers')}")
             
-            # Envoyer le message d'erreur au client d'abord
-            try:
-                _send_error_and_disconnect(event, connection_id, warning_message, "authentication_error", query_params)
-            except Exception as send_error:
-                logger.error(f"Failed to send error message to client: {str(send_error)}")
-            
-            # Retourner 401 après avoir envoyé le message
+            # Retourner 401 avec message détaillé
             return {
                 "statusCode": STATUS_UNAUTHORIZED,
                 "body": json.dumps({
@@ -73,7 +69,9 @@ def connect(event, context, token=None):
                     "message": "Please provide a valid JWT token in query parameters (token) or headers (Authorization)",
                     "warning": warning_message,
                     "available_parameters": list(query_params.keys()),
-                    "expected_parameters": ["token", "Authorization (header)"]
+                    "expected_parameters": ["token", "Authorization (header)"],
+                    "connection_id": connection_id,
+                    "timestamp": int(time.time())
                 })
             }
         
@@ -106,18 +104,14 @@ def connect(event, context, token=None):
             error_message = f"Authentication failed for connection {connection_id}: {str(auth_error)}"
             logger.error(error_message)
             
-            # Envoyer le message d'erreur au client d'abord
-            try:
-                _send_error_and_disconnect(event, connection_id, error_message, "authentication_failed", query_params)
-            except Exception as send_error:
-                logger.error(f"Failed to send error message to client: {str(send_error)}")
-            
             return {
                 "statusCode": STATUS_UNAUTHORIZED,
                 "body": json.dumps({
                     "error": "Authentication failed",
                     "message": str(auth_error),
-                    "warning": error_message
+                    "warning": error_message,
+                    "connection_id": connection_id,
+                    "timestamp": int(time.time())
                 })
             }
             
@@ -174,55 +168,3 @@ def _store_connection_info(connection_id: str, user_info: dict, token: str, cont
         # Log the error but don't fail the connection
         logger.warning(f"Failed to store connection info: {str(e)}")
         pass
-
-def _send_error_and_disconnect(event, connection_id: str, warning_message: str, error_type: str, query_params: dict = None):
-    """
-    Envoie un message d'erreur au client via WebSocket.
-    
-    Args:
-        event: L'événement Lambda contenant les informations de contexte
-        connection_id: ID de la connexion WebSocket
-        warning_message: Message d'avertissement à envoyer
-        error_type: Type d'erreur (authentication_error, authentication_failed, etc.)
-        query_params: Paramètres de requête disponibles (optionnel)
-    """
-    try:
-        # Construire l'endpoint de l'API Gateway Management API
-        domain_name = event.get('requestContext', {}).get('domainName')
-        stage = event.get('requestContext', {}).get('stage')
-        
-        if not domain_name or not stage:
-            logger.warning("Cannot send message: missing domain or stage information")
-            return
-            
-        endpoint_url = f"https://{domain_name}/{stage}"
-        
-        # Créer le client API Gateway Management API
-        apigateway_management = boto3.client(
-            'apigatewaymanagementapi',
-            endpoint_url=endpoint_url
-        )
-        
-        # Message d'erreur à envoyer au client
-        error_response = {
-            "status": "error",
-            "type": error_type,
-            "error": "Authentication required" if error_type == "authentication_error" else "Authentication failed",
-            "warning": warning_message,
-            "action": "disconnect",
-            "timestamp": int(time.time()),
-            "available_parameters": list(query_params.keys()) if query_params else [],
-            "expected_parameters": ["token", "Authorization (header)"]
-        }
-        
-        # Envoyer le message au client
-        apigateway_management.post_to_connection(
-            ConnectionId=connection_id,
-            Data=json.dumps(error_response)
-        )
-        
-        logger.info(f"Error message sent to client {connection_id}")
-        
-    except Exception as e:
-        logger.error(f"Failed to send error message to client {connection_id}: {str(e)}")
-        # Ne pas lever l'exception car on veut quand même retourner 401

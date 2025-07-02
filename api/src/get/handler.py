@@ -2,6 +2,7 @@ import json  # Import JSON module for parsing and generating JSON data
 import os  # Import OS module for interacting with the operating system
 import boto3  # Import Boto3, the AWS SDK for Python, to interact with AWS services
 import logging  # Import logging module to log messages
+from decimal import Decimal  # Import Decimal for handling DynamoDB numeric types
 from botocore.exceptions import BotoCoreError, ClientError  # Import specific exceptions from BotoCore
 
 # Import custom helper modules for API responses, response construction, schema validation, WebSocket communication, and event information extraction
@@ -53,6 +54,26 @@ from src.helpers.event_utils import extract_event_info
 # Configure the logger for the module
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))  # Set the log level based on environment variable or default to 'INFO'
+
+def decimal_to_json_serializable(obj):
+    """
+    Convert DynamoDB Decimal objects to JSON-serializable types.
+    
+    :param obj: The object to convert (can be nested dict/list with Decimal values)
+    :return: The object with Decimal values converted to int or float
+    """
+    if isinstance(obj, dict):
+        return {key: decimal_to_json_serializable(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [decimal_to_json_serializable(item) for item in obj]
+    elif isinstance(obj, Decimal):
+        # Convert Decimal to int if it's a whole number, otherwise to float
+        if obj % 1 == 0:
+            return int(obj)
+        else:
+            return float(obj)
+    else:
+        return obj
 
 def get(event, context):
     """
@@ -160,8 +181,10 @@ def get(event, context):
                 response_result = Responses.result_response(STATUS_NOT_FOUND, False, f'Item with ID {id} not found.')
                 status_code = STATUS_NOT_FOUND
             else:
+                # Convert Decimal objects to JSON-serializable types before creating response
+                serializable_item = decimal_to_json_serializable(item)
                 # If item is found, prepare a success response with the item data
-                response_result = Responses.result_response(STATUS_FOUND, True, f'Item with ID {id} found.', item)
+                response_result = Responses.result_response(STATUS_FOUND, True, f'Item with ID {id} found.', serializable_item)
                 status_code = STATUS_FOUND
         except ClientError as e:
             # Log and handle DynamoDB client errors

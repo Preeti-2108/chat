@@ -3,6 +3,7 @@ import os
 import json
 import boto3
 import logging
+from decimal import Decimal
 from datetime import datetime
 from src.helpers.api_responses import Responses
 from src.helpers.construct_response import construct_response
@@ -94,6 +95,26 @@ from src.helpers.event_utils import extract_event_info  # Custom helper to extra
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))  # Set log level based on environment variable
 
+def decimal_to_json_serializable(obj):
+    """
+    Convert DynamoDB Decimal types to JSON-serializable types.
+    
+    :param obj: The object to convert (can be nested dict, list, or primitive)
+    :return: Object with Decimals converted to int or float
+    """
+    if isinstance(obj, dict):
+        return {key: decimal_to_json_serializable(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [decimal_to_json_serializable(item) for item in obj]
+    elif isinstance(obj, Decimal):
+        # Convert Decimal to int if it's a whole number, otherwise to float
+        if obj % 1 == 0:
+            return int(obj)
+        else:
+            return float(obj)
+    else:
+        return obj
+
 def edit(event, context):
     """
     Handles the WebSocket edit operation for updating a template in DynamoDB.
@@ -131,12 +152,39 @@ def edit(event, context):
     event_info = extract_event_info(event)
     url = event_info.get('url')
     connectionId = event_info.get('connectionId')
+    
+    logger.debug(f"Event info extracted - URL: {url}, ConnectionId: {connectionId}")
+    
+    # Validate that we have the necessary connection information
+    if not connectionId:
+        logger.error("ConnectionId not found in event")
+        return {
+            'statusCode': STATUS_ERROR,
+            'body': json.dumps({'error': 'ConnectionId not found in event'})
+        }
+    
+    if not url:
+        logger.error("WebSocket URL not found in event")
+        return {
+            'statusCode': STATUS_ERROR,
+            'body': json.dumps({'error': 'WebSocket URL not found in event'})
+        }
 
     try:
         # Parse the WebSocket message (expecting a JSON payload in the body)
+        logger.debug(f"Raw event body: {event.get('body', 'No body found')}")
+        
+        if not event.get('body'):
+            response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Request body is missing.')
+            return send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+        
         body = json.loads(event['body'])
+        logger.debug(f"Parsed body: {body}")
+        
         action = body.get('action')
         datas = body.get('datas', {})
+        
+        logger.info(f"Action: {action}, Datas: {datas}")
 
         # Extract ID from datas or path parameters
         id = datas.get('id')
@@ -145,18 +193,27 @@ def edit(event, context):
         if not id and event.get('pathParameters'):
             id = event['pathParameters'].get('id')
         
+        logger.info(f"Extracted ID: {id}")
+        
         if not id:
             response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'ID is required in datas or path parameters.')
             return send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
 
         # Validate the request and retrieve validation errors
+        logger.debug(f"Validating schema for action: {action}")
         validation_schema = validate_request_datas_schema(action, datas)
+        logger.debug(f"Validation result: {validation_schema}")
+        
         if not validation_schema['success']:
+            logger.warning(f"Validation failed: {validation_schema}")
             response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Validation errors.', validation_schema)
             return send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
 
-        email = "toto"
+        # TODO: Replace with actual user email from authentication context
+        email = "system@example.com"  # Should be extracted from JWT token or event context
         validation_schema['datas']['updatedBy'] = email
+        
+        logger.debug(f"Validated data before update: {validation_schema['datas']}")
 
         # Clean up the id field to prevent overwriting it
         if 'id' in datas:
@@ -181,13 +238,24 @@ def edit(event, context):
                 ReturnValues='ALL_NEW'
             )
 
-            # Build a successful response with the updated attributes
-            response_result = Responses.result_response(STATUS_UPDATED, True, f'Item with ID {id} updated successfully.', updated_item['Attributes'])
+            # Convert Decimal types to JSON-serializable types
+            serializable_attributes = decimal_to_json_serializable(updated_item['Attributes'])
 
+            # Build a successful response with the updated attributes
+            response_result = Responses.result_response(STATUS_UPDATED, True, f'Item with ID {id} updated successfully.', serializable_attributes)
+
+    except json.JSONDecodeError as json_err:
+        # Handle JSON parsing errors specifically
+        logger.error(f"JSON decode error: {str(json_err)}")
+        response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, f"Invalid JSON format: {str(json_err)}")
+    except KeyError as key_err:
+        # Handle missing key errors
+        logger.error(f"Missing required key: {str(key_err)}")
+        response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, f"Missing required field: {str(key_err)}")
     except Exception as err:
         # In case of error, log and build an error response
-        logger.error(f"Error during item update: {str(err)}")
-        response_result = Responses.result_response(STATUS_ERROR, False, f"Error occurred: {str(err)}")
+        logger.error(f"Unexpected error during item update: {str(err)}", exc_info=True)
+        response_result = Responses.result_response(STATUS_ERROR, False, f"Internal server error: {str(err)}")
 
     # Send the constructed response via WebSocket
     return send_to_client(connectionId, json.dumps(construct_response(response_result)), url)

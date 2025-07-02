@@ -33,26 +33,32 @@ def extract_event_info(event):
     connection_id = event.get('requestContext', {}).get('connectionId')
 
     # Initialize access token as None
-    # TODO: Implement proper token storage/retrieval mechanism for WebSocket connections
     access_token = None
     
-    # For now, we disable the access token retrieval to avoid schema mismatch errors
-    # This should be implemented with a proper connections table if needed
+    # Try to extract token from the event if needed
+    # This is an alternative way to get the token if not using middleware
+    from src.helpers.cognito_auth import extract_token_from_event
+    access_token = extract_token_from_event(event)
     
-    # If a connection ID is present, attempt to retrieve the associated access token from DynamoDB
-    # DISABLED: This causes schema errors because the main table uses 'id' not 'connectionId'
-    # if connection_id:
+    # Optional: Store/retrieve connection info from a dedicated connections table
+    # Uncomment the following code if you have a separate CONNECTIONS_TABLE
+    
+    # connections_table_name = os.getenv('CONNECTIONS_TABLE')
+    # if connection_id and connections_table_name:
     #     try:
-    #         response = table_connection.get_item(
+    #         connections_table = boto3.resource('dynamodb').Table(connections_table_name)
+    #         response = connections_table.get_item(
     #             Key={
     #                 'connectionId': connection_id
     #             }
     #         )
-    #         access_token = response.get('Item', {}).get('access_token')
+    #         stored_token = response.get('Item', {}).get('access_token')
+    #         if stored_token:
+    #             access_token = stored_token
     #         print(f"Access token for connection ID {connection_id}: {access_token}")
     #     except ClientError as e:
-    #         print(f"Error retrieving access token: {e}")
-    #         access_token = None
+    #         print(f"Error retrieving access token from connections table: {e}")
+    #         pass
     
     # Return a dictionary containing the URL, connection ID, and access token
     return {

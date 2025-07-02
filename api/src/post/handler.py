@@ -9,6 +9,7 @@ from src.helpers.construct_response import construct_response  # Custom helper t
 from src.helpers.schema_validation import validate_request_datas_schema  # Custom helper to validate request data schema
 from src.handler_websocket.handler import send_to_client  # Custom helper to send data to a client via WebSocket
 from src.helpers.event_utils import extract_event_info  # Custom helper to extract necessary information from the event
+from src.helpers.auth_middleware import authenticate_websocket  # Cognito authentication
 
 """
 /**
@@ -92,6 +93,7 @@ from src.helpers.event_utils import extract_event_info  # Custom helper to extra
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))  # Set Log Level
 
+@authenticate_websocket()  # Require authentication for this handler
 def create(event, context):
     """
     Main function to handle the creation of a new item.
@@ -186,8 +188,12 @@ def create(event, context):
                 'body': json.dumps('Validation failed')
             }
 
+        # Get authenticated user info from the JWT token (added by auth middleware)
+        user_info = event.get('auth', {}).get('user_info', {})
+        email = user_info.get('email') or user_info.get('username', 'unknown@example.com')
+        user_id = user_info.get('user_id', 'unknown')
         
-        email = "toto"
+        logger.info(f"Creating item for authenticated user: {email} (ID: {user_id})")
         
         validation_schema['datas']['createdBy'] = email
         validation_schema['datas']['updatedBy'] = email

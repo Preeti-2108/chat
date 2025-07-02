@@ -1,27 +1,56 @@
+import json
+import logging
+import os
+from src.helpers.auth_middleware import authenticate_websocket
+from src.helpers.api_responses import Responses
+
+logger = logging.getLogger(__name__)
+logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))
+
+# Define status codes
+STATUS_ERROR = 500
+STATUS_SUCCESS = 200
+@authenticate_websocket()  # Require authentication for this handler
 def send_message(event, context):
     """
-    Handles the sending of a message triggered by an event.
+    Handles the sending of a message triggered by an authenticated WebSocket event.
     
-    This function is typically invoked in response to an event, such as an HTTP request
-    or a message from a queue. It processes the event and returns a response indicating
-    the status of the message sending operation.
+    This function is typically invoked in response to an authenticated WebSocket event.
+    It processes the event and returns a response indicating the status of the message 
+    sending operation.
     
     Parameters:
-    event (dict): A dictionary containing event data. This could include details such as
-                  the message content, sender information, or any other relevant metadata.
+    event (dict): A dictionary containing event data, including authentication info.
     context (object): An object providing runtime information about the function execution.
-                      This may include details such as the function's execution environment,
-                      request ID, or timeout settings.
     
     Returns:
-    dict: A dictionary containing the HTTP status code and a message body. The status code
-          indicates the success of the operation (200 for success), and the body contains
-          a confirmation message ("Message sent").
+    dict: A dictionary containing the HTTP status code and a message body.
     """
     
-    # Return a response with a status code of 200, indicating success,
-    # and a body message confirming that the message has been sent.
-    return {
-        "statusCode": 200,  # HTTP status code for successful request
-        "body": "Message sent"  # Confirmation message for the client
-    }
+    try:
+        # Get authenticated user info from the event (added by middleware)
+        user_info = event.get('auth', {}).get('user_info', {})
+        username = user_info.get('username', 'unknown')
+        
+        logger.info(f"Message send request from authenticated user: {username}")
+        
+        # Here you would implement your message sending logic
+        # For example: send to other WebSocket connections, queue processing, etc.
+        
+        return {
+            "statusCode": STATUS_SUCCESS,
+            "body": json.dumps({
+                "message": "Message sent successfully",
+                "sender": username
+            })
+        }
+        
+    except Exception as e:
+        logger.error(f"Error sending message: {str(e)}")
+        return {
+            "statusCode": STATUS_ERROR,
+            "body": json.dumps({
+                "error": "Failed to send message",
+                "message": str(e)
+            })
+        }

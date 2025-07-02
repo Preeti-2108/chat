@@ -168,11 +168,17 @@ def edit(event, context):
         logger.info(f"Action: {action}, Datas: {datas}")
 
         # Extract ID from datas or path parameters
+        # Extract the ID from datas
         id = datas.get('id')
-        
-        # Alternative: extract ID from path parameters if not in datas
-        if not id and event.get('pathParameters'):
-            id = event['pathParameters'].get('id')
+        if not id:
+            # If 'id' is missing, send an error response to the client
+            logger.warning(f"Missing ID parameter in request. Datas: {datas}")
+            response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'ID parameter is required in datas.')
+            send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+            return {
+                'statusCode': STATUS_UNPROCESSABLE_ENTITY,
+                'body': json.dumps('ID parameter is required in datas.')
+            }
         
         logger.info(f"Extracted ID: {id}")
         

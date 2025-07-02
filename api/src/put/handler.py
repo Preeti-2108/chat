@@ -181,10 +181,6 @@ def edit(event, context):
             }
         
         logger.info(f"Extracted ID: {id}")
-        
-        if not id:
-            response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'ID is required in datas or path parameters.')
-            return send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
 
         # Validate the request and retrieve validation errors
         logger.debug(f"Validating schema for action: {action}")

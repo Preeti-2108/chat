@@ -37,18 +37,31 @@ def connect(event, context, token=None):
     connection_id = event.get('requestContext', {}).get('connectionId')
     logger.info(f"WebSocket connection attempt from: {connection_id}")
     
-    try:
-        # Extract JWT token from the connection request or use provided token parameter
-        if token is None:
+    # Extraire les paramètres de la requête
+    query_params = event.get('queryStringParameters') or {}
+    
+    # Récupérer le token depuis les paramètres ou utiliser le paramètre fourni
+    if token is None:
+        token = query_params.get('token')
+        
+        # Si pas trouvé dans les query params, essayer les headers
+        if not token:
             token = extract_token_from_event(event)
+    
+    logger.info(f"Available query parameters: {list(query_params.keys())}")
+    logger.info(f"Token parameter present: {'Yes' if token else 'No'}")
+    
+    try:
         
         if not token:
             warning_message = f"Connection {connection_id} attempted without authentication token"
             logger.warning(warning_message)
+            logger.warning(f"Available parameters: {list(query_params.keys())}")
+            logger.warning("Expected parameters: 'token' in query string, or 'Authorization' header")
             
             # Envoyer le message d'erreur au client d'abord
             try:
-                _send_error_and_disconnect(event, connection_id, warning_message, "authentication_error")
+                _send_error_and_disconnect(event, connection_id, warning_message, "authentication_error", query_params)
             except Exception as send_error:
                 logger.error(f"Failed to send error message to client: {str(send_error)}")
             
@@ -57,8 +70,10 @@ def connect(event, context, token=None):
                 "statusCode": STATUS_UNAUTHORIZED,
                 "body": json.dumps({
                     "error": "Authentication required",
-                    "message": "Please provide a valid JWT token in query parameters or headers",
-                    "warning": warning_message
+                    "message": "Please provide a valid JWT token in query parameters (token) or headers (Authorization)",
+                    "warning": warning_message,
+                    "available_parameters": list(query_params.keys()),
+                    "expected_parameters": ["token", "Authorization (header)"]
                 })
             }
         
@@ -93,7 +108,7 @@ def connect(event, context, token=None):
             
             # Envoyer le message d'erreur au client d'abord
             try:
-                _send_error_and_disconnect(event, connection_id, error_message, "authentication_failed")
+                _send_error_and_disconnect(event, connection_id, error_message, "authentication_failed", query_params)
             except Exception as send_error:
                 logger.error(f"Failed to send error message to client: {str(send_error)}")
             
@@ -160,7 +175,7 @@ def _store_connection_info(connection_id: str, user_info: dict, token: str, cont
         logger.warning(f"Failed to store connection info: {str(e)}")
         pass
 
-def _send_error_and_disconnect(event, connection_id: str, warning_message: str, error_type: str):
+def _send_error_and_disconnect(event, connection_id: str, warning_message: str, error_type: str, query_params: dict = None):
     """
     Envoie un message d'erreur au client via WebSocket.
     
@@ -169,6 +184,7 @@ def _send_error_and_disconnect(event, connection_id: str, warning_message: str, 
         connection_id: ID de la connexion WebSocket
         warning_message: Message d'avertissement à envoyer
         error_type: Type d'erreur (authentication_error, authentication_failed, etc.)
+        query_params: Paramètres de requête disponibles (optionnel)
     """
     try:
         # Construire l'endpoint de l'API Gateway Management API
@@ -194,7 +210,9 @@ def _send_error_and_disconnect(event, connection_id: str, warning_message: str, 
             "error": "Authentication required" if error_type == "authentication_error" else "Authentication failed",
             "warning": warning_message,
             "action": "disconnect",
-            "timestamp": int(time.time())
+            "timestamp": int(time.time()),
+            "available_parameters": list(query_params.keys()) if query_params else [],
+            "expected_parameters": ["token", "Authorization (header)"]
         }
         
         # Envoyer le message au client

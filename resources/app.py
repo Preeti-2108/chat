@@ -36,6 +36,9 @@ def does_secret_exist(name):
 
 create_table = not does_dynamodb_table_exist(table_name)
 create_secret = not does_secret_exist(secret_name)
+# Check if connections table exists
+connections_table_name = f"{table_name}-connections"
+create_connections_table = not does_dynamodb_table_exist(connections_table_name)
 
 resources_stack = ResourcesStack(
     app,
@@ -46,6 +49,7 @@ resources_stack = ResourcesStack(
     user_pool_id=user_pool_id,
     create_table=create_table,
     create_secret=create_secret,
+    create_connections_table=create_connections_table,
 )
 
 app.synth()

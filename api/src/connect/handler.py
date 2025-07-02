@@ -110,26 +110,29 @@ def _store_connection_info(connection_id: str, user_info: dict, token: str, cont
         # This is useful if you need to send messages to specific users or track active sessions
         
         connections_table_name = os.getenv('CONNECTIONS_TABLE')
-        if connections_table_name:
-            dynamodb = boto3.resource('dynamodb')
-            connections_table = dynamodb.Table(connections_table_name)
+        if not connections_table_name:
+            logger.info("CONNECTIONS_TABLE environment variable not set - skipping connection storage")
+            return
             
-            current_time = int(time.time())
-            
-            # Store connection with user info
-            connections_table.put_item(
-                Item={
-                    'connectionId': connection_id,
-                    'userId': user_info.get('user_id'),
-                    'username': user_info.get('username'),
-                    'email': user_info.get('email'),
-                    'groups': user_info.get('groups', []),
-                    'connectedAt': current_time,
-                    'ttl': current_time + (24 * 60 * 60)  # 24 hours TTL
-                }
-            )
-            
-            logger.info(f"Connection info stored for user: {user_info.get('username')}")
+        dynamodb = boto3.resource('dynamodb')
+        connections_table = dynamodb.Table(connections_table_name)
+        
+        current_time = int(time.time())
+        
+        # Store connection with user info
+        connections_table.put_item(
+            Item={
+                'connectionId': connection_id,
+                'userId': user_info.get('user_id'),
+                'username': user_info.get('username'),
+                'email': user_info.get('email'),
+                'groups': user_info.get('groups', []),
+                'connectedAt': current_time,
+                'ttl': current_time + (24 * 60 * 60)  # 24 hours TTL
+            }
+        )
+        
+        logger.info(f"Connection info stored for user: {user_info.get('username')}")
         
     except Exception as e:
         # Log the error but don't fail the connection

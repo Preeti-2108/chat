@@ -62,19 +62,28 @@ def _cleanup_connection_info(connection_id: str):
     """
     try:
         connections_table_name = os.getenv('CONNECTIONS_TABLE')
-        if connections_table_name and connection_id:
-            dynamodb = boto3.resource('dynamodb')
-            connections_table = dynamodb.Table(connections_table_name)
+        if not connections_table_name:
+            logger.info("CONNECTIONS_TABLE environment variable not set - skipping connection cleanup")
+            return
             
-            # Remove the connection record
-            connections_table.delete_item(
-                Key={'connectionId': connection_id}
-            )
+        if not connection_id:
+            logger.warning("Connection ID is empty - skipping connection cleanup")
+            return
             
-            logger.info(f"Connection info cleaned up for: {connection_id}")
+        dynamodb = boto3.resource('dynamodb')
+        connections_table = dynamodb.Table(connections_table_name)
+        
+        # Remove the connection record
+        connections_table.delete_item(
+            Key={'connectionId': connection_id}
+        )
+        
+        logger.info(f"Connection info cleaned up for: {connection_id}")
         
     except ClientError as e:
-        if e.response['Error']['Code'] != 'ResourceNotFoundException':
+        if e.response['Error']['Code'] == 'ResourceNotFoundException':
+            logger.info(f"Connections table {connections_table_name} not found - skipping cleanup")
+        else:
             logger.warning(f"Failed to cleanup connection info for {connection_id}: {str(e)}")
     except Exception as e:
         logger.warning(f"Failed to cleanup connection info for {connection_id}: {str(e)}")

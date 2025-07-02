@@ -59,12 +59,6 @@ variable "SLS_NAME" {
   type = string
 }
 
-variable "TOKEN" {
-  type        = string
-  description = "Authentication token"
-  sensitive   = true
-}
-
 # ######
 # ## Providers declaration
 # ######
@@ -131,6 +125,9 @@ resource "azurerm_api_management_api" "ics_api" {
     header = "api-key"
     query  = "api-key"
   }
+
+  # Configuration pour permettre le paramètre token supplémentaire
+  # Le token sera envoyé par l'utilisateur comme paramètre de query ou header
  
   description = "Documentation (CTRL+clic for open in a new tab) : https://${var.APIM_NAME}.blob.core.windows.net/${var.API_SYSTEM_NAME}/index.html"
 
@@ -143,15 +140,13 @@ resource "azurerm_api_management_product_api" "ics_product_api" {
   resource_group_name = var.APIM_RG
 }
 
-# Politique API utilisant le fichier policies.xml existant avec injection du token
+# Politique API utilisant le fichier policies.xml existant
 resource "azurerm_api_management_api_policy" "ics_api_policy" {
   api_name            = azurerm_api_management_api.ics_api.name
   api_management_name = var.APIM_NAME
   resource_group_name = var.APIM_RG
 
-  xml_content = templatefile("../api/policies.xml", {
-    TOKEN = var.TOKEN
-  })
+  xml_content = file("../api/policies.xml")
 }
 
 resource "azurerm_storage_account" "ics_products_documentation" {

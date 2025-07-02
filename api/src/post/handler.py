@@ -109,23 +109,56 @@ def create(event, context):
     logger.debug('logging event: %s', event)  # Log the incoming event
     logger.info('Inside create function')  # Log entry into the function
     
-    # Initialize DynamoDB resource and table
-    dynamodb = boto3.resource('dynamodb')
-    table = dynamodb.Table(os.getenv('TABLE'))
-
-    # Extract necessary information from the event
-    event_info = extract_event_info(event)
-    url = event_info.get('url')
-    connectionId = event_info.get('connectionId')
-
     # Define status codes
     STATUS_ERROR = 500
     STATUS_UNPROCESSABLE_ENTITY = 422
     STATUS_CREATED = 201
+    
+    # Initialize DynamoDB resource and table
+    table_name = os.getenv('TABLE')
+    if not table_name:
+        logger.error("TABLE environment variable is not set")
+        response_result = Responses.result_response(STATUS_ERROR, False, 'Configuration error: TABLE environment variable not set.')
+        return {
+            'statusCode': STATUS_ERROR,
+            'body': json.dumps('Configuration error')
+        }
+    
+    dynamodb = boto3.resource('dynamodb')
+    table = dynamodb.Table(table_name)
+
+    # Extract necessary information from the event
+    try:
+        event_info = extract_event_info(event)
+        url = event_info.get('url')
+        connectionId = event_info.get('connectionId')
+        
+        if not connectionId:
+            logger.error("No connection ID found in event")
+            return {
+                'statusCode': STATUS_ERROR,
+                'body': json.dumps('Missing connection ID')
+            }
+    except Exception as event_err:
+        logger.error(f"Error extracting event info: {str(event_err)}")
+        return {
+            'statusCode': STATUS_ERROR,
+            'body': json.dumps('Error processing event')
+        }
 
     try:
         # Parse the body of the event
-        body = json.loads(event.get('body', '{}'))
+        try:
+            body = json.loads(event.get('body', '{}'))
+        except json.JSONDecodeError as json_err:
+            logger.error(f"Error parsing JSON body: {str(json_err)}")
+            response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Invalid JSON format in request body.')
+            send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+            return {
+                'statusCode': STATUS_UNPROCESSABLE_ENTITY,
+                'body': json.dumps('Invalid JSON format')
+            }
+        
         action = body.get('action')
         datas = body.get('datas')
 
@@ -142,7 +175,16 @@ def create(event, context):
         print('datas:', datas)
 
         # Validate the request data schema
-        validation_schema = validate_request_datas_schema(action, datas)
+        try:
+            validation_schema = validate_request_datas_schema(action, datas)
+        except Exception as validation_err:
+            logger.error(f"Error during schema validation: {str(validation_err)}")
+            response_result = Responses.result_response(STATUS_ERROR, False, 'Schema validation error.')
+            send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+            return {
+                'statusCode': STATUS_ERROR,
+                'body': json.dumps('Schema validation error')
+            }
 
         if not validation_schema['success']:
             # If validation fails, send a response to the client and return
@@ -155,15 +197,33 @@ def create(event, context):
             }
 
         # Check authorization and add metadata to the data
-        email = check_authorization(body)
+        try:
+            email = check_authorization(body)
+        except Exception as auth_err:
+            logger.error(f"Error during authorization check: {str(auth_err)}")
+            response_result = Responses.result_response(STATUS_ERROR, False, 'Authorization error.')
+            send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+            return {
+                'statusCode': STATUS_ERROR,
+                'body': json.dumps('Authorization error')
+            }
         validation_schema['datas']['createdBy'] = email
         validation_schema['datas']['updatedBy'] = email
         validation_schema['datas']['createdAt'] = datetime.now().isoformat()
         validation_schema['datas']['updatedAt'] = datetime.now().isoformat()
 
         # Construct the new item to be inserted
-        new_item = construct_new_item(validation_schema['datas'])
-        logger.debug('New item to be inserted: %s', new_item)
+        try:
+            new_item = construct_new_item(validation_schema['datas'])
+            logger.debug('New item to be inserted: %s', new_item)
+        except Exception as construct_err:
+            logger.error(f"Error constructing new item: {str(construct_err)}")
+            response_result = Responses.result_response(STATUS_ERROR, False, 'Error constructing item.')
+            send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+            return {
+                'statusCode': STATUS_ERROR,
+                'body': json.dumps('Error constructing item')
+            }
 
         try:
             # Insert the new item into the DynamoDB table
@@ -181,7 +241,11 @@ def create(event, context):
         response_result = Responses.result_response(STATUS_ERROR, False, 'Error during the execution.')
 
     # Send the response to the client
-    send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+    try:
+        send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+    except Exception as websocket_err:
+        logger.error(f"Error sending response to client: {str(websocket_err)}")
+        # Don't return error here as the main operation might have succeeded
 
     return {
         'statusCode': 200,

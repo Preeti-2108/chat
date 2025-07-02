@@ -61,9 +61,15 @@ def connect(event, context, token=None):
             logger.warning(f"Full event queryStringParameters: {event.get('queryStringParameters')}")
             logger.warning(f"Full event headers: {event.get('headers')}")
             
-            # Retourner 200 pour que le client reçoive le message, mais avec une indication d'erreur
+            # Essayer d'envoyer le message d'erreur puis retourner 401
+            try:
+                _send_error_message_to_client(event, connection_id, warning_message)
+            except Exception as send_error:
+                logger.error(f"Failed to send error message to client: {str(send_error)}")
+            
+            # Retourner 401 pour forcer la déconnexion
             return {
-                "statusCode": STATUS_CONNECTED,
+                "statusCode": STATUS_UNAUTHORIZED,
                 "body": json.dumps({
                     "status": "authentication_error",
                     "error": "Authentication required",
@@ -72,8 +78,7 @@ def connect(event, context, token=None):
                     "available_parameters": list(query_params.keys()),
                     "expected_parameters": ["token", "Authorization (header)"],
                     "connection_id": connection_id,
-                    "timestamp": int(time.time()),
-                    "action": "disconnect_required"
+                    "timestamp": int(time.time())
                 })
             }
         
@@ -109,17 +114,22 @@ def connect(event, context, token=None):
             error_message = f"Authentication failed for connection {connection_id}: {str(auth_error)}"
             logger.error(error_message)
             
-            # Retourner 200 pour que le client reçoive le message, mais avec une indication d'erreur
+            # Essayer d'envoyer le message d'erreur puis retourner 401
+            try:
+                _send_error_message_to_client(event, connection_id, error_message)
+            except Exception as send_error:
+                logger.error(f"Failed to send error message to client: {str(send_error)}")
+            
+            # Retourner 401 pour forcer la déconnexion
             return {
-                "statusCode": STATUS_CONNECTED,
+                "statusCode": STATUS_UNAUTHORIZED,
                 "body": json.dumps({
                     "status": "authentication_failed",
                     "error": "Authentication failed",
                     "message": str(auth_error),
                     "warning": error_message,
                     "connection_id": connection_id,
-                    "timestamp": int(time.time()),
-                    "action": "disconnect_required"
+                    "timestamp": int(time.time())
                 })
             }
             
@@ -176,3 +186,50 @@ def _store_connection_info(connection_id: str, user_info: dict, token: str, cont
         # Log the error but don't fail the connection
         logger.warning(f"Failed to store connection info: {str(e)}")
         pass
+
+def _send_error_message_to_client(event, connection_id: str, warning_message: str):
+    """
+    Tente d'envoyer un message d'erreur au client via WebSocket avant la déconnexion.
+    
+    Args:
+        event: L'événement Lambda contenant les informations de contexte
+        connection_id: ID de la connexion WebSocket
+        warning_message: Message d'avertissement à envoyer
+    """
+    try:
+        # Construire l'endpoint de l'API Gateway Management API
+        domain_name = event.get('requestContext', {}).get('domainName')
+        stage = event.get('requestContext', {}).get('stage')
+        
+        if not domain_name or not stage:
+            logger.warning("Cannot send message: missing domain or stage information")
+            return
+            
+        endpoint_url = f"https://{domain_name}/{stage}"
+        
+        # Créer le client API Gateway Management API
+        apigateway_management = boto3.client(
+            'apigatewaymanagementapi',
+            endpoint_url=endpoint_url
+        )
+        
+        # Message d'erreur à envoyer au client
+        error_response = {
+            "type": "authentication_error",
+            "error": "Authentication required",
+            "warning": warning_message,
+            "timestamp": int(time.time()),
+            "connection_will_close": True
+        }
+        
+        # Envoyer le message au client
+        apigateway_management.post_to_connection(
+            ConnectionId=connection_id,
+            Data=json.dumps(error_response)
+        )
+        
+        logger.info(f"Error message sent to client {connection_id} before disconnection")
+        
+    except Exception as e:
+        logger.error(f"Failed to send error message to client {connection_id}: {str(e)}")
+        # Ne pas lever l'exception car on veut quand même retourner 401

@@ -38,7 +38,7 @@ create_table = not does_dynamodb_table_exist(table_name)
 create_secret = not does_secret_exist(secret_name)
 # Check if connections table exists
 connections_table_name = f"{table_name}-CONNECTIONS"
-create_connections_table = not does_dynamodb_table_exist(connections_table_name)
+create_connections_table = True  # Force creation of connections table
 
 resources_stack = ResourcesStack(
     app,

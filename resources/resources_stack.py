@@ -21,7 +21,7 @@ class ResourcesStack(Stack):
         user_pool_id: str,
         create_table: bool = False,
         create_secret: bool = False,
-        secret_value: str = "",  # ✅ Ajout ici
+        secret_value: str = "",
         create_connections_table: bool = False,
         **kwargs
     ):
@@ -91,7 +91,11 @@ class ResourcesStack(Stack):
         CfnOutput(self, "SecretName", value=self.secret.secret_name)
         CfnOutput(self, "UserPoolId", value=self.user_pool.user_pool_id)
         
-        # Connections table outputs (if created)
+        # Connections table outputs (only if created)
         if self.connections_table:
             CfnOutput(self, "ConnectionsTableArn", value=self.connections_table.table_arn)
             CfnOutput(self, "ConnectionsTableName", value=self.connections_table.table_name)
+        else:
+            # Output placeholder values when table is not created
+            CfnOutput(self, "ConnectionsTableArn", value="Table not created")
+            CfnOutput(self, "ConnectionsTableName", value="Table not created")

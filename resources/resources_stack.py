@@ -47,7 +47,7 @@ class ResourcesStack(Stack):
         if create_connections_table:
             self.connections_table = dynamodb.Table(
                 self, "ConnectionsTable",
-                table_name=f"{table_name}-connections",
+                table_name=f"{table_name}-CONNECTIONS",
                 partition_key=dynamodb.Attribute(name="connectionId", type=dynamodb.AttributeType.STRING),
                 removal_policy=RemovalPolicy.DESTROY,  # Can be destroyed as it's temporary data
                 billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,

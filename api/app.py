@@ -16,7 +16,7 @@ table_name = get_env_var("TABLE")
 user_pool_id = get_env_var("COGNITO_POOL_ID")
 
 # Construct connections table name
-connections_table_name = f"{table_name}-connections"
+connections_table_name = f"{table_name}-CONNECTIONS"
 
 lambdas_stack = LambdasStack(
     app,

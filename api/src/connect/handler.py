@@ -61,17 +61,19 @@ def connect(event, context, token=None):
             logger.warning(f"Full event queryStringParameters: {event.get('queryStringParameters')}")
             logger.warning(f"Full event headers: {event.get('headers')}")
             
-            # Retourner 401 avec message détaillé
+            # Retourner 200 pour que le client reçoive le message, mais avec une indication d'erreur
             return {
-                "statusCode": STATUS_UNAUTHORIZED,
+                "statusCode": STATUS_CONNECTED,
                 "body": json.dumps({
+                    "status": "authentication_error",
                     "error": "Authentication required",
                     "message": "Please provide a valid JWT token in query parameters (token) or headers (Authorization)",
                     "warning": warning_message,
                     "available_parameters": list(query_params.keys()),
                     "expected_parameters": ["token", "Authorization (header)"],
                     "connection_id": connection_id,
-                    "timestamp": int(time.time())
+                    "timestamp": int(time.time()),
+                    "action": "disconnect_required"
                 })
             }
         
@@ -91,12 +93,15 @@ def connect(event, context, token=None):
             return {
                 "statusCode": STATUS_CONNECTED,
                 "body": json.dumps({
+                    "status": "connected",
                     "message": "Connected successfully",
                     "user": {
                         "username": user_info.get('username'),
                         "email": user_info.get('email'),
                         "user_id": user_info.get('user_id')
-                    }
+                    },
+                    "connection_id": connection_id,
+                    "timestamp": int(time.time())
                 })
             }
             
@@ -104,14 +109,17 @@ def connect(event, context, token=None):
             error_message = f"Authentication failed for connection {connection_id}: {str(auth_error)}"
             logger.error(error_message)
             
+            # Retourner 200 pour que le client reçoive le message, mais avec une indication d'erreur
             return {
-                "statusCode": STATUS_UNAUTHORIZED,
+                "statusCode": STATUS_CONNECTED,
                 "body": json.dumps({
+                    "status": "authentication_failed",
                     "error": "Authentication failed",
                     "message": str(auth_error),
                     "warning": error_message,
                     "connection_id": connection_id,
-                    "timestamp": int(time.time())
+                    "timestamp": int(time.time()),
+                    "action": "disconnect_required"
                 })
             }
             

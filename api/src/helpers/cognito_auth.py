@@ -230,18 +230,32 @@ def extract_token_from_event(event: Dict[str, Any]) -> Optional[str]:
     """
     # Try to get token from query string parameters
     query_params = event.get('queryStringParameters') or {}
+    
+    # Check for token parameter
     token = query_params.get('token')
     if token:
         return token
     
+    # Check for api-key parameter (same treatment as token)
+    api_key = query_params.get('api-key') or query_params.get('apikey')
+    if api_key:
+        return api_key
+    
     # Try to get token from headers
     headers = event.get('headers') or {}
+    
+    # Check Authorization header
     auth_header = headers.get('Authorization') or headers.get('authorization')
     if auth_header:
         # Handle "Bearer <token>" format
         if auth_header.startswith('Bearer '):
             return auth_header[7:]
         return auth_header
+    
+    # Check x-api-key header (same treatment as token)
+    api_key_header = headers.get('x-api-key') or headers.get('X-API-Key')
+    if api_key_header:
+        return api_key_header
     
     # Try to get token from multi-value headers (API Gateway v2)
     multi_headers = event.get('multiValueHeaders') or {}
@@ -252,8 +266,9 @@ def extract_token_from_event(event: Dict[str, Any]) -> Optional[str]:
             return auth_header[7:]
         return auth_header
     
-    # Try to get token from WebSocket subprotocols (alternative approach)
-    request_context = event.get('requestContext', {})
-    subprotocols = request_context.get('connectionId')  # This might need adjustment based on your setup
+    # Check x-api-key in multi-value headers
+    api_key_headers = multi_headers.get('x-api-key') or multi_headers.get('X-API-Key')
+    if api_key_headers and isinstance(api_key_headers, list) and api_key_headers:
+        return api_key_headers[0]
     
     return None

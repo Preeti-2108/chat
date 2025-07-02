@@ -133,6 +133,7 @@ resource "azurerm_api_management_api" "ics_api" {
   # Ajout de dépendances explicites
   depends_on = [
     azurerm_storage_account.ics_products_documentation,
+    azurerm_storage_account_static_website.ics_products_documentation_static_website,
     azurerm_storage_container.docs
   ]
 }
@@ -159,15 +160,16 @@ resource "azurerm_storage_account" "ics_products_documentation" {
   location                 = "francecentral"
   account_tier            = "Standard"
   account_replication_type = "LRS"
-  
-  static_website {
-    index_document = "index.html"
-  }
 
   tags = {
     Environment = var.ENV
     Project     = var.API_SYSTEM_NAME
   }
+}
+
+resource "azurerm_storage_account_static_website" "ics_products_documentation_static_website" {
+  storage_account_id = azurerm_storage_account.ics_products_documentation.id
+  index_document     = "index.html"
 }
 
 resource "azurerm_storage_container" "docs" {

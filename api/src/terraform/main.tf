@@ -120,6 +120,9 @@ resource "azurerm_api_management_api" "ics_api" {
   protocols           = ["wss"]
   service_url         = var.API_GATEWAY_ENDPOINT
   api_type            = "websocket" # Specify the API type as WebSocket
+  
+  # Important pour les APIs WebSocket
+  soap_pass_through = false
 
   subscription_key_parameter_names {
     header = "api-key"
@@ -131,6 +134,11 @@ resource "azurerm_api_management_api" "ics_api" {
  
   description = "Documentation (CTRL+clic for open in a new tab) : https://${var.APIM_NAME}.blob.core.windows.net/${var.API_SYSTEM_NAME}/index.html"
 
+  # Ajout de dépendances explicites
+  depends_on = [
+    azurerm_storage_account.ics_products_documentation,
+    azurerm_storage_container.docs
+  ]
 }
 
 resource "azurerm_api_management_product_api" "ics_product_api" {
@@ -163,32 +171,60 @@ resource "azurerm_storage_container" "docs" {
   container_access_type = "blob"
 }
 
+# Conditional creation of documentation blobs only if output directory exists
+locals {
+  output_files = fileexists("output") ? tolist(fileset("output", "*")) : []
+  css_files = fileexists("output/css") ? tolist(fileset("output/css", "*")) : []
+  js_files = fileexists("output/js") ? tolist(fileset("output/js", "*")) : []
+}
+
 resource "azurerm_storage_blob" "api_docs" {
-  count                 = length(tolist(fileset("output", "*")))
-  name                  = basename(tolist(fileset("output", "*"))[count.index])
+  count                 = length(local.output_files)
+  name                  = basename(local.output_files[count.index])
   storage_account_name  = azurerm_storage_account.ics_products_documentation.name
   storage_container_name = azurerm_storage_container.docs.name
   type                  = "Block"
-  source                = "output/${basename(tolist(fileset("output", "*"))[count.index])}"
+  source                = "output/${basename(local.output_files[count.index])}"
   content_type          = "text/html"
 }
 
 resource "azurerm_storage_blob" "api_docs_css" {
-  count                 = length(tolist(fileset("output/css", "*")))
-  name                  = "css/${basename(tolist(fileset("output/css", "*"))[count.index])}"
+  count                 = length(local.css_files)
+  name                  = "css/${basename(local.css_files[count.index])}"
   storage_account_name  = azurerm_storage_account.ics_products_documentation.name
   storage_container_name = azurerm_storage_container.docs.name
   type                  = "Block"
-  source                = "output/css/${basename(tolist(fileset("output/css", "*"))[count.index])}"
+  source                = "output/css/${basename(local.css_files[count.index])}"
   content_type          = "text/css"
 }
 
 resource "azurerm_storage_blob" "api_docs_js" {
-  count                 = length(tolist(fileset("output/js", "*")))
-  name                  = "js/${basename(tolist(fileset("output/js", "*"))[count.index])}"
+  count                 = length(local.js_files)
+  name                  = "js/${basename(local.js_files[count.index])}"
   storage_account_name  = azurerm_storage_account.ics_products_documentation.name
   storage_container_name = azurerm_storage_container.docs.name
   type                  = "Block"
-  source                = "output/js/${basename(tolist(fileset("output/js", "*"))[count.index])}"
+  source                = "output/js/${basename(local.js_files[count.index])}"
   content_type          = "application/javascript"
+}
+
+# Outputs pour debugging
+output "api_management_api_id" {
+  description = "ID de l'API créée"
+  value       = azurerm_api_management_api.ics_api.id
+}
+
+output "api_management_api_url" {
+  description = "URL de l'API WebSocket"
+  value       = "wss://${var.APIM_NAME}.azure-api.net/api/${var.API_VERSION}/${var.API_SYSTEM_NAME}"
+}
+
+output "storage_account_url" {
+  description = "URL du compte de stockage pour la documentation"
+  value       = azurerm_storage_account.ics_products_documentation.primary_web_endpoint
+}
+
+output "documentation_url" {
+  description = "URL de la documentation"
+  value       = "https://${var.APIM_NAME}.blob.core.windows.net/${var.API_SYSTEM_NAME}/index.html"
 }

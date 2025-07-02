@@ -3,16 +3,6 @@
         <base />
         <rate-limit-by-key calls="100" renewal-period="1" counter-key="@(context.Request.IpAddress)" />
         <rate-limit-by-key calls="100" renewal-period="1" counter-key="@(context.Subscription.Key)" />
-        <choose>
-            <when condition="@(context.Request.Headers.ContainsKey("Authorization"))">
-                <set-query-parameter name="token" exists-action="override">
-                    <value>@{
-                        string authHeader = context.Request.Headers.GetValueOrDefault("Authorization", "");
-                        return authHeader.StartsWith("Bearer ") ? authHeader.Substring(7) : authHeader;
-                    }</value>
-                </set-query-parameter>
-            </when>
-        </choose>
     </inbound>
     <backend>
         <base />

@@ -119,7 +119,6 @@ resource "azurerm_api_management_api" "ics_api" {
   path                = "api/${var.API_VERSION}/${var.API_SYSTEM_NAME}"
   protocols           = ["wss"]
   service_url         = var.API_GATEWAY_ENDPOINT
-  api_type            = "websocket" # Specify the API type as WebSocket
 
   subscription_key_parameter_names {
     header = "api-key"
@@ -129,7 +128,7 @@ resource "azurerm_api_management_api" "ics_api" {
   # Configuration pour permettre le paramètre token supplémentaire
   # Le token sera envoyé par l'utilisateur comme paramètre de query ou header
  
-  description = "Documentation (CTRL+clic for open in a new tab) : https://${var.APIM_NAME}.blob.core.windows.net/${var.API_SYSTEM_NAME}/index.html"
+  description = "Documentation (CTRL+clic for open in a new tab) : https://${azurerm_storage_account.ics_products_documentation.name}.blob.core.windows.net/${var.API_SYSTEM_NAME}/index.html"
 
   # Ajout de dépendances explicites
   depends_on = [
@@ -155,16 +154,25 @@ resource "azurerm_api_management_api_policy" "ics_api_policy" {
 }
 
 resource "azurerm_storage_account" "ics_products_documentation" {
-  name                     = var.APIM_NAME
+  name                     = lower(replace("${var.APIM_NAME}docs", "/[^a-z0-9]/", ""))
   resource_group_name      = var.APIM_RG
   location                 = "francecentral"
   account_tier            = "Standard"
   account_replication_type = "LRS"
+  
+  static_website {
+    index_document = "index.html"
+  }
+
+  tags = {
+    Environment = var.ENV
+    Project     = var.API_SYSTEM_NAME
+  }
 }
 
 resource "azurerm_storage_container" "docs" {
   name                  = var.API_SYSTEM_NAME
-  storage_account_id = azurerm_storage_account.ics_products_documentation.id
+  storage_account_name  = azurerm_storage_account.ics_products_documentation.name
   container_access_type = "blob"
 }
 
@@ -223,5 +231,5 @@ output "storage_account_url" {
 
 output "documentation_url" {
   description = "URL de la documentation"
-  value       = "https://${var.APIM_NAME}.blob.core.windows.net/${var.API_SYSTEM_NAME}/index.html"
+  value       = "https://${azurerm_storage_account.ics_products_documentation.name}.blob.core.windows.net/${var.API_SYSTEM_NAME}/index.html"
 }

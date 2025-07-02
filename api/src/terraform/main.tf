@@ -120,9 +120,6 @@ resource "azurerm_api_management_api" "ics_api" {
   protocols           = ["wss"]
   service_url         = var.API_GATEWAY_ENDPOINT
   api_type            = "websocket" # Specify the API type as WebSocket
-  
-  # Important pour les APIs WebSocket
-  soap_pass_through = false
 
   subscription_key_parameter_names {
     header = "api-key"
@@ -173,9 +170,9 @@ resource "azurerm_storage_container" "docs" {
 
 # Conditional creation of documentation blobs only if output directory exists
 locals {
-  output_files = fileexists("output") ? tolist(fileset("output", "*")) : []
-  css_files = fileexists("output/css") ? tolist(fileset("output/css", "*")) : []
-  js_files = fileexists("output/js") ? tolist(fileset("output/js", "*")) : []
+  output_files = can(fileset("output", "*")) ? tolist(fileset("output", "*")) : []
+  css_files = can(fileset("output/css", "*")) ? tolist(fileset("output/css", "*")) : []
+  js_files = can(fileset("output/js", "*")) ? tolist(fileset("output/js", "*")) : []
 }
 
 resource "azurerm_storage_blob" "api_docs" {

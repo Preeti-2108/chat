@@ -67,19 +67,25 @@ def connect(event, context, token=None):
             except Exception as send_error:
                 logger.error(f"Failed to send error message to client: {str(send_error)}")
             
-            # Retourner 401 pour forcer la déconnexion
+            # Retourner 403 (Forbidden) qui pourrait être mieux transmis que 401
             return {
-                "statusCode": STATUS_UNAUTHORIZED,
+                "statusCode": 403,
+                "statusText": "403 - Token Required",
                 "body": json.dumps({
                     "status": "authentication_error",
-                    "error": "401",
+                    "error": "401 - Token Required",
                     "message": "Authentication required - Please provide a valid JWT token in query parameters (token) or headers (Authorization)",
                     "warning": warning_message,
                     "available_parameters": list(query_params.keys()),
                     "expected_parameters": ["token", "Authorization (header)"],
                     "connection_id": connection_id,
                     "timestamp": int(time.time())
-                })
+                }),
+                "headers": {
+                    "X-Error-Message": "401 - Token Required",
+                    "X-Connection-ID": connection_id,
+                    "X-Warning": warning_message
+                }
             }
         
         # Validate the Cognito JWT token

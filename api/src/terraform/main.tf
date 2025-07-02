@@ -125,6 +125,9 @@ resource "azurerm_api_management_api" "ics_api" {
     header = "api-key"
     query  = "api-key"
   }
+  
+  # Configuration pour supporter token en plus d'api-key
+  subscription_required = true
  
   description = "Documentation (CTRL+clic for open in a new tab) : https://${var.APIM_NAME}.blob.core.windows.net/${var.API_SYSTEM_NAME}/index.html"
 
@@ -179,4 +182,41 @@ resource "azurerm_storage_blob" "api_docs_js" {
   type                  = "Block"
   source                = "output/js/${basename(tolist(fileset("output/js", "*"))[count.index])}"
   content_type          = "application/javascript"
+}
+
+# Politique API Management pour supporter token et api-key
+resource "azurerm_api_management_api_policy" "ics_api_policy" {
+  api_name            = azurerm_api_management_api.ics_api.name
+  api_management_name = var.APIM_NAME
+  resource_group_name = var.APIM_RG
+
+  xml_content = <<XML
+<policies>
+  <inbound>
+    <base />
+    <!-- Vérifier si le paramètre token est présent et l'utiliser comme api-key si nécessaire -->
+    <choose>
+      <when condition="@(context.Request.Url.Query.ContainsKey("token") && !context.Request.Url.Query.ContainsKey("api-key"))">
+        <set-query-parameter name="api-key" exists-action="override">
+          <value>@(context.Request.Url.Query["token"])</value>
+        </set-query-parameter>
+      </when>
+      <when condition="@(context.Request.Headers.ContainsKey("token") && !context.Request.Headers.ContainsKey("api-key"))">
+        <set-header name="api-key" exists-action="override">
+          <value>@(context.Request.Headers["token"])</value>
+        </set-header>
+      </when>
+    </choose>
+  </inbound>
+  <backend>
+    <base />
+  </backend>
+  <outbound>
+    <base />
+  </outbound>
+  <on-error>
+    <base />
+  </on-error>
+</policies>
+XML
 }

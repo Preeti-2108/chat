@@ -68,15 +68,24 @@ def get(event, context):
     logger.debug('Event: %s', event)  # Log the incoming event for debugging purposes
     logger.info('Inside get function')  # Log entry into the function
 
-    # Initialize a DynamoDB resource and specify the table to interact with
-    dynamodb = boto3.resource('dynamodb')
-    table = dynamodb.Table(os.getenv('TABLE'))  # Get the table name from environment variables
-
     # Define HTTP status codes for various outcomes
     STATUS_ERROR = 500
     STATUS_UNPROCESSABLE_ENTITY = 422
     STATUS_NOT_FOUND = 404
     STATUS_FOUND = 200
+
+    # Initialize DynamoDB resource and table
+    table_name = os.getenv('TABLE')
+    if not table_name:
+        logger.error("TABLE environment variable is not set")
+        response_result = Responses.result_response(STATUS_ERROR, False, 'Configuration error: TABLE environment variable not set.')
+        return {
+            'statusCode': STATUS_ERROR,
+            'body': json.dumps('Configuration error')
+        }
+    
+    dynamodb = boto3.resource('dynamodb')
+    table = dynamodb.Table(table_name)
 
     # Extract necessary information from the event, such as URL and connection ID
     event_info = extract_event_info(event)
@@ -91,15 +100,6 @@ def get(event, context):
     # Extract action and datas from the request body
     action = body.get('action')
     datas = body.get('datas', {})
-
-    # Check if action parameter is provided (mandatory)
-    if not action:
-        response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Action parameter is required.')
-        send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
-        return {
-            'statusCode': STATUS_UNPROCESSABLE_ENTITY,
-            'body': json.dumps('Action parameter is required.')
-        }
 
     # Extract the ID from datas
     id = datas.get('id')

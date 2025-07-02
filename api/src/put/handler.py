@@ -138,11 +138,6 @@ def edit(event, context):
         action = body.get('action')
         datas = body.get('datas', {})
 
-        # Check if action parameter is provided (mandatory)
-        if not action:
-            response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Action parameter is required.')
-            return send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
-
         # Extract ID from datas or path parameters
         id = datas.get('id')
         

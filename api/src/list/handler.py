@@ -120,15 +120,6 @@ def list(event, context):
         action = body.get('action')
         datas = body.get('datas', {})
 
-        # Check if action parameter is provided (mandatory)
-        if not action:
-            response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Action parameter is required.')
-            send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
-            return {
-                'statusCode': STATUS_UNPROCESSABLE_ENTITY,
-                'body': json.dumps('Action parameter is required.')
-            }
-
         # Convert query string format to dictionary if datas is a string
         if isinstance(datas, str):
             datas = {k: int(v[0]) if v[0].isdigit() else v[0] for k, v in parse_qs(datas).items()}

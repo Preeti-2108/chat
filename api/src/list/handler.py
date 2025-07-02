@@ -3,6 +3,7 @@ import json  # Provides methods to work with JSON data
 import boto3  # AWS SDK for Python to interact with AWS services
 import logging  # Provides a way to configure and use loggers
 import re  # Provides regular expression matching operations
+from decimal import Decimal  # Import Decimal for DynamoDB numeric handling
 from text_unidecode import unidecode  # Provides a way to remove accents from characters
 from urllib.parse import parse_qs  # Provides methods to parse query strings
 from src.helpers.api_responses import Responses  # Custom helper for API responses
@@ -10,6 +11,7 @@ from src.helpers.construct_response import construct_response  # Custom helper t
 from src.helpers.schema_validation import validate_request_datas_schema  # Custom helper to validate request data schema
 from src.handler_websocket.handler import send_to_client  # Custom helper to send data to a client via WebSocket
 from src.helpers.event_utils import extract_event_info  # Custom helper to extract necessary information from the event
+from src.helpers.decimal_converter import convert_decimal_to_json_serializable  # Custom helper to convert Decimal objects
 
 """
 /**
@@ -275,12 +277,17 @@ def format_results(items, datas):
     Format the results from DynamoDB scan based on offset and limit.
     
     This function slices the list of items based on the provided offset and limit to control pagination.
+    Also converts DynamoDB Decimal objects to JSON-serializable types.
     
     :param items: The raw items retrieved from the DynamoDB scan.
     :param datas: A dictionary containing query parameters, including offset and limit.
     :return: A dictionary containing the formatted list of items and their count.
     """
     items = items['Items'].copy()  # Copy the list of items to avoid modifying the original
+    
+    # Convert Decimal objects to JSON-serializable types
+    items = convert_decimal_to_json_serializable(items)
+    
     offset = int(datas.get('offset', 0))  # Get the offset value, defaulting to 0
     limit = int(datas.get('limit', len(items)))  # Get the limit value, defaulting to the length of items
 
@@ -304,3 +311,4 @@ def remove_accents(input_str):
     :return: The unaccented version of the input string.
     """
     return unidecode(input_str)
+

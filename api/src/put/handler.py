@@ -10,6 +10,7 @@ from src.helpers.construct_response import construct_response
 from src.helpers.schema_validation import validate_request_datas_schema
 from src.handler_websocket.handler import send_to_client
 from src.helpers.event_utils import extract_event_info  # Custom helper to extract necessary information from the event
+from src.helpers.decimal_converter import convert_decimal_to_json_serializable as decimal_to_json_serializable  # Custom helper to convert Decimal objects
 
 """
 /**
@@ -94,26 +95,6 @@ from src.helpers.event_utils import extract_event_info  # Custom helper to extra
 # Initialize logger for the module
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))  # Set log level based on environment variable
-
-def decimal_to_json_serializable(obj):
-    """
-    Convert DynamoDB Decimal types to JSON-serializable types.
-    
-    :param obj: The object to convert (can be nested dict, list, or primitive)
-    :return: Object with Decimals converted to int or float
-    """
-    if isinstance(obj, dict):
-        return {key: decimal_to_json_serializable(value) for key, value in obj.items()}
-    elif isinstance(obj, list):
-        return [decimal_to_json_serializable(item) for item in obj]
-    elif isinstance(obj, Decimal):
-        # Convert Decimal to int if it's a whole number, otherwise to float
-        if obj % 1 == 0:
-            return int(obj)
-        else:
-            return float(obj)
-    else:
-        return obj
 
 def edit(event, context):
     """

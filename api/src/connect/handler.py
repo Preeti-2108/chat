@@ -15,7 +15,7 @@ STATUS_ERROR = 500
 STATUS_CONNECTED = 200
 STATUS_UNAUTHORIZED = 401
 
-def connect(event, context):
+def connect(event, context, token=None):
     """
     Handles the WebSocket connection event with Cognito JWT authentication.
 
@@ -27,6 +27,7 @@ def connect(event, context):
     event (dict): Contains information about the WebSocket connection request, including
                   query string parameters, headers, and connection context.
     context (object): Provides runtime information about the function execution.
+    token (str): Optional JWT token parameter. If not provided, token will be extracted from event.
 
     Returns:
     dict: A dictionary representing an HTTP response with a status code and message body.
@@ -37,16 +38,19 @@ def connect(event, context):
     logger.info(f"WebSocket connection attempt from: {connection_id}")
     
     try:
-        # Extract JWT token from the connection request
-        token = extract_token_from_event(event)
+        # Extract JWT token from the connection request or use provided token parameter
+        if token is None:
+            token = extract_token_from_event(event)
         
         if not token:
-            logger.warning(f"Connection {connection_id} attempted without authentication token")
+            warning_message = f"Connection {connection_id} attempted without authentication token"
+            logger.warning(warning_message)
             return {
                 "statusCode": STATUS_UNAUTHORIZED,
                 "body": json.dumps({
                     "error": "Authentication required",
-                    "message": "Please provide a valid JWT token in query parameters or headers"
+                    "message": "Please provide a valid JWT token in query parameters or headers",
+                    "warning": warning_message
                 })
             }
         

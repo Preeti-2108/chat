@@ -3,6 +3,9 @@
         <base />
         <rate-limit-by-key calls="100" renewal-period="1" counter-key="@(context.Request.IpAddress)" />
         <rate-limit-by-key calls="100" renewal-period="1" counter-key="@(context.Subscription.Key)" />
+        <set-header name="x-auth-token" exists-action="override">
+            <value>${TOKEN}</value>
+        </set-header>
     </inbound>
     <backend>
         <base />

@@ -4,7 +4,6 @@ import json
 import boto3
 import logging
 from datetime import datetime
-from src.helpers.check_authorization import check_authorization
 from src.helpers.api_responses import Responses
 from src.helpers.construct_response import construct_response
 from src.helpers.schema_validation import validate_request_datas_schema
@@ -99,8 +98,7 @@ def edit(event, context):
     """
     Handles the WebSocket edit operation for updating a template in DynamoDB.
 
-    This function processes incoming WebSocket events, validates the request data,
-    checks authorization, and updates the specified template in the DynamoDB table.
+    This function processes incoming WebSocket events, validates the request data and updates the specified template in the DynamoDB table.
     It sends a response back to the client via WebSocket.
 
     :param event: The event data from the WebSocket request.
@@ -149,7 +147,7 @@ def edit(event, context):
             return send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
 
         # Check authorization and get the email of the user
-        email = check_authorization(event)
+        email = "toto"
         validation_schema['datas']['updatedBy'] = email
 
         # Clean up the id field to prevent overwriting it

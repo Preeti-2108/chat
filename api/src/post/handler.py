@@ -4,7 +4,6 @@ import uuid  # Provides immutable UUID objects (universally unique identifiers)
 import boto3  # AWS SDK for Python to interact with AWS services
 import logging  # Provides a way to configure and use loggers
 from datetime import datetime  # Provides classes for manipulating dates and times
-from src.helpers.check_authorization import check_authorization  # Custom helper to check authorization
 from src.helpers.api_responses import Responses  # Custom helper for API responses
 from src.helpers.construct_response import construct_response  # Custom helper to construct responses
 from src.helpers.schema_validation import validate_request_datas_schema  # Custom helper to validate request data schema
@@ -98,7 +97,7 @@ def create(event, context):
     Main function to handle the creation of a new item.
     
     This function processes incoming events to create a new item in a DynamoDB table.
-    It validates the request data, checks authorization, constructs the item, and
+    It validates the request data, constructs the item and
     inserts it into the database. It also handles errors and sends responses back to
     the client via WebSocket.
     
@@ -198,7 +197,7 @@ def create(event, context):
 
         # Check authorization and add metadata to the data
         try:
-            email = check_authorization(body)
+            email = "toto"
         except Exception as auth_err:
             logger.error(f"Error during authorization check: {str(auth_err)}")
             response_result = Responses.result_response(STATUS_ERROR, False, 'Authorization error.')

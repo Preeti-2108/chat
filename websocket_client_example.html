@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Client - Exemple POST</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        textarea { width: 100%; height: 150px; font-family: monospace; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+        .success { color: green; }
+        .error { color: red; }
+        .info { color: blue; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔌 Client WebSocket - Test POST Handler</h1>
+        
+        <div class="section">
+            <h2>Configuration</h2>
+            <label for="wsUrl">URL WebSocket:</label>
+            <input type="text" id="wsUrl" placeholder="wss://your-api-id.execute-api.region.amazonaws.com/stage" style="width: 100%;">
+            
+            <label for="token">Token JWT:</label>
+            <input type="text" id="token" placeholder="your-jwt-token" style="width: 100%;">
+            
+            <button onclick="connect()">Se connecter</button>
+            <button onclick="disconnect()">Se déconnecter</button>
+            <span id="status">❌ Déconnecté</span>
+        </div>
+
+        <div class="section">
+            <h2>Message à envoyer</h2>
+            <textarea id="messageInput">{
+  "action": "create",
+  "datas": {
+    "templateCompany": "Ma Société",
+    "templateAgent": "Agent Smith",
+    "templateActions": [
+      {
+        "templateActionsTimeStamp": 1640995200,
+        "templateActionsTag": "Initialisation"
+      }
+    ],
+    "templateRootCause": "Problème technique",
+    "templateAgentValidation": true,
+    "templateIntentFailed": false,
+    "isActive": true,
+    "templateStatus": "En cours"
+  }
+}</textarea>
+            <br>
+            <button onclick="sendMessage()">Envoyer</button>
+            <button onclick="clearMessage()">Effacer</button>
+        </div>
+
+        <div class="section">
+            <h2>Réponses reçues</h2>
+            <div id="messages"></div>
+            <button onclick="clearMessages()">Effacer les messages</button>
+        </div>
+
+        <div class="section">
+            <h2>Exemples de messages</h2>
+            <button onclick="loadCreateExample()">Créer Template</button>
+            <button onclick="loadUpdateExample()">Modifier Template</button>
+            <button onclick="loadSimpleMessage()">Message Simple</button>
+        </div>
+    </div>
+
+    <script>
+        let websocket = null;
+
+        function connect() {
+            const wsUrl = document.getElementById('wsUrl').value;
+            const token = document.getElementById('token').value;
+            
+            if (!wsUrl || !token) {
+                addMessage('❌ Veuillez renseigner l\'URL WebSocket et le token', 'error');
+                return;
+            }
+
+            const fullUrl = `${wsUrl}?access_token=${token}`;
+            addMessage(`🔄 Connexion à ${fullUrl}...`, 'info');
+
+            websocket = new WebSocket(fullUrl);
+
+            websocket.onopen = function(event) {
+                document.getElementById('status').innerHTML = '✅ Connecté';
+                document.getElementById('status').className = 'success';
+                addMessage('✅ Connexion WebSocket établie', 'success');
+            };
+
+            websocket.onmessage = function(event) {
+                addMessage('📨 Réponse reçue:', 'info');
+                try {
+                    const data = JSON.parse(event.data);
+                    addMessage(JSON.stringify(data, null, 2), 'success');
+                } catch (e) {
+                    addMessage(event.data, 'success');
+                }
+            };
+
+            websocket.onclose = function(event) {
+                document.getElementById('status').innerHTML = '❌ Déconnecté';
+                document.getElementById('status').className = 'error';
+                addMessage(`❌ Connexion fermée (Code: ${event.code})`, 'error');
+            };
+
+            websocket.onerror = function(error) {
+                addMessage('❌ Erreur WebSocket: ' + error, 'error');
+            };
+        }
+
+        function disconnect() {
+            if (websocket) {
+                websocket.close();
+                websocket = null;
+            }
+        }
+
+        function sendMessage() {
+            if (!websocket || websocket.readyState !== WebSocket.OPEN) {
+                addMessage('❌ WebSocket non connecté', 'error');
+                return;
+            }
+
+            const message = document.getElementById('messageInput').value;
+            
+            try {
+                // Valider le JSON
+                JSON.parse(message);
+                
+                addMessage('📤 Envoi du message:', 'info');
+                addMessage(message, 'info');
+                
+                websocket.send(message);
+            } catch (e) {
+                addMessage('❌ JSON invalide: ' + e.message, 'error');
+            }
+        }
+
+        function addMessage(message, type = 'info') {
+            const messagesDiv = document.getElementById('messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = type;
+            messageDiv.innerHTML = `<strong>${new Date().toLocaleTimeString()}</strong>: <pre>${message}</pre>`;
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function clearMessages() {
+            document.getElementById('messages').innerHTML = '';
+        }
+
+        function clearMessage() {
+            document.getElementById('messageInput').value = '';
+        }
+
+        function loadCreateExample() {
+            document.getElementById('messageInput').value = JSON.stringify({
+                "action": "create",
+                "datas": {
+                    "templateCompany": "Exemple Société",
+                    "templateAgent": "Agent Test",
+                    "templateActions": [
+                        {
+                            "templateActionsTimeStamp": Math.floor(Date.now() / 1000),
+                            "templateActionsTag": "Test Action"
+                        }
+                    ],
+                    "templateRootCause": "Test Root Cause",
+                    "templateAgentValidation": true,
+                    "templateIntentFailed": false,
+                    "isActive": true,
+                    "templateStatus": "Test Status"
+                }
+            }, null, 2);
+        }
+
+        function loadUpdateExample() {
+            document.getElementById('messageInput').value = JSON.stringify({
+                "action": "update",
+                "datas": {
+                    "id": "template-id-to-update",
+                    "templateCompany": "Société Modifiée",
+                    "templateStatus": "Modifié"
+                }
+            }, null, 2);
+        }
+
+        function loadSimpleMessage() {
+            document.getElementById('messageInput').value = JSON.stringify({
+                "action": "sendMessage",
+                "message": "Hello World!",
+                "broadcast": false
+            }, null, 2);
+        }
+
+        // Exemple d'URL et token pour le développement
+        document.getElementById('wsUrl').value = 'wss://your-api-id.execute-api.us-east-1.amazonaws.com/dev';
+        document.getElementById('token').value = 'eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...';
+    </script>
+</body>
+</html>

@@ -33,6 +33,7 @@ class LambdasStack(Stack):
         table_name: str,
         user_pool_id: str,
         api_name: str,
+        connections_table_name: str = None,
         **kwargs
     ):
         super().__init__(scope, id, **kwargs)
@@ -42,6 +43,10 @@ class LambdasStack(Stack):
             "REGION": self.region,
             "COGNITO_POOL_ID": user_pool_id,
         }
+        
+        # Add connections table environment variable if provided
+        if connections_table_name:
+            lambda_env["CONNECTIONS_TABLE"] = connections_table_name
 
         image_tag = os.environ.get("IMAGE_TAG", "latest")
 
@@ -75,7 +80,7 @@ class LambdasStack(Stack):
                 memory_size=512,
             )
 
-            # More specific IAM permissions
+            # More specific IAM permissions for main table
             lambdas[name].add_to_role_policy(iam.PolicyStatement(
                 actions=[
                     "dynamodb:GetItem",
@@ -88,6 +93,24 @@ class LambdasStack(Stack):
                 resources=[f"arn:aws:dynamodb:{self.region}:{self.account}:table/{table_name}"]
             ))
             
+            # Permissions for connections table if it exists
+            if connections_table_name:
+                lambdas[name].add_to_role_policy(iam.PolicyStatement(
+                    actions=[
+                        "dynamodb:GetItem",
+                        "dynamodb:PutItem", 
+                        "dynamodb:UpdateItem",
+                        "dynamodb:DeleteItem",
+                        "dynamodb:Query",
+                        "dynamodb:Scan"
+                    ],
+                    resources=[
+                        f"arn:aws:dynamodb:{self.region}:{self.account}:table/{connections_table_name}",
+                        f"arn:aws:dynamodb:{self.region}:{self.account}:table/{connections_table_name}/index/*"
+                    ]
+                ))
+            
+            # Cognito permissions for JWT validation
             lambdas[name].add_to_role_policy(iam.PolicyStatement(
                 actions=["cognito-idp:GetUser"],
                 resources=[f"arn:aws:cognito-idp:{self.region}:{self.account}:userpool/{user_pool_id}"]

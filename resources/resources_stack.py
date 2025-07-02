@@ -6,6 +6,7 @@ from aws_cdk import (
     CfnOutput,
     RemovalPolicy,
     SecretValue,
+    Duration,
 )
 from constructs import Construct
 
@@ -21,11 +22,12 @@ class ResourcesStack(Stack):
         create_table: bool = False,
         create_secret: bool = False,
         secret_value: str = "",  # ✅ Ajout ici
+        create_connections_table: bool = False,
         **kwargs
     ):
         super().__init__(scope, id, **kwargs)
 
-        # DynamoDB Table
+        # DynamoDB Table for main data
         if create_table:
             self.table = dynamodb.Table(
                 self, "Table",
@@ -40,6 +42,27 @@ class ResourcesStack(Stack):
             self.table = dynamodb.Table.from_table_name(
                 self, "ImportedTable", table_name
             )
+
+        # DynamoDB Table for WebSocket connections
+        if create_connections_table:
+            self.connections_table = dynamodb.Table(
+                self, "ConnectionsTable",
+                table_name=f"{table_name}-connections",
+                partition_key=dynamodb.Attribute(name="connectionId", type=dynamodb.AttributeType.STRING),
+                removal_policy=RemovalPolicy.DESTROY,  # Can be destroyed as it's temporary data
+                billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
+                time_to_live_attribute="ttl",  # Enable TTL for automatic cleanup
+                stream=dynamodb.StreamViewType.NEW_AND_OLD_IMAGES  # Optional: for monitoring connections
+            )
+            
+            # Add GSI for querying by userId
+            self.connections_table.add_global_secondary_index(
+                index_name="UserIdIndex",
+                partition_key=dynamodb.Attribute(name="userId", type=dynamodb.AttributeType.STRING),
+                projection_type=dynamodb.ProjectionType.ALL
+            )
+        else:
+            self.connections_table = None
 
         # Secret Manager
         if create_secret:
@@ -67,3 +90,8 @@ class ResourcesStack(Stack):
         CfnOutput(self, "SecretId", value=self.secret.secret_arn)
         CfnOutput(self, "SecretName", value=self.secret.secret_name)
         CfnOutput(self, "UserPoolId", value=self.user_pool.user_pool_id)
+        
+        # Connections table outputs (if created)
+        if self.connections_table:
+            CfnOutput(self, "ConnectionsTableArn", value=self.connections_table.table_arn)
+            CfnOutput(self, "ConnectionsTableName", value=self.connections_table.table_name)

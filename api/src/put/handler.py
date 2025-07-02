@@ -11,6 +11,7 @@ from src.helpers.schema_validation import validate_request_datas_schema
 from src.handler_websocket.handler import send_to_client
 from src.helpers.event_utils import extract_event_info  # Custom helper to extract necessary information from the event
 from src.helpers.decimal_converter import convert_decimal_to_json_serializable as decimal_to_json_serializable  # Custom helper to convert Decimal objects
+from src.helpers.auth_middleware import authenticate_websocket, get_user_email, get_authenticated_user  # Cognito authentication
 
 """
 /**
@@ -96,6 +97,7 @@ from src.helpers.decimal_converter import convert_decimal_to_json_serializable a
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))  # Set log level based on environment variable
 
+@authenticate_websocket()  # Require authentication for this handler
 def edit(event, context):
     """
     Handles the WebSocket edit operation for updating a template in DynamoDB.
@@ -193,7 +195,12 @@ def edit(event, context):
             return send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
 
         # TODO: Replace with actual user email from authentication context
-        email = "system@example.com"  # Should be extracted from JWT token or event context
+        # Get the authenticated user's email from the JWT token
+        user_info = get_authenticated_user(event)
+        email = get_user_email(event) or "system@example.com"
+        
+        logger.info(f"Operation performed by user: {user_info.get('username')} ({email})")
+        
         validation_schema['datas']['updatedBy'] = email
         
         logger.debug(f"Validated data before update: {validation_schema['datas']}")
@@ -210,7 +217,9 @@ def edit(event, context):
         # Check if the item exists in DynamoDB
         existing_item = table.get_item(Key={'id': id})
         if 'Item' not in existing_item:
+            logger.warning(f"Item with ID {id} not found in database")
             response_result = Responses.result_response(STATUS_NOT_FOUND, False, f'Item with ID {id} not found.')
+            return send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
         else:
             # Update the item in DynamoDB
             updated_item = table.update_item(
@@ -231,17 +240,17 @@ def edit(event, context):
         # Handle JSON parsing errors specifically
         logger.error(f"JSON decode error: {str(json_err)}")
         response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, f"Invalid JSON format: {str(json_err)}")
+        return send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
     except KeyError as key_err:
         # Handle missing key errors
         logger.error(f"Missing required key: {str(key_err)}")
         response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, f"Missing required field: {str(key_err)}")
+        return send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
     except Exception as err:
         # In case of error, log and build an error response
         logger.error(f"Unexpected error during item update: {str(err)}", exc_info=True)
         response_result = Responses.result_response(STATUS_ERROR, False, f"Internal server error: {str(err)}")
-
-    # Send the constructed response via WebSocket
-    return send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+        return send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
 
 def generate_update_query(fields):
     """

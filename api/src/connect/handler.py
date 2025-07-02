@@ -72,8 +72,8 @@ def connect(event, context, token=None):
                 "statusCode": STATUS_UNAUTHORIZED,
                 "body": json.dumps({
                     "status": "authentication_error",
-                    "error": "Authentication required",
-                    "message": "Please provide a valid JWT token in query parameters (token) or headers (Authorization)",
+                    "error": "401",
+                    "message": "Authentication required - Please provide a valid JWT token in query parameters (token) or headers (Authorization)",
                     "warning": warning_message,
                     "available_parameters": list(query_params.keys()),
                     "expected_parameters": ["token", "Authorization (header)"],
@@ -125,8 +125,8 @@ def connect(event, context, token=None):
                 "statusCode": STATUS_UNAUTHORIZED,
                 "body": json.dumps({
                     "status": "authentication_failed",
-                    "error": "Authentication failed",
-                    "message": str(auth_error),
+                    "error": "401",
+                    "message": "Authentication failed",
                     "warning": error_message,
                     "connection_id": connection_id,
                     "timestamp": int(time.time())
@@ -216,7 +216,8 @@ def _send_error_message_to_client(event, connection_id: str, warning_message: st
         # Message d'erreur à envoyer au client
         error_response = {
             "type": "authentication_error",
-            "error": "Authentication required",
+            "error": "401",
+            "message": "Authentication required",
             "warning": warning_message,
             "timestamp": int(time.time()),
             "connection_will_close": True

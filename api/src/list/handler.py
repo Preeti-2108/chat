@@ -24,87 +24,56 @@ from src.helpers.event_utils import extract_event_info  # Custom helper to extra
  *         messageId: templateList
  *         contentType: application/json
  *         payload:
- *           type: object
- *           required:
- *             - action
- *           properties:
- *             action:
- *               type: string
- *               description: The action to perform.
- *               example: list
- *             datas:
- *               type: object
- *               properties:
- *                 templateCompany:
- *                   type: string
- *                   description: Filter by template company name.
- *                   example: Company Name
- *                 templateAgent:
- *                   type: string
- *                   description: Filter by template agent name.
- *                   example: Agent Name
- *                 templateRootCause:
- *                   type: string
- *                   description: Filter by template root cause.
- *                   example: Root Cause
- *                 templateAgentValidation:
- *                   type: boolean
- *                   description: Filter by template agent validation.
- *                   example: true
- *                 templateIntentFailed:
- *                   type: boolean
- *                   description: Filter by template intent failed.
- *                   example: false
- *                 templateStatus:
- *                   type: string
- *                   description: Filter by template status.
- *                   example: Template Status
- *                 createdBy:
- *                   type: string
- *                   description: Filter by template creator.
- *                   example: Firstname Lastname
- *                 updatedBy:
- *                   type: string
- *                   description: Filter by template modifier.
- *                   example: Firstname Lastname
- *                 createdAt:
- *                   type: string
- *                   format: date-time
- *                   description: Filter by template creation date.
- *                   example: 2023-10-16T13:25:10.666Z
- *                 updatedAt:
- *                   type: string
- *                   format: date-time
- *                   description: Filter by template modification date.
- *                   example: 2023-10-16T13:28:40.028Z
- *                 createdStart:
- *                   type: string
- *                   format: date-time
- *                   description: Filter by creation date start range.
- *                   example: 2023-10-16T00:00:00.000Z
- *                 createdEnd:
- *                   type: string
- *                   format: date-time
- *                   description: Filter by creation date end range.
- *                   example: 2023-10-16T23:59:59.999Z
- *                 updatedStart:
- *                   type: string
- *                   format: date-time
- *                   description: Filter by update date start range.
- *                   example: 2023-10-16T00:00:00.000Z
- *                 updatedEnd:
- *                   type: string
- *                   format: date-time
- *                   description: Filter by update date end range.
- *                   example: 2023-10-16T23:59:59.999Z
- *                 offset:
- *                   type: integer
- *                   description: Number of items to skip for pagination.
- *                   example: 0
- *                 limit:
- *                   type: integer
- *                   description: Maximum number of items to return.
- *                   example: 10
+ *           type: array
+ *           items:
+ *             type: object
+ *             properties:
+ *               templateCompany:
+ *                 type: string
+ *                 description: Template company name.
+ *                 example: Company Name
+ *               templateAgent:
+ *                 type: string
+ *                 description: Template agent name.
+ *                 example: Agent Name
+ *               templateRootCause:
+ *                 type: string
+ *                 description: Template root cause.
+ *                 example: Root Cause
+ *               templateAgentValidation:
+ *                 type: boolean
+ *                 description: Template agent validation.
+ *                 example: true
+ *               isActive:
+ *                 type: boolean
+ *                 description: Is active or not.
+ *                 example: true
+ *               templateIntentFailed:
+ *                 type: boolean
+ *                 description: Template intent failed.
+ *                 example: false
+ *               templateStatus:
+ *                 type: string
+ *                 description: Template status.
+ *                 example: Template Status
+ *               createdBy:
+ *                 type: string
+ *                 description: Template creator.
+ *                 example: Firstname Lastname
+ *               updatedBy:
+ *                 type: string
+ *                 description: Template modifier.
+ *                 example: Firstname Lastname
+ *               createdAt:
+ *                 type: string
+ *                 format: date-time
+ *                 description: Template creation date.
+ *                 example: 2023-10-16T13:25:10.666Z
+ *               updatedAt:
+ *                 type: string
+ *                 format: date-time
+ *                 description: Template modification date.
+ *                 example: 2023-10-16T13:28:40.028Z
  *     subscribe:
  *       operationId: templateListResponse
  *       summary: Retrieve templates based on query parameters.
@@ -248,9 +217,9 @@ def construct_params(datas):
 
     # Define the filters with their corresponding DynamoDB attribute names
     filters = [
-        {'name': 'templateCompany', 'type': 'string', 'value': template_company, 'attribute': '#templateCompany'},
-        {'name': 'templateAgent', 'type': 'string', 'value': template_agent, 'attribute': '#templateAgent'},
-        {'name': 'templateRootCause', 'type': 'string', 'value': template_root_cause, 'attribute': '#templateRootCause'},
+        {'name': 'templateCompany', 'type': 'string_contains', 'value': template_company, 'attribute': '#templateCompany'},
+        {'name': 'templateAgent', 'type': 'string_contains', 'value': template_agent, 'attribute': '#templateAgent'},
+        {'name': 'templateRootCause', 'type': 'string_contains', 'value': template_root_cause, 'attribute': '#templateRootCause'},
         {'name': 'templateAgentValidation', 'type': 'boolean', 'value': template_agent_validation, 'attribute': '#templateAgentValidation'},
         {'name': 'templateIntentFailed', 'type': 'boolean', 'value': template_intent_failed, 'attribute': '#templateIntentFailed'},
         {'name': 'templateStatus', 'type': 'string', 'value': template_status, 'attribute': '#templateStatus'},
@@ -286,6 +255,11 @@ def construct_params(datas):
                 params['ExpressionAttributeValues'][f":{filter['name']}"] = remove_accents(filter['value'].upper())
                 params['ExpressionAttributeNames'][filter['attribute']] = filter['name']
                 params['FilterExpression'] += f" AND {filter['attribute']} = :{filter['name']}" if params['FilterExpression'] else f"{filter['attribute']} = :{filter['name']}"
+            elif filter['type'] == 'string_contains':
+                # Handle string comparisons with partial matching, removing accents
+                params['ExpressionAttributeValues'][f":{filter['name']}"] = remove_accents(filter['value'].upper())
+                params['ExpressionAttributeNames'][filter['attribute']] = filter['name']
+                params['FilterExpression'] += f" AND contains({filter['attribute']}, :{filter['name']})" if params['FilterExpression'] else f"contains({filter['attribute']}, :{filter['name']})"
             elif filter['type'] == 'integer':
                 # Handle integer comparisons
                 params['ExpressionAttributeValues'][f":{filter['name']}"] = int(filter['value'])

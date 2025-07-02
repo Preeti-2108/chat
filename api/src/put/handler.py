@@ -143,10 +143,15 @@ def edit(event, context):
             response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Action parameter is required.')
             return send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
 
-        # Extract ID from datas
+        # Extract ID from datas or path parameters
         id = datas.get('id')
+        
+        # Alternative: extract ID from path parameters if not in datas
+        if not id and event.get('pathParameters'):
+            id = event['pathParameters'].get('id')
+        
         if not id:
-            response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'ID is required in datas.')
+            response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'ID is required in datas or path parameters.')
             return send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
 
         # Validate the request and retrieve validation errors

@@ -91,20 +91,40 @@ def get(event, context):
     event_info = extract_event_info(event)
     url = event_info.get('url')
     connectionId = event_info.get('connectionId')
+    
+    # Validate that we have a connection ID for WebSocket communication
+    if not connectionId:
+        logger.error("Connection ID not found in event")
+        return {
+            'statusCode': STATUS_ERROR,
+            'body': json.dumps('Connection ID not found in event')
+        }
 
     # Parse the body of the WebSocket event
     body = event.get('body', {})
+    logger.debug(f"Raw body from event: {body}")
     if isinstance(body, str):
-        body = json.loads(body)  # Convert JSON string to dictionary if necessary
+        try:
+            body = json.loads(body)  # Convert JSON string to dictionary if necessary
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse JSON body: {e}")
+            response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Invalid JSON in request body.')
+            send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+            return {
+                'statusCode': STATUS_UNPROCESSABLE_ENTITY,
+                'body': json.dumps('Invalid JSON in request body.')
+            }
 
     # Extract action and datas from the request body
     action = body.get('action')
     datas = body.get('datas', {})
+    logger.info(f"Processing action: {action} with datas: {datas}")
 
     # Extract the ID from datas
     id = datas.get('id')
     if not id:
         # If 'id' is missing, send an error response to the client
+        logger.warning(f"Missing ID parameter in request. Datas: {datas}")
         response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'ID parameter is required in datas.')
         send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
         return {
@@ -113,6 +133,7 @@ def get(event, context):
         }
 
     params = {'id': id}  # Prepare parameters for DynamoDB query
+    logger.info(f"Attempting to retrieve item with ID: {id}")
 
     # Default error response in case of failure
     response_result = Responses.result_response(STATUS_ERROR, False, 'Error during execution.')
@@ -121,6 +142,7 @@ def get(event, context):
     validation_schema = validate_request_datas_schema(action, datas)
     if not validation_schema['success']:
         # If validation fails, send an error response to the client
+        logger.warning(f"Validation failed for action: {action}, datas: {datas}. Errors: {validation_schema}")
         response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Validation errors.', validation_schema)
         send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
         return {
@@ -132,27 +154,45 @@ def get(event, context):
         # Attempt to retrieve the item from DynamoDB using the provided ID
         try:
             existing_item = table.get_item(Key=params)
-        except ClientError as e:
-            # Log and handle DynamoDB client errors
-            logger.error(f"DynamoDB ClientError: {e.response['Error']['Message']}")
-            response_result = Responses.result_response(STATUS_ERROR, False, 'Error accessing DynamoDB.')
-        else:
             item = existing_item.get('Item')  # Extract the item from the response
             if item is None:
                 # If item is not found, prepare a not found response
                 response_result = Responses.result_response(STATUS_NOT_FOUND, False, f'Item with ID {id} not found.')
+                status_code = STATUS_NOT_FOUND
             else:
                 # If item is found, prepare a success response with the item data
                 response_result = Responses.result_response(STATUS_FOUND, True, f'Item with ID {id} found.', item)
+                status_code = STATUS_FOUND
+        except ClientError as e:
+            # Log and handle DynamoDB client errors
+            logger.error(f"DynamoDB ClientError: {e.response['Error']['Message']}")
+            response_result = Responses.result_response(STATUS_ERROR, False, 'Error accessing DynamoDB.')
+            status_code = STATUS_ERROR
     except BotoCoreError as error:
         # Log and handle general BotoCore errors
         logger.error(f"BotoCoreError: {str(error)}")
         response_result = Responses.result_response(STATUS_ERROR, False, 'Error during execution.')
+        status_code = STATUS_ERROR
+    except Exception as error:
+        # Log and handle any other unexpected errors
+        logger.error(f"Unexpected error: {str(error)}")
+        response_result = Responses.result_response(STATUS_ERROR, False, 'Unexpected error during execution.')
+        status_code = STATUS_ERROR
 
     # Send the final response to the WebSocket client
-    send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
-
-    return {
-        'statusCode': 200,
-        'body': json.dumps('Message sent successfully.')  # Indicate successful message sending
-    }
+    try:
+        response_data = json.dumps(construct_response(response_result))
+        logger.debug(f"Sending response to connection {connectionId}: {response_data}")
+        send_to_client(connectionId, response_data, url)
+        logger.info(f"Successfully sent response for item ID: {id}")
+        return {
+            'statusCode': status_code,
+            'body': json.dumps('Message sent successfully.')
+        }
+    except Exception as send_error:
+        # Log error if sending message fails
+        logger.error(f"Failed to send message to client {connectionId}: {str(send_error)}")
+        return {
+            'statusCode': STATUS_ERROR,
+            'body': json.dumps('Failed to send message to client.')
+        }

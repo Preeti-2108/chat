@@ -138,6 +138,6 @@ def delete(event, context):
     send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
 
     return {
-        'statusCode': 200,  # Return a success status code
+        'statusCode': STATUS_DELETED,  # Return a success status code
         'body': json.dumps('Message processed')  # Return a success message
     }

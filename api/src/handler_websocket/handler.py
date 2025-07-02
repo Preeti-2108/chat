@@ -10,6 +10,12 @@ from jwt import PyJWKClient, decode as jwt_decode, InvalidTokenError, PyJWKError
 # Configure logging to display debug-level messages
 logging.basicConfig(level=logging.DEBUG)
 
+# Define status codes for various outcomes
+STATUS_ERROR = 500
+STATUS_UNAUTHORIZED = 401
+STATUS_SUCCESS = 200
+STATUS_UNSUPPORTED = 400
+
 # Initialize AWS DynamoDB resource
 dynamodb = boto3.resource('dynamodb')
 
@@ -79,7 +85,7 @@ def connect(event, context):
     access_token = event.get('queryStringParameters', {}).get('access_token')
     if not access_token:
         return {
-            'statusCode': 400,
+            'statusCode': STATUS_UNSUPPORTED,
             'body': json.dumps('Missing access_token in query parameters')
         }
     
@@ -87,7 +93,7 @@ def connect(event, context):
     scope = validate_access_token(access_token)
     if not scope:
         return {
-            'statusCode': 401,
+            'statusCode': STATUS_UNAUTHORIZED,
             'body': json.dumps('Invalid or missing access_token')
         }
     
@@ -106,12 +112,12 @@ def connect(event, context):
     except ClientError as e:
         logging.error(f"Error storing connection details: {e}")
         return {
-            'statusCode': 500,
+            'statusCode': STATUS_ERROR,
             'body': json.dumps('Error storing connection details')
         }
     
     return {
-        'statusCode': 200,
+        'statusCode': STATUS_SUCCESS,
         'body': json.dumps('Connected')
     }
 
@@ -139,12 +145,12 @@ def disconnect(event, context):
     except ClientError as e:
         logging.error(f"Error removing connection details: {e}")
         return {
-            'statusCode': 500,
+            'statusCode': STATUS_ERROR,
             'body': json.dumps('Error removing connection details')
         }
     
     return {
-        'statusCode': 200,
+        'statusCode': STATUS_SUCCESS,
         'body': json.dumps('Disconnected')
     }
 
@@ -170,7 +176,7 @@ def defaultMessage(event, context):
     # Check if the message is present in the body
     if 'message' not in body:
         return {
-            'statusCode': 400,
+            'statusCode': STATUS_UNSUPPORTED,
             'body': json.dumps('Invalid message format')
         }
     
@@ -180,7 +186,7 @@ def defaultMessage(event, context):
     send_to_client(connection_id, f"Echo: {body['message']}")
     
     return {
-        'statusCode': 200,
+        'statusCode': STATUS_SUCCESS,
         'body': json.dumps('Message processed')
     }
 

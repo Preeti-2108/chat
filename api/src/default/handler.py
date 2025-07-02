@@ -25,6 +25,12 @@ def default(event, context):
     from src.handler_websocket.handler import send_to_client
     import json
     
+    # Define status codes for various outcomes
+    STATUS_ERROR = 500
+    STATUS_UNPROCESSABLE_ENTITY = 422
+    STATUS_CONNECTED = 200
+    STATUS_UNSUPPORTED = 400
+    
     # Extract connection information
     event_info = extract_event_info(event)
     connection_id = event_info.get('connectionId')
@@ -42,7 +48,7 @@ def default(event, context):
         if not action:
             # Return an error response for missing action field
             result = Responses.result_response(
-                status_code=422,
+                status_code=STATUS_UNPROCESSABLE_ENTITY,
                 success=False,
                 message="Missing action field. Valid actions are: create, update, delete, get, list, sendMessage",
                 data={}
@@ -53,7 +59,7 @@ def default(event, context):
                 send_to_client(connection_id, json.dumps(construct_response(result)), url)
             
             return {
-                'statusCode': 422,
+                'statusCode': STATUS_UNPROCESSABLE_ENTITY,
                 'body': json.dumps('Missing action field')
             }
         
@@ -62,7 +68,7 @@ def default(event, context):
         
         # If action is provided but no specific route matches, provide helpful error
         result = Responses.result_response(
-            status_code=400,
+            status_code=STATUS_UNSUPPORTED,
             success=False,
             message=f"Unsupported action: '{action}'. Valid actions are: {', '.join(valid_actions)}",
             data={
@@ -77,13 +83,13 @@ def default(event, context):
             send_to_client(connection_id, json.dumps(construct_response(result)), url)
         
         return {
-            'statusCode': 200,
+            'statusCode': STATUS_CONNECTED,
             'body': json.dumps('Message processed')
         }
         
     except json.JSONDecodeError:
         result = Responses.result_response(
-            status_code=400,
+            status_code=STATUS_UNSUPPORTED,
             success=False,
             message="Invalid JSON format",
             data={}
@@ -93,12 +99,12 @@ def default(event, context):
             send_to_client(connection_id, json.dumps(construct_response(result)), url)
         
         return {
-            'statusCode': 400,
+            'statusCode': STATUS_UNSUPPORTED,
             'body': json.dumps('Invalid JSON format')
         }
     except Exception as e:
         result = Responses.result_response(
-            status_code=500,
+            status_code=STATUS_ERROR,
             success=False,
             message=f"Internal error: {str(e)}",
             data={}
@@ -108,6 +114,6 @@ def default(event, context):
             send_to_client(connection_id, json.dumps(construct_response(result)), url)
         
         return {
-            'statusCode': 500,
+            'statusCode': STATUS_ERROR,
             'body': json.dumps('Internal server error')
         }

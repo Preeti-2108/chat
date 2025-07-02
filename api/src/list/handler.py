@@ -169,7 +169,7 @@ def list(event, context):
     send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
 
     return {
-        'statusCode': 200,
+        'statusCode': STATUS_OK,
         'body': json.dumps('Message sent successfully.')
     }
 

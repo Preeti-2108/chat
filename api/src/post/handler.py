@@ -163,9 +163,6 @@ def create(event, context):
         action = body.get('action')
         datas = body.get('datas')
 
-        print('action:', action)
-        print('datas:', datas)
-
         # Validate the request data schema
         try:
             validation_schema = validate_request_datas_schema(action, datas)

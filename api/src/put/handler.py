@@ -159,7 +159,11 @@ def edit(event, context):
         
         if not event.get('body'):
             response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Request body is missing.')
-            return send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+            send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+            return {
+                'statusCode': STATUS_UNPROCESSABLE_ENTITY,
+                'body': json.dumps('Request body is missing')
+            }
         
         body = json.loads(event['body'])
         logger.debug(f"Parsed body: {body}")
@@ -192,7 +196,11 @@ def edit(event, context):
         if not validation_schema['success']:
             logger.warning(f"Validation failed: {validation_schema}")
             response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Validation errors.', validation_schema)
-            return send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+            send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+            return {
+                'statusCode': STATUS_UNPROCESSABLE_ENTITY,
+                'body': json.dumps('Validation failed')
+            }
 
         # TODO: Replace with actual user email from authentication context
         # Get the authenticated user's email from the JWT token
@@ -219,7 +227,11 @@ def edit(event, context):
         if 'Item' not in existing_item:
             logger.warning(f"Item with ID {id} not found in database")
             response_result = Responses.result_response(STATUS_NOT_FOUND, False, f'Item with ID {id} not found.')
-            return send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+            send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+            return {
+                'statusCode': STATUS_NOT_FOUND,
+                'body': json.dumps('Item not found')
+            }
         else:
             # Update the item in DynamoDB
             updated_item = table.update_item(
@@ -240,17 +252,41 @@ def edit(event, context):
         # Handle JSON parsing errors specifically
         logger.error(f"JSON decode error: {str(json_err)}")
         response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, f"Invalid JSON format: {str(json_err)}")
-        return send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+        send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+        return {
+            'statusCode': STATUS_UNPROCESSABLE_ENTITY,
+            'body': json.dumps('Invalid JSON format')
+        }
     except KeyError as key_err:
         # Handle missing key errors
         logger.error(f"Missing required key: {str(key_err)}")
         response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, f"Missing required field: {str(key_err)}")
-        return send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+        send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+        return {
+            'statusCode': STATUS_UNPROCESSABLE_ENTITY,
+            'body': json.dumps('Missing required field')
+        }
     except Exception as err:
         # In case of error, log and build an error response
         logger.error(f"Unexpected error during item update: {str(err)}", exc_info=True)
         response_result = Responses.result_response(STATUS_ERROR, False, f"Internal server error: {str(err)}")
-        return send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+        send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+        return {
+            'statusCode': STATUS_ERROR,
+            'body': json.dumps('Internal server error')
+        }
+
+    # Send the response to the client
+    try:
+        send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+    except Exception as websocket_err:
+        logger.error(f"Error sending response to client: {str(websocket_err)}")
+        # Don't return error here as the main operation might have succeeded
+
+    return {
+        'statusCode': STATUS_UPDATED,
+        'body': json.dumps('Message processed')
+    }
 
 def generate_update_query(fields):
     """

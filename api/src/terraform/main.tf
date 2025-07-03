@@ -119,15 +119,11 @@ resource "azurerm_api_management_api" "ics_api" {
   path                = "api/${var.API_VERSION}/${var.API_SYSTEM_NAME}"
   protocols           = ["wss"]
   service_url         = var.API_GATEWAY_ENDPOINT
+  api_type            = "websocket"
 
   subscription_key_parameter_names {
     header = "api-key"
     query  = "api-key"
-  }
-
-  import {
-    content_format = "openapi-link"
-    content_value  = "../api/asyncapi.json"
   }
  
   description = "Documentation (CTRL+clic for open in a new tab) : https://${var.APIM_NAME}.blob.core.windows.net/${var.API_SYSTEM_NAME}/index.html"

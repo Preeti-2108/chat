@@ -130,7 +130,9 @@ class CognitoJWTValidator:
             # Additional validations
             self._validate_token_claims(decoded_token)
             
-            logger.info(f"Token validated successfully for user: {decoded_token.get('username', 'unknown')}")
+            # Extract username using the same logic as extract_user_info
+            username = decoded_token.get('username') or decoded_token.get('cognito:username', 'unknown')
+            logger.info(f"Token validated successfully for user: {username}")
             return decoded_token
             
         except ExpiredSignatureError:

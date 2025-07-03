@@ -126,7 +126,7 @@ resource "azurerm_api_management_api" "ics_api" {
     query  = "api-key"
   }
  
-  description = "Documentation (CTRL+clic for open in a new tab) : https://${var.APIM_NAME}.blob.core.windows.net/${var.API_SYSTEM_NAME}/index.html"
+  description = "Documentation (CTRL+clic for open in a new tab) : https://${azurerm_storage_account.ics_products_documentation.name}.blob.core.windows.net/${var.API_SYSTEM_NAME}/index.html"
 
 }
 
@@ -138,7 +138,7 @@ resource "azurerm_api_management_product_api" "ics_product_api" {
 }
 
 resource "azurerm_storage_account" "ics_products_documentation" {
-  name                     = var.APIM_NAME
+  name                     = "${substr(var.APIM_NAME, 0, 20)}docs${substr(var.ENV, 0, 4)}"
   resource_group_name      = var.APIM_RG
   location                 = "francecentral"
   account_tier            = "Standard"

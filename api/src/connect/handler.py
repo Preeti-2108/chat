@@ -42,7 +42,11 @@ def connect(event, context, token=None):
     
     # Récupérer le token depuis les paramètres ou utiliser le paramètre fourni
     if token is None:
-        token = query_params.get('token')
+        # Chercher d'abord le paramètre authentication dans différentes casses
+        for param_name in ['authentication', 'Authentication', 'AUTHENTICATION']:
+            token = query_params.get(param_name)
+            if token:
+                break
         
         # Si pas trouvé dans les query params, essayer les headers
         if not token:

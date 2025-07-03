@@ -1,6 +1,10 @@
 import boto3
 import os
+import logging
 from botocore.exceptions import ClientError
+
+logger = logging.getLogger(__name__)
+logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))
 
 # Initialize a DynamoDB resource using Boto3
 dynamodb = boto3.resource('dynamodb')
@@ -35,30 +39,28 @@ def extract_event_info(event):
     # Initialize access token as None
     access_token = None
     
-    # Try to extract token from the event if needed
-    # This is an alternative way to get the token if not using middleware
+    # Try to extract token from the event first
     from src.helpers.cognito_auth import extract_token_from_event
     access_token = extract_token_from_event(event)
     
-    # Optional: Store/retrieve connection info from a dedicated connections table
-    # Uncomment the following code if you have a separate CONNECTIONS_TABLE
-    
-    # connections_table_name = os.getenv('CONNECTIONS_TABLE')
-    # if connection_id and connections_table_name:
-    #     try:
-    #         connections_table = boto3.resource('dynamodb').Table(connections_table_name)
-    #         response = connections_table.get_item(
-    #             Key={
-    #                 'connectionId': connection_id
-    #             }
-    #         )
-    #         stored_token = response.get('Item', {}).get('access_token')
-    #         if stored_token:
-    #             access_token = stored_token
-    #         print(f"Access token for connection ID {connection_id}: {access_token}")
-    #     except ClientError as e:
-    #         print(f"Error retrieving access token from connections table: {e}")
-    #         pass
+    # Alternative: If you have a separate CONNECTIONS_TABLE and the token wasn't found in event
+    if not access_token and connection_id:
+        connections_table_name = os.getenv('CONNECTIONS_TABLE')
+        if connections_table_name:
+            try:
+                connections_table = boto3.resource('dynamodb').Table(connections_table_name)
+                response = connections_table.get_item(
+                    Key={
+                        'connectionId': connection_id
+                    }
+                )
+                stored_token = response.get('Item', {}).get('access_token')
+                if stored_token:
+                    access_token = stored_token
+                    logger.info(f"Retrieved access token from connections table for connection ID {connection_id}")
+            except ClientError as e:
+                logger.error(f"Error retrieving access token from connections table: {e}")
+                pass
     
     # Return a dictionary containing the URL, connection ID, and access token
     return {

@@ -45,7 +45,10 @@ def authenticate_websocket(required_groups: Optional[list] = None):
                 # Extract and validate the JWT token
                 token = extract_token_from_event(event)
                 if not token:
-                    logger.warning("No authentication token provided")
+                    logger.warning(f"No authentication token provided for connection {connection_id}")
+                    logger.debug(f"Event query params: {event.get('queryStringParameters')}")
+                    logger.debug(f"Event headers: {event.get('headers')}")
+                    logger.debug(f"Event multiValueHeaders: {event.get('multiValueHeaders')}")
                     return _send_auth_error(
                         connection_id, 
                         url, 

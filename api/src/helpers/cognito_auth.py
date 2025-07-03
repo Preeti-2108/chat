@@ -223,6 +223,7 @@ def validate_cognito_token(token: str) -> Dict[str, Any]:
 def extract_token_from_event(event: Dict[str, Any]) -> Optional[str]:
     """
     Extract JWT token from various parts of the WebSocket event.
+    Falls back to retrieving the token from DynamoDB if not found in the event.
     
     Args:
         event: The WebSocket event
@@ -257,5 +258,33 @@ def extract_token_from_event(event: Dict[str, Any]) -> Optional[str]:
         if auth_header.startswith('Bearer '):
             return auth_header[7:]
         return auth_header
+    
+    # If no token found in event, try to retrieve from DynamoDB connections table
+    connection_id = event.get('requestContext', {}).get('connectionId')
+    if connection_id:
+        try:
+            import boto3
+            from botocore.exceptions import ClientError
+            
+            connections_table_name = os.getenv('CONNECTIONS_TABLE')
+            if connections_table_name:
+                dynamodb = boto3.resource('dynamodb')
+                connections_table = dynamodb.Table(connections_table_name)
+                
+                response = connections_table.get_item(
+                    Key={'connectionId': connection_id}
+                )
+                
+                item = response.get('Item', {})
+                stored_token = item.get('access_token')
+                
+                if stored_token:
+                    logger.info(f"Retrieved stored JWT token for connection {connection_id}")
+                    return stored_token
+                else:
+                    logger.warning(f"No stored token found for connection {connection_id}")
+                    
+        except Exception as e:
+            logger.error(f"Failed to retrieve token from DynamoDB for connection {connection_id}: {str(e)}")
     
     return None

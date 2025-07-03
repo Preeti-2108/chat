@@ -173,7 +173,7 @@ def _store_connection_info(connection_id: str, user_info: dict, token: str, cont
         
         current_time = int(time.time())
         
-        # Store connection with user info
+        # Store connection with user info and JWT token
         connections_table.put_item(
             Item={
                 'connectionId': connection_id,
@@ -181,6 +181,7 @@ def _store_connection_info(connection_id: str, user_info: dict, token: str, cont
                 'username': user_info.get('username'),
                 'email': user_info.get('email'),
                 'groups': user_info.get('groups', []),
+                'access_token': token,  # Store the JWT token for later use
                 'connectedAt': current_time,
                 'ttl': current_time + (24 * 60 * 60)  # 24 hours TTL
             }

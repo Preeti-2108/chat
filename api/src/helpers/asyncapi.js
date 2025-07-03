@@ -12,7 +12,7 @@ const asyncapiDefinition = {
     "defaultContentType": "application/json", // Default content type for messages
     "info": {
       "title": "Python Template CDK Websocket", // Title of the API
-      "version": "1.0.2", // Version of the API
+      "version": "1.0.3", // Version of the API
       "description": "API for Template", // Brief description of the API
       "contact": {
         "name": "API Support", // Contact name for API support

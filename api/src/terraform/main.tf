@@ -141,11 +141,6 @@ resource "azurerm_api_management_api" "ics_api" {
     query  = "api-key"
   }
 
-  subscription_key_parameter_names {
-    header = "api-key"
-    query  = "api-key"
-  }
-
   # Configuration pour permettre le paramètre token supplémentaire
   # Le token sera envoyé par l'utilisateur comme paramètre de query ou header
  

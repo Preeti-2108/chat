@@ -103,7 +103,7 @@ terraform {
 # ######
 
 data "external" "asyncapi_title" {
-  program = ["sh", "-c", "if [ -s ../api/asyncapi.json ]; then jq -n --rawfile title ../api/asyncapi.json '{\"title\": ($title | fromjson | .info.title)}'; else echo '{\"title\": \"WebSocket API\"}'; fi"]
+  program = ["sh", "-c", "jq -n --rawfile title ../api/asyncapi.json '{\"title\": ($title | fromjson | .info.title)}'"]
 }
 
 # ######
@@ -111,38 +111,27 @@ data "external" "asyncapi_title" {
 # ######
 
 resource "azurerm_api_management_api" "ics_api" {
-  name                = "ws-${var.API_SYSTEM_NAME}"
+  name                = var.SLS_NAME
   resource_group_name = var.APIM_RG
   api_management_name = var.APIM_NAME
   revision            = "1"
-  display_name        = "WebSocket API - ${var.API_VERSION}"
-  path                = "ws/${var.API_VERSION}/${var.API_SYSTEM_NAME}"
+  display_name        = "${data.external.asyncapi_title.result.title} - ${var.API_VERSION}"
+  path                = "api/${var.API_VERSION}/${var.API_SYSTEM_NAME}"
   protocols           = ["wss"]
-
-  import {
-    content_format = "openapi"
-    content_value = jsonencode({
-      openapi = "3.0.0"
-      info = {
-        title = "WebSocket API"
-        version = var.API_VERSION
-      }
-      paths = {}
-    })
-  }
+  service_url         = var.API_GATEWAY_ENDPOINT
 
   subscription_key_parameter_names {
     header = "api-key"
     query  = "api-key"
   }
 
-  description = "Documentation (CTRL+clic for open in a new tab) : https://${azurerm_storage_account.ics_products_documentation.name}.blob.core.windows.net/${var.API_SYSTEM_NAME}/index.html"
+  import {
+    content_format = "openapi-link"
+    content_value  = "../api/asyncapi.json"
+  }
+ 
+  description = "Documentation (CTRL+clic for open in a new tab) : https://${var.APIM_NAME}.blob.core.windows.net/${var.API_SYSTEM_NAME}/index.html"
 
-  depends_on = [
-    azurerm_storage_account.ics_products_documentation,
-    azurerm_storage_account_static_website.ics_products_documentation_static_website,
-    azurerm_storage_container.docs
-  ]
 }
 
 resource "azurerm_api_management_product_api" "ics_product_api" {
@@ -152,96 +141,46 @@ resource "azurerm_api_management_product_api" "ics_product_api" {
   resource_group_name = var.APIM_RG
 }
 
-# Politique API utilisant le fichier policies.xml existant
-resource "azurerm_api_management_api_policy" "ics_api_policy" {
-  api_name            = azurerm_api_management_api.ics_api.name
-  api_management_name = var.APIM_NAME
-  resource_group_name = var.APIM_RG
-
-  xml_content = file("../api/policies.xml")
-}
-
 resource "azurerm_storage_account" "ics_products_documentation" {
-  name                     = lower(replace("${var.APIM_NAME}docs", "/[^a-z0-9]/", ""))
+  name                     = var.APIM_NAME
   resource_group_name      = var.APIM_RG
   location                 = "francecentral"
   account_tier            = "Standard"
   account_replication_type = "LRS"
-
-  tags = {
-    Environment = var.ENV
-    Project     = var.API_SYSTEM_NAME
-  }
-}
-
-resource "azurerm_storage_account_static_website" "ics_products_documentation_static_website" {
-  storage_account_id = azurerm_storage_account.ics_products_documentation.id
-  index_document     = "index.html"
 }
 
 resource "azurerm_storage_container" "docs" {
   name                  = var.API_SYSTEM_NAME
-  storage_account_id    = azurerm_storage_account.ics_products_documentation.id
+  storage_account_id = azurerm_storage_account.ics_products_documentation.id
   container_access_type = "blob"
 }
 
-# Conditional creation of documentation blobs only if output directory exists
-locals {
-  output_files = can(fileset("output", "*")) ? tolist(fileset("output", "*")) : []
-  css_files = can(fileset("output/css", "*")) ? tolist(fileset("output/css", "*")) : []
-  js_files = can(fileset("output/js", "*")) ? tolist(fileset("output/js", "*")) : []
+resource "azurerm_storage_blob" "api_docs" {
+  count                 = length(tolist(fileset("output", "*")))
+  name                  = basename(tolist(fileset("output", "*"))[count.index])
+  storage_account_name  = azurerm_storage_account.ics_products_documentation.name
+  storage_container_name = azurerm_storage_container.docs.name
+  type                  = "Block"
+  source                = "output/${basename(tolist(fileset("output", "*"))[count.index])}"
+  content_type          = "text/html"
 }
 
-# Note: Blob resources are commented out due to conflicts with existing resources
-# If you need to manage these blobs, either import them or remove them from Azure first
-
-# resource "azurerm_storage_blob" "api_docs" {
-#   count                 = length(local.output_files)
-#   name                  = basename(local.output_files[count.index])
-#   storage_account_name  = azurerm_storage_account.ics_products_documentation.name
-#   storage_container_name = azurerm_storage_container.docs.name
-#   type                  = "Block"
-#   source                = "output/${basename(local.output_files[count.index])}"
-#   content_type          = "text/html"
-# }
-
-# resource "azurerm_storage_blob" "api_docs_css" {
-#   count                 = length(local.css_files)
-#   name                  = "css/${basename(local.css_files[count.index])}"
-#   storage_account_name  = azurerm_storage_account.ics_products_documentation.name
-#   storage_container_name = azurerm_storage_container.docs.name
-#   type                  = "Block"
-#   source                = "output/css/${basename(local.css_files[count.index])}"
-#   content_type          = "text/css"
-# }
-
-# resource "azurerm_storage_blob" "api_docs_js" {
-#   count                 = length(local.js_files)
-#   name                  = "js/${basename(local.js_files[count.index])}"
-#   storage_account_name  = azurerm_storage_account.ics_products_documentation.name
-#   storage_container_name = azurerm_storage_container.docs.name
-#   type                  = "Block"
-#   source                = "output/js/${basename(local.js_files[count.index])}"
-#   content_type          = "application/javascript"
-# }
-
-# Outputs pour debugging
-output "api_management_api_id" {
-  description = "ID de l'API créée"
-  value       = azurerm_api_management_api.ics_api.id
+resource "azurerm_storage_blob" "api_docs_css" {
+  count                 = length(tolist(fileset("output/css", "*")))
+  name                  = "css/${basename(tolist(fileset("output/css", "*"))[count.index])}"
+  storage_account_name  = azurerm_storage_account.ics_products_documentation.name
+  storage_container_name = azurerm_storage_container.docs.name
+  type                  = "Block"
+  source                = "output/css/${basename(tolist(fileset("output/css", "*"))[count.index])}"
+  content_type          = "text/css"
 }
 
-output "api_management_api_url" {
-  description = "URL de l'API WebSocket"
-  value       = "wss://${var.APIM_NAME}.azure-api.net/ws/${var.API_VERSION}/${var.API_SYSTEM_NAME}"
-}
-
-output "storage_account_url" {
-  description = "URL du compte de stockage pour la documentation"
-  value       = azurerm_storage_account.ics_products_documentation.primary_web_endpoint
-}
-
-output "documentation_url" {
-  description = "URL de la documentation"
-  value       = "https://${azurerm_storage_account.ics_products_documentation.name}.blob.core.windows.net/${var.API_SYSTEM_NAME}/index.html"
+resource "azurerm_storage_blob" "api_docs_js" {
+  count                 = length(tolist(fileset("output/js", "*")))
+  name                  = "js/${basename(tolist(fileset("output/js", "*"))[count.index])}"
+  storage_account_name  = azurerm_storage_account.ics_products_documentation.name
+  storage_container_name = azurerm_storage_container.docs.name
+  type                  = "Block"
+  source                = "output/js/${basename(tolist(fileset("output/js", "*"))[count.index])}"
+  content_type          = "application/javascript"
 }

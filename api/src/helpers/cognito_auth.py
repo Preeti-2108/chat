@@ -225,6 +225,13 @@ def extract_token_from_event(event: Dict[str, Any]) -> Optional[str]:
     Extract JWT token from various parts of the WebSocket event.
     Falls back to retrieving the token from DynamoDB if not found in the event.
     
+    The function looks for the authentication token in the following order:
+    1. Query string parameters: 'authentication', 'Authentication', 'AUTHENTICATION'
+    2. Query string parameters: 'token' (legacy support)
+    3. Headers: 'Authorization' or 'authorization'
+    4. Multi-value headers: 'Authorization' or 'authorization'
+    5. DynamoDB connections table (if connection exists)
+    
     Args:
         event: The WebSocket event
         
@@ -234,7 +241,17 @@ def extract_token_from_event(event: Dict[str, Any]) -> Optional[str]:
     # Try to get token from query string parameters
     query_params = event.get('queryStringParameters') or {}
     
-    # Check for token parameter (JWT token only, not api-key)
+    # Check for authentication parameter in various cases (authentication, Authentication, AUTHENTICATION)
+    # Also check legacy token parameter for backward compatibility
+    authentication_token = None
+    
+    # Check for 'authentication' parameter in different cases
+    for param_name in ['authentication', 'Authentication', 'AUTHENTICATION']:
+        authentication_token = query_params.get(param_name)
+        if authentication_token:
+            return authentication_token
+    
+    # Fallback to legacy 'token' parameter for backward compatibility
     token = query_params.get('token')
     if token:
         return token

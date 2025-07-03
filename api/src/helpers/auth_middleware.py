@@ -52,7 +52,7 @@ def authenticate_websocket(required_groups: Optional[list] = None):
                     return _send_auth_error(
                         connection_id, 
                         url, 
-                        "Authentication required. Please provide a valid JWT token.",
+                        "Authentication required. Please provide a valid JWT token in 'authentication' parameter or Authorization header.",
                         401
                     )
                 

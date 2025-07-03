@@ -103,7 +103,7 @@ terraform {
 # ######
 
 data "external" "asyncapi_title" {
-  program = ["sh", "-c", "jq -n --rawfile title ../api/asyncapi.json '{\"title\": ($title | fromjson | .info.title)}'"]
+  program = ["sh", "-c", "if [ -s ../api/asyncapi.json ]; then jq -n --rawfile title ../api/asyncapi.json '{\"title\": ($title | fromjson | .info.title)}'; else echo '{\"title\": \"WebSocket API\"}'; fi"]
 }
 
 # ######
@@ -111,7 +111,7 @@ data "external" "asyncapi_title" {
 # ######
 
 resource "azurerm_api_management_api" "ics_api" {
-  name                = var.SLS_NAME
+  name                = replace(var.SLS_NAME, "_", "-")
   resource_group_name = var.APIM_RG
   api_management_name = var.APIM_NAME
   revision            = "1"
@@ -174,7 +174,7 @@ resource "azurerm_storage_account_static_website" "ics_products_documentation_st
 
 resource "azurerm_storage_container" "docs" {
   name                  = var.API_SYSTEM_NAME
-  storage_account_name  = azurerm_storage_account.ics_products_documentation.name
+  storage_account_id    = azurerm_storage_account.ics_products_documentation.id
   container_access_type = "blob"
 }
 
@@ -193,6 +193,10 @@ resource "azurerm_storage_blob" "api_docs" {
   type                  = "Block"
   source                = "output/${basename(local.output_files[count.index])}"
   content_type          = "text/html"
+  
+  depends_on = [
+    azurerm_storage_container.docs
+  ]
 }
 
 resource "azurerm_storage_blob" "api_docs_css" {
@@ -203,6 +207,10 @@ resource "azurerm_storage_blob" "api_docs_css" {
   type                  = "Block"
   source                = "output/css/${basename(local.css_files[count.index])}"
   content_type          = "text/css"
+  
+  depends_on = [
+    azurerm_storage_container.docs
+  ]
 }
 
 resource "azurerm_storage_blob" "api_docs_js" {
@@ -213,6 +221,10 @@ resource "azurerm_storage_blob" "api_docs_js" {
   type                  = "Block"
   source                = "output/js/${basename(local.js_files[count.index])}"
   content_type          = "application/javascript"
+  
+  depends_on = [
+    azurerm_storage_container.docs
+  ]
 }
 
 # Outputs pour debugging

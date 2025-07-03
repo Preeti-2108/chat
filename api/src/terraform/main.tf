@@ -111,7 +111,7 @@ data "external" "asyncapi_title" {
 # ######
 
 resource "azurerm_api_management_api" "ics_api" {
-  name                = replace(var.SLS_NAME, "_", "-")
+  name                = "websocket-api-${var.API_SYSTEM_NAME}"
   resource_group_name = var.APIM_RG
   api_management_name = var.APIM_NAME
   revision            = "1"
@@ -119,6 +119,27 @@ resource "azurerm_api_management_api" "ics_api" {
   path                = "api/${var.API_VERSION}/${var.API_SYSTEM_NAME}"
   protocols           = ["wss"]
   service_url         = var.API_GATEWAY_ENDPOINT
+  
+  import {
+    content_format = "swagger-json"
+    content_value = jsonencode({
+      swagger = "2.0"
+      info = {
+        title = "${data.external.asyncapi_title.result.title}"
+        version = var.API_VERSION
+        description = "WebSocket API for ${var.API_SYSTEM_NAME}"
+      }
+      host = replace(var.API_GATEWAY_ENDPOINT, "wss://", "")
+      schemes = ["wss"]
+      basePath = "/"
+      paths = {}
+    })
+  }
+
+  subscription_key_parameter_names {
+    header = "api-key"
+    query  = "api-key"
+  }
 
   subscription_key_parameter_names {
     header = "api-key"
@@ -194,6 +215,13 @@ resource "azurerm_storage_blob" "api_docs" {
   source                = "output/${basename(local.output_files[count.index])}"
   content_type          = "text/html"
   
+  lifecycle {
+    ignore_changes = [
+      source_uri,
+      metadata
+    ]
+  }
+  
   depends_on = [
     azurerm_storage_container.docs
   ]
@@ -208,6 +236,13 @@ resource "azurerm_storage_blob" "api_docs_css" {
   source                = "output/css/${basename(local.css_files[count.index])}"
   content_type          = "text/css"
   
+  lifecycle {
+    ignore_changes = [
+      source_uri,
+      metadata
+    ]
+  }
+  
   depends_on = [
     azurerm_storage_container.docs
   ]
@@ -221,6 +256,13 @@ resource "azurerm_storage_blob" "api_docs_js" {
   type                  = "Block"
   source                = "output/js/${basename(local.js_files[count.index])}"
   content_type          = "application/javascript"
+  
+  lifecycle {
+    ignore_changes = [
+      source_uri,
+      metadata
+    ]
+  }
   
   depends_on = [
     azurerm_storage_container.docs

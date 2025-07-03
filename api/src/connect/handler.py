@@ -57,7 +57,7 @@ def connect(event, context, token=None):
             warning_message = f"Connection {connection_id} attempted without authentication token"
             logger.warning(warning_message)
             logger.warning(f"Available parameters: {list(query_params.keys())}")
-            logger.warning("Expected parameters: 'authentication' (or 'token' for legacy) in query string, or 'Authorization' header")
+            logger.warning("Expected parameters: 'authentication' in query string, or 'Authorization' header")
             logger.warning(f"Full event queryStringParameters: {event.get('queryStringParameters')}")
             logger.warning(f"Full event headers: {event.get('headers')}")
             
@@ -74,10 +74,10 @@ def connect(event, context, token=None):
                 "body": json.dumps({
                     "status": "authentication_error",
                     "error": "401 - Token Required",
-                    "message": "Authentication required - Please provide a valid JWT token in query parameters (authentication/token) or headers (Authorization)",
+                    "message": "Authentication required - Please provide a valid JWT token in query parameters (authentication) or headers (Authorization)",
                     "warning": warning_message,
                     "available_parameters": list(query_params.keys()),
-                    "expected_parameters": ["authentication", "token (legacy)", "Authorization (header)"],
+                    "expected_parameters": ["authentication", "Authorization (header)"],
                     "connection_id": connection_id,
                     "timestamp": int(time.time())
                 }),

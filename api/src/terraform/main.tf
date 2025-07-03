@@ -111,26 +111,33 @@ data "external" "asyncapi_title" {
 # ######
 
 resource "azurerm_api_management_api" "ics_api" {
-  name                = "websocket-api-${var.API_SYSTEM_NAME}"
+  name                = "ws-${var.API_SYSTEM_NAME}"
   resource_group_name = var.APIM_RG
   api_management_name = var.APIM_NAME
   revision            = "1"
-  display_name        = "${data.external.asyncapi_title.result.title} - ${var.API_VERSION}"
-  path                = "api/${var.API_VERSION}/${var.API_SYSTEM_NAME}"
+  display_name        = "WebSocket API - ${var.API_VERSION}"
+  path                = "ws/${var.API_VERSION}/${var.API_SYSTEM_NAME}"
   protocols           = ["wss"]
-  service_url         = var.API_GATEWAY_ENDPOINT
+
+  import {
+    content_format = "openapi"
+    content_value = jsonencode({
+      openapi = "3.0.0"
+      info = {
+        title = "WebSocket API"
+        version = var.API_VERSION
+      }
+      paths = {}
+    })
+  }
 
   subscription_key_parameter_names {
     header = "api-key"
     query  = "api-key"
   }
 
-  # Configuration pour permettre le paramètre token supplémentaire
-  # Le token sera envoyé par l'utilisateur comme paramètre de query ou header
- 
   description = "Documentation (CTRL+clic for open in a new tab) : https://${azurerm_storage_account.ics_products_documentation.name}.blob.core.windows.net/${var.API_SYSTEM_NAME}/index.html"
 
-  # Ajout de dépendances explicites
   depends_on = [
     azurerm_storage_account.ics_products_documentation,
     azurerm_storage_account_static_website.ics_products_documentation_static_website,
@@ -226,7 +233,7 @@ output "api_management_api_id" {
 
 output "api_management_api_url" {
   description = "URL de l'API WebSocket"
-  value       = "wss://${var.APIM_NAME}.azure-api.net/api/${var.API_VERSION}/${var.API_SYSTEM_NAME}"
+  value       = "wss://${var.APIM_NAME}.azure-api.net/ws/${var.API_VERSION}/${var.API_SYSTEM_NAME}"
 }
 
 output "storage_account_url" {

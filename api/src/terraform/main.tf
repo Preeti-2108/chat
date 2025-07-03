@@ -119,22 +119,6 @@ resource "azurerm_api_management_api" "ics_api" {
   path                = "api/${var.API_VERSION}/${var.API_SYSTEM_NAME}"
   protocols           = ["wss"]
   service_url         = var.API_GATEWAY_ENDPOINT
-  
-  import {
-    content_format = "swagger-json"
-    content_value = jsonencode({
-      swagger = "2.0"
-      info = {
-        title = "${data.external.asyncapi_title.result.title}"
-        version = var.API_VERSION
-        description = "WebSocket API for ${var.API_SYSTEM_NAME}"
-      }
-      host = replace(var.API_GATEWAY_ENDPOINT, "wss://", "")
-      schemes = ["wss"]
-      basePath = "/"
-      paths = {}
-    })
-  }
 
   subscription_key_parameter_names {
     header = "api-key"
@@ -201,68 +185,38 @@ locals {
   js_files = can(fileset("output/js", "*")) ? tolist(fileset("output/js", "*")) : []
 }
 
-resource "azurerm_storage_blob" "api_docs" {
-  count                 = length(local.output_files)
-  name                  = basename(local.output_files[count.index])
-  storage_account_name  = azurerm_storage_account.ics_products_documentation.name
-  storage_container_name = azurerm_storage_container.docs.name
-  type                  = "Block"
-  source                = "output/${basename(local.output_files[count.index])}"
-  content_type          = "text/html"
-  
-  lifecycle {
-    ignore_changes = [
-      source_uri,
-      metadata
-    ]
-  }
-  
-  depends_on = [
-    azurerm_storage_container.docs
-  ]
-}
+# Note: Blob resources are commented out due to conflicts with existing resources
+# If you need to manage these blobs, either import them or remove them from Azure first
 
-resource "azurerm_storage_blob" "api_docs_css" {
-  count                 = length(local.css_files)
-  name                  = "css/${basename(local.css_files[count.index])}"
-  storage_account_name  = azurerm_storage_account.ics_products_documentation.name
-  storage_container_name = azurerm_storage_container.docs.name
-  type                  = "Block"
-  source                = "output/css/${basename(local.css_files[count.index])}"
-  content_type          = "text/css"
-  
-  lifecycle {
-    ignore_changes = [
-      source_uri,
-      metadata
-    ]
-  }
-  
-  depends_on = [
-    azurerm_storage_container.docs
-  ]
-}
+# resource "azurerm_storage_blob" "api_docs" {
+#   count                 = length(local.output_files)
+#   name                  = basename(local.output_files[count.index])
+#   storage_account_name  = azurerm_storage_account.ics_products_documentation.name
+#   storage_container_name = azurerm_storage_container.docs.name
+#   type                  = "Block"
+#   source                = "output/${basename(local.output_files[count.index])}"
+#   content_type          = "text/html"
+# }
 
-resource "azurerm_storage_blob" "api_docs_js" {
-  count                 = length(local.js_files)
-  name                  = "js/${basename(local.js_files[count.index])}"
-  storage_account_name  = azurerm_storage_account.ics_products_documentation.name
-  storage_container_name = azurerm_storage_container.docs.name
-  type                  = "Block"
-  source                = "output/js/${basename(local.js_files[count.index])}"
-  content_type          = "application/javascript"
-  
-  lifecycle {
-    ignore_changes = [
-      source_uri,
-      metadata
-    ]
-  }
-  
-  depends_on = [
-    azurerm_storage_container.docs
-  ]
-}
+# resource "azurerm_storage_blob" "api_docs_css" {
+#   count                 = length(local.css_files)
+#   name                  = "css/${basename(local.css_files[count.index])}"
+#   storage_account_name  = azurerm_storage_account.ics_products_documentation.name
+#   storage_container_name = azurerm_storage_container.docs.name
+#   type                  = "Block"
+#   source                = "output/css/${basename(local.css_files[count.index])}"
+#   content_type          = "text/css"
+# }
+
+# resource "azurerm_storage_blob" "api_docs_js" {
+#   count                 = length(local.js_files)
+#   name                  = "js/${basename(local.js_files[count.index])}"
+#   storage_account_name  = azurerm_storage_account.ics_products_documentation.name
+#   storage_container_name = azurerm_storage_container.docs.name
+#   type                  = "Block"
+#   source                = "output/js/${basename(local.js_files[count.index])}"
+#   content_type          = "application/javascript"
+# }
 
 # Outputs pour debugging
 output "api_management_api_id" {

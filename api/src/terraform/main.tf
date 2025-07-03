@@ -103,7 +103,7 @@ terraform {
 # ######
 
 data "external" "asyncapi_title" {
-  program = ["sh", "-c", "jq -n --rawfile title ../api/asyncapi.json '{\"title\": ($title | fromjson | .info.title)}'"]
+  program = ["sh", "-c", "jq -n --rawfile title ../api/asyncapi.json 'if ($title | length) > 0 then {\"title\": ($title | fromjson | .info.title)} else {\"title\": \"WebSocket API\"} end'"]
 }
 
 # ######

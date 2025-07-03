@@ -138,7 +138,7 @@ resource "azurerm_api_management_product_api" "ics_product_api" {
 }
 
 resource "azurerm_storage_account" "ics_products_documentation" {
-  name                     = "${substr(var.APIM_NAME, 0, 20)}docs${substr(var.ENV, 0, 4)}"
+  name                     = "${lower(substr(replace(var.APIM_NAME, "-", ""), 0, 16))}${lower(substr(var.ENV, 0, 4))}doc"
   resource_group_name      = var.APIM_RG
   location                 = "francecentral"
   account_tier            = "Standard"

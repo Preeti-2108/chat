@@ -165,35 +165,57 @@ def edit(event, context):
         # Parse the WebSocket message (expecting a JSON payload in the body)
         logger.debug(f"Raw event body: {event.get('body', 'No body found')}")
         
-        if not event.get('body'):
+        # Parse the WebSocket message (expecting a JSON payload in the body)
+        raw_body = event.get('body')
+        logger.debug(f"Raw body from event: {raw_body}")
+        logger.debug(f"Body type: {type(raw_body)}")
+        
+        if raw_body is None:
+            logger.warning("No body found in event")
             response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Request body is missing.')
             send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
             return {
                 'statusCode': STATUS_UNPROCESSABLE_ENTITY,
                 'body': json.dumps('Request body is missing')
             }
-        
-        try:
-            body = json.loads(event.get('body', '{}'))
-        except json.JSONDecodeError as json_err:
-            logger.error(f"Error parsing JSON body: {str(json_err)}")
-            response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Invalid JSON format in request body.')
+        elif isinstance(raw_body, str):
+            try:
+                body = json.loads(raw_body)
+                logger.debug(f"Parsed body from string: {body}")
+            except json.JSONDecodeError as json_err:
+                logger.error(f"Error parsing JSON body: {str(json_err)}")
+                logger.error(f"Raw body that failed to parse: {repr(raw_body)}")
+                response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Invalid JSON format in request body.')
+                send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+                return {
+                    'statusCode': STATUS_UNPROCESSABLE_ENTITY,
+                    'body': json.dumps('Invalid JSON format')
+                }
+        elif isinstance(raw_body, dict):
+            body = raw_body
+            logger.debug(f"Body is already a dict: {body}")
+        else:
+            logger.error(f"Unexpected body type: {type(raw_body)}")
+            response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Invalid body format.')
             send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
             return {
                 'statusCode': STATUS_UNPROCESSABLE_ENTITY,
-                'body': json.dumps('Invalid JSON format')
+                'body': json.dumps('Invalid body format.')
             }
         
         logger.debug(f"Parsed body: {body}")
         
         action = body.get('action')
-        datas = body.get('datas', {})
+        datas = body.get('datas')
         
         logger.info(f"Action: {action}, Datas: {datas}")
 
-        # Extract ID from datas or path parameters
+        # Ensure datas is a dictionary
+        if datas is None:
+            datas = {}
+
         # Extract the ID from datas
-        id = datas.get('id')
+        id = datas.get('id') if isinstance(datas, dict) else None
         if not id:
             # If 'id' is missing, send an error response to the client
             logger.warning(f"Missing ID parameter in request. Datas: {datas}")

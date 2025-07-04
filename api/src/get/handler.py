@@ -121,24 +121,49 @@ def get(event, context):
 
     try:
         # Parse the body of the WebSocket event
-        try:
-            body = json.loads(event.get('body', '{}'))
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse JSON body: {e}")
-            response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Invalid JSON format in request body.')
+        raw_body = event.get('body')
+        logger.debug(f"Raw body from event: {raw_body}")
+        logger.debug(f"Body type: {type(raw_body)}")
+        
+        if raw_body is None:
+            logger.warning("No body found in event")
+            body = {}
+        elif isinstance(raw_body, str):
+            try:
+                body = json.loads(raw_body)
+                logger.debug(f"Parsed body from string: {body}")
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse JSON body: {e}")
+                logger.error(f"Raw body that failed to parse: {repr(raw_body)}")
+                response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Invalid JSON format in request body.')
+                send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+                return {
+                    'statusCode': STATUS_UNPROCESSABLE_ENTITY,
+                    'body': json.dumps('Invalid JSON format in request body.')
+                }
+        elif isinstance(raw_body, dict):
+            body = raw_body
+            logger.debug(f"Body is already a dict: {body}")
+        else:
+            logger.error(f"Unexpected body type: {type(raw_body)}")
+            response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Invalid body format.')
             send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
             return {
                 'statusCode': STATUS_UNPROCESSABLE_ENTITY,
-                'body': json.dumps('Invalid JSON format in request body.')
+                'body': json.dumps('Invalid body format.')
             }
 
         # Extract action and datas from the request body
         action = body.get('action')
-        datas = body.get('datas', {})
+        datas = body.get('datas')
         logger.info(f"Processing action: {action} with datas: {datas}")
 
+        # Ensure datas is a dictionary
+        if datas is None:
+            datas = {}
+
         # Extract the ID from datas
-        id = datas.get('id')
+        id = datas.get('id') if isinstance(datas, dict) else None
         if not id:
             # If 'id' is missing, send an error response to the client
             logger.warning(f"Missing ID parameter in request. Datas: {datas}")

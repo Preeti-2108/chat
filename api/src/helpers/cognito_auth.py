@@ -188,11 +188,120 @@ def extract_user_info(decoded_token: Dict[str, Any]) -> Dict[str, Any]:
         'email': decoded_token.get('email'),
         'email_verified': decoded_token.get('email_verified'),
         'groups': decoded_token.get('cognito:groups', []),
+        'scopes': extract_scopes_from_token(decoded_token),
         'token_use': decoded_token.get('token_use'),
         'client_id': decoded_token.get('client_id') or decoded_token.get('aud'),
         'exp': decoded_token.get('exp'),
         'iat': decoded_token.get('iat'),
     }
+
+def extract_scopes_from_token(decoded_token: Dict[str, Any]) -> list:
+    """
+    Extract scopes from a JWT token.
+    
+    Args:
+        decoded_token: The decoded JWT payload
+        
+    Returns:
+        List of scopes
+    """
+    scope_string = decoded_token.get('scope', '')
+    if isinstance(scope_string, str):
+        return scope_string.split() if scope_string else []
+    elif isinstance(scope_string, list):
+        return scope_string
+    else:
+        return []
+
+def validate_scopes(user_scopes: list, required_scopes: list, require_all: bool = False) -> bool:
+    """
+    Validate if user has the required scopes.
+    
+    Args:
+        user_scopes: List of scopes that the user has
+        required_scopes: List of scopes that are required
+        require_all: If True, user must have ALL required scopes. If False, user must have at least ONE.
+        
+    Returns:
+        True if user has required scopes, False otherwise
+    """
+    if not required_scopes:
+        return True
+    
+    if not user_scopes:
+        return False
+    
+    if require_all:
+        return all(scope in user_scopes for scope in required_scopes)
+    else:
+        return any(scope in user_scopes for scope in required_scopes)
+
+def has_scope_permission(user_scopes: list, resource: str, action: str) -> bool:
+    """
+    Check if user has permission for a specific resource and action.
+    
+    Args:
+        user_scopes: List of scopes that the user has
+        resource: The resource name (e.g., 'TEMPLATE', 'RECIPIENTS')
+        action: The action (e.g., 'CREATE', 'READ', 'UPDATE', 'DELETE')
+        
+    Returns:
+        True if user has permission, False otherwise
+    """
+    if not user_scopes:
+        return False
+    
+    # Check for exact match first
+    required_scope = f"{resource}.{action}"
+    if required_scope in user_scopes:
+        return True
+    
+    # Check for wildcard patterns
+    resource_wildcard = f"{resource}.*"
+    if resource_wildcard in user_scopes:
+        return True
+    
+    # Check for service-level permissions (e.g., MYOPS/TEMPLATE.CREATE)
+    for scope in user_scopes:
+        if '/' in scope:
+            service_resource, permission = scope.split('/', 1)
+            if '.' in permission:
+                perm_resource, perm_action = permission.split('.', 1)
+                if perm_resource == resource and perm_action == action:
+                    return True
+    
+    return False
+
+def get_user_permissions(user_scopes: list) -> Dict[str, list]:
+    """
+    Extract user permissions organized by resource.
+    
+    Args:
+        user_scopes: List of scopes that the user has
+        
+    Returns:
+        Dict with resources as keys and list of actions as values
+    """
+    permissions = {}
+    
+    for scope in user_scopes:
+        if '/' in scope:
+            # Handle service/resource.action format
+            service_part, resource_action = scope.split('/', 1)
+            if '.' in resource_action:
+                resource, action = resource_action.split('.', 1)
+                key = f"{service_part}/{resource}"
+                if key not in permissions:
+                    permissions[key] = []
+                permissions[key].append(action)
+        elif '.' in scope:
+            # Handle direct resource.action format
+            resource, action = scope.split('.', 1)
+            if resource not in permissions:
+                permissions[resource] = []
+            permissions[resource].append(action)
+    
+    return permissions
 
 def validate_cognito_token(token: str) -> Dict[str, Any]:
     """

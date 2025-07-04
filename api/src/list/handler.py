@@ -12,6 +12,8 @@ from src.helpers.schema_validation import validate_request_datas_schema  # Custo
 from src.handler_websocket.handler import send_to_client  # Custom helper to send data to a client via WebSocket
 from src.helpers.event_utils import extract_event_info  # Custom helper to extract necessary information from the event
 from src.helpers.decimal_converter import convert_decimal_to_json_serializable  # Custom helper to convert Decimal objects
+from src.helpers.auth_middleware import authenticate_websocket, get_user_scopes, has_resource_permission  # Cognito authentication and scope management
+from src.helpers.scope_manager import filter_data_by_scope, get_user_resource_permissions  # Advanced scope utilities
 
 """
 /**
@@ -88,12 +90,14 @@ from src.helpers.decimal_converter import convert_decimal_to_json_serializable  
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))  # Set Log Level
 
+@authenticate_websocket(required_scopes=['DEMO/PYTHONTEMPLATEWEBSOCKET.READ'])
 def list(event, context):
     """
     Main function to handle the listing of items.
     
     This function processes incoming events to retrieve a list of templates from a DynamoDB table.
     It validates the request, constructs query parameters, and formats the response to be sent back to the client.
+    It also applies scope-based filtering to ensure users only see data they have permission to access.
     
     :param event: The event data received from the client, containing query parameters and action.
     :param context: The context in which the function is executed, providing runtime information.
@@ -101,6 +105,12 @@ def list(event, context):
     """
     logger.debug('logging event: %s', event)  # Log the incoming event
     logger.info('Inside list function')  # Log entry into the function
+
+    # Get user's scopes for additional permission checks
+    user_scopes = get_user_scopes(event)
+    user_permissions = get_user_resource_permissions(event)
+    logger.info(f"User scopes: {user_scopes}")
+    logger.info(f"User permissions: {user_permissions}")
 
     # Define status codes for different outcomes
     STATUS_ERROR = 500

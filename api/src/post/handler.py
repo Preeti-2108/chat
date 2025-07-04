@@ -10,6 +10,7 @@ from src.helpers.schema_validation import validate_request_datas_schema  # Custo
 from src.handler_websocket.handler import send_to_client  # Custom helper to send data to a client via WebSocket
 from src.helpers.event_utils import extract_event_info  # Custom helper to extract necessary information from the event
 from src.helpers.auth_middleware import authenticate_websocket  # Cognito authentication
+from src.helpers.scope_manager import require_resource_permission  # Scope validation
 
 """
 /**
@@ -93,8 +94,14 @@ from src.helpers.auth_middleware import authenticate_websocket  # Cognito authen
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))  # Set Log Level
 
-@authenticate_websocket()  # Require authentication for this handler
+# Option 1: Utiliser le décorateur authenticate_websocket avec des scopes
+@authenticate_websocket(required_scopes=['DEMO/PYTHONTEMPLATEWEBSOCKET.CREATE'])
 def create(event, context):
+
+# Option 2: Utiliser le décorateur require_resource_permission (plus flexible)
+# @authenticate_websocket()
+# @require_resource_permission('PYTHONTEMPLATEWEBSOCKET', 'CREATE')
+# def create(event, context):
     """
     Main function to handle the creation of a new item.
     

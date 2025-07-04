@@ -9,12 +9,13 @@ import json
 import logging
 import os
 from functools import wraps
-from typing import Dict, Any, Callable, Optional
+from typing import Dict, Any, Callable, Optional, Union, List
 from src.helpers.cognito_auth import validate_cognito_token, extract_token_from_event
 from src.helpers.api_responses import Responses
 from src.helpers.construct_response import construct_response
 from src.handler_websocket.handler import send_to_client
 from src.helpers.event_utils import extract_event_info
+from src.helpers.scope_manager import ScopeValidationError
 
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))
@@ -23,12 +24,16 @@ class AuthenticationError(Exception):
     """Custom exception for authentication errors."""
     pass
 
-def authenticate_websocket(required_groups: Optional[list] = None):
+def authenticate_websocket(required_groups: Optional[list] = None, 
+                          required_scopes: Optional[Union[str, List[str]]] = None,
+                          require_all_scopes: bool = False):
     """
     Decorator to authenticate WebSocket requests using Cognito JWT tokens.
     
     Args:
         required_groups: Optional list of Cognito groups required for access
+        required_scopes: Optional single scope string or list of scope strings required
+        require_all_scopes: If True, user must have ALL required scopes. If False, user must have at least ONE.
         
     Returns:
         Decorated function that validates authentication before execution
@@ -75,6 +80,23 @@ def authenticate_websocket(required_groups: Optional[list] = None):
                             403
                         )
                 
+                # Check scopes if required
+                if required_scopes:
+                    from src.helpers.scope_manager import validate_scopes
+                    user_scopes = user_info.get('scopes', [])
+                    scopes_to_check = [required_scopes] if isinstance(required_scopes, str) else required_scopes
+                    
+                    if not validate_scopes(user_scopes, scopes_to_check, require_all_scopes):
+                        logger.warning(f"User {user_info.get('username')} missing required scopes: {scopes_to_check}")
+                        return _send_auth_error(
+                            connection_id,
+                            url,
+                            f"Insufficient permissions. Required scopes: {', '.join(scopes_to_check)}",
+                            403
+                        )
+                    
+                    logger.info(f"User {user_info.get('username')} has required scopes: {scopes_to_check}")
+                
                 # Add authentication info to the event for the handler to use
                 event['auth'] = {
                     'user_info': user_info,
@@ -85,6 +107,14 @@ def authenticate_websocket(required_groups: Optional[list] = None):
                 # Call the original handler
                 return handler_func(event, context)
                 
+            except ScopeValidationError as e:
+                logger.error(f"Scope validation failed: {str(e)}")
+                return _send_auth_error(
+                    connection_id,
+                    url,
+                    str(e),
+                    403
+                )
             except Exception as e:
                 logger.error(f"Authentication failed: {str(e)}")
                 return _send_auth_error(
@@ -198,6 +228,52 @@ def has_group(event: Dict[str, Any], group_name: str) -> bool:
         user_groups = user_info.get('groups', [])
         return group_name in user_groups
     return False
+
+def get_user_scopes(event: Dict[str, Any]) -> List[str]:
+    """
+    Get the authenticated user's scopes from the event.
+    
+    Args:
+        event: The WebSocket event (should be processed by authenticate_websocket decorator)
+        
+    Returns:
+        List of user scopes
+    """
+    auth_info = event.get('auth', {})
+    if auth_info.get('is_authenticated'):
+        user_info = auth_info.get('user_info', {})
+        return user_info.get('scopes', [])
+    return []
+
+def has_scope(event: Dict[str, Any], scope: str) -> bool:
+    """
+    Check if the authenticated user has a specific scope.
+    
+    Args:
+        event: The WebSocket event (should be processed by authenticate_websocket decorator)
+        scope: The scope to check for
+        
+    Returns:
+        True if user has the scope, False otherwise
+    """
+    user_scopes = get_user_scopes(event)
+    return scope in user_scopes
+
+def has_resource_permission(event: Dict[str, Any], resource: str, action: str) -> bool:
+    """
+    Check if the authenticated user has permission for a specific resource and action.
+    
+    Args:
+        event: The WebSocket event (should be processed by authenticate_websocket decorator)
+        resource: The resource name (e.g., 'TEMPLATE', 'RECIPIENTS')
+        action: The action (e.g., 'CREATE', 'READ', 'UPDATE', 'DELETE')
+        
+    Returns:
+        True if user has permission, False otherwise
+    """
+    from src.helpers.scope_manager import has_scope_permission
+    user_scopes = get_user_scopes(event)
+    return has_scope_permission(user_scopes, resource, action)
 
 def require_authentication(event: Dict[str, Any]) -> Dict[str, Any]:
     """

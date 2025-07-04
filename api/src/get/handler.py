@@ -13,6 +13,7 @@ from src.handler_websocket.handler import send_to_client
 from src.helpers.event_utils import extract_event_info
 from src.helpers.decimal_converter import convert_decimal_to_json_serializable as decimal_to_json_serializable  # Custom helper to convert Decimal objects
 from src.helpers.auth_middleware import authenticate_websocket  # Cognito authentication
+from src.helpers.scope_manager import require_resource_permission  # Scope validation
 
 """
 /**
@@ -57,8 +58,14 @@ from src.helpers.auth_middleware import authenticate_websocket  # Cognito authen
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))  # Set the log level based on environment variable or default to 'INFO'
 
-@authenticate_websocket()  # Require authentication for this handler
+# Option 1: Utiliser le décorateur authenticate_websocket avec des scopes
+@authenticate_websocket(required_scopes=['DEMO/PYTHONTEMPLATEWEBSOCKET.READ'])
 def get(event, context):
+
+# Option 2: Utiliser le décorateur require_resource_permission (plus flexible)
+# @authenticate_websocket()
+# @require_resource_permission('PYTHONTEMPLATEWEBSOCKET', 'READ')
+# def get(event, context):
     """
     Handles the retrieval of a template item from a DynamoDB table based on the provided ID.
     

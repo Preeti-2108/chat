@@ -130,6 +130,35 @@ resource "azurerm_api_management_api" "ics_api" {
 
 }
 
+# Définir les opérations WebSocket avec le paramètre authorization
+resource "azurerm_api_management_api_operation" "websocket_connect" {
+  operation_id        = "websocket-connect"
+  api_name            = azurerm_api_management_api.ics_api.name
+  api_management_name = var.APIM_NAME
+  resource_group_name = var.APIM_RG
+  display_name        = "WebSocket Connect"
+  method              = "GET"
+  url_template        = "/"
+  description         = "Establish WebSocket connection"
+
+  # Juste cette ligne pour le paramètre authorization !
+  template_parameter {
+    name        = "authorization"
+    type        = "string"
+    description = "JWT token for authentication (optional)"
+    required    = false
+  }
+}
+
+# Appliquer vos politiques existantes
+resource "azurerm_api_management_api_policy" "ics_api_policy" {
+  api_name            = azurerm_api_management_api.ics_api.name
+  api_management_name = var.APIM_NAME
+  resource_group_name = var.APIM_RG
+  
+  xml_content = file("../api/policies.xml")
+}
+
 resource "azurerm_api_management_product_api" "ics_product_api" {
   api_name            = azurerm_api_management_api.ics_api.name
   product_id          = var.APIM_PRODUCT

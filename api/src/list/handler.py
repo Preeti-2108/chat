@@ -3,7 +3,6 @@ import json  # Provides methods to work with JSON data
 import boto3  # AWS SDK for Python to interact with AWS services
 import logging  # Provides a way to configure and use loggers
 import re  # Provides regular expression matching operations
-from decimal import Decimal  # Import Decimal for DynamoDB numeric handling
 from text_unidecode import unidecode  # Provides a way to remove accents from characters
 from urllib.parse import parse_qs  # Provides methods to parse query strings
 from src.helpers.api_responses import Responses  # Custom helper for API responses
@@ -12,8 +11,8 @@ from src.helpers.schema_validation import validate_request_datas_schema  # Custo
 from src.handler_websocket.handler import send_to_client  # Custom helper to send data to a client via WebSocket
 from src.helpers.event_utils import extract_event_info  # Custom helper to extract necessary information from the event
 from src.helpers.decimal_converter import convert_decimal_to_json_serializable  # Custom helper to convert Decimal objects
-from src.helpers.auth_middleware import authenticate_websocket, get_user_scopes, has_resource_permission, get_user_email, get_authenticated_user  # Cognito authentication and scope management
-from src.helpers.scope_manager import filter_data_by_scope, get_user_resource_permissions, require_resource_permission  # Advanced scope utilities
+from src.helpers.auth_middleware import authenticate_websocket, get_user_scopes, get_user_email, get_authenticated_user  # Cognito authentication and scope management
+from src.helpers.scope_manager import get_user_resource_permissions, require_resource_permission  # Advanced scope utilities
 
 """
 /**

@@ -2,8 +2,7 @@ import json  # Import JSON module for parsing and generating JSON data
 import os  # Import OS module for interacting with the operating system
 import boto3  # Import Boto3, the AWS SDK for Python, to interact with AWS services
 import logging  # Import logging module to log messages
-from decimal import Decimal  # Import Decimal for handling DynamoDB numeric types
-from botocore.exceptions import BotoCoreError, ClientError  # Import specific exceptions from BotoCore
+from botocore.exceptions import ClientError  # Import specific exceptions from BotoCore
 
 # Import custom helper modules for API responses, response construction, schema validation, WebSocket communication, and event information extraction
 from src.helpers.api_responses import Responses

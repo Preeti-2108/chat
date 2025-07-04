@@ -3,7 +3,6 @@ import os
 import json
 import boto3
 import logging
-from decimal import Decimal
 from datetime import datetime
 from src.helpers.api_responses import Responses
 from src.helpers.construct_response import construct_response

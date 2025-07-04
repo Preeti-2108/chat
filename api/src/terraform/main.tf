@@ -129,8 +129,8 @@ resource "azurerm_api_management_api" "ics_api" {
   description = "Documentation (CTRL+clic for open in a new tab) : https://${azurerm_storage_account.ics_products_documentation.name}.blob.core.windows.net/${var.API_SYSTEM_NAME}/index.html"
 }
 
-resource "azurerm_api_management_api_policy" "ics_api_policy" {
-  api_name            = azurerm_api_management_api.ics_api.name
+resource "azurerm_api_management_product_policy" "ics_product_policy" {
+  product_id          = var.APIM_PRODUCT
   api_management_name = var.APIM_NAME
   resource_group_name = var.APIM_RG
 

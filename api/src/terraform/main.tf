@@ -129,13 +129,13 @@ resource "azurerm_api_management_api" "ics_api" {
   description = "Documentation (CTRL+clic for open in a new tab) : https://${azurerm_storage_account.ics_products_documentation.name}.blob.core.windows.net/${var.API_SYSTEM_NAME}/index.html"
 }
 
-# Alternative: Utiliser une ressource locale pour gérer les politiques
 resource "null_resource" "apply_product_policy" {
   triggers = {
     policy_content = file("../api/policies.xml")
   }
 
   provisioner "local-exec" {
+    working_dir = "../api"
     command = <<-EOT
       az rest --method put \
         --url "https://management.azure.com/subscriptions/${var.AZ_SUB_ID}/resourceGroups/${var.APIM_RG}/providers/Microsoft.ApiManagement/service/${var.APIM_NAME}/products/${var.APIM_PRODUCT}/policies/policy?api-version=2021-08-01" \

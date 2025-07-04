@@ -5,7 +5,7 @@
         <rate-limit-by-key calls="100" renewal-period="1" counter-key="@(context.Subscription.Key)" />
         <choose>
             <when condition="@(context.Request.Headers.ContainsKey("Authorization"))">
-                <set-query-parameter name="authentication" exists-action="override">
+                <set-query-parameter name="authorization" exists-action="override">
                     <value>@{
                         string authHeader = context.Request.Headers.GetValueOrDefault("Authorization", "");
                         return authHeader.StartsWith("Bearer ") ? authHeader.Substring(7) : authHeader;

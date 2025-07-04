@@ -37,13 +37,13 @@ def connect(event, context, token=None):
     connection_id = event.get('requestContext', {}).get('connectionId')
     logger.info(f"WebSocket connection attempt from: {connection_id}")
     
-    # Extraire les paramètres de la requête
+    # Extract query parameters from the event
     query_params = event.get('queryStringParameters') or {}
     
-    # Récupérer le token depuis les paramètres ou utiliser le paramètre fourni
+    # Check if the token is provided in the query parameters or headers
     if token is None:
-        # Chercher d'abord le paramètre authentication dans différentes casses
-        for param_name in ['authentication', 'Authentication', 'AUTHENTICATION']:
+        # Search for the token in query parameters first
+        for param_name in ['authorization', 'Authorization', 'AUTHORIZATION']:
             token = query_params.get(param_name)
             if token:
                 break
@@ -81,7 +81,7 @@ def connect(event, context, token=None):
                     "message": "Authentication required - Please provide a valid JWT token in query parameters (authentication) or headers (Authorization)",
                     "warning": warning_message,
                     "available_parameters": list(query_params.keys()),
-                    "expected_parameters": ["authentication", "Authorization (header)"],
+                    "expected_parameters": ["authorization", "Authorization (header)"],
                     "connection_id": connection_id,
                     "timestamp": int(time.time())
                 }),

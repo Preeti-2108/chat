@@ -121,27 +121,16 @@ def get(event, context):
 
     try:
         # Parse the body of the WebSocket event
-        if not event.get('body'):
-            response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Request body is missing.')
+        try:
+            body = json.loads(event.get('body', '{}'))
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse JSON body: {e}")
+            response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Invalid JSON format in request body.')
             send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
             return {
                 'statusCode': STATUS_UNPROCESSABLE_ENTITY,
-                'body': json.dumps('Request body is missing')
+                'body': json.dumps('Invalid JSON format in request body.')
             }
-        
-        body = event.get('body', {})
-        logger.debug(f"Raw body from event: {body}")
-        if isinstance(body, str):
-            try:
-                body = json.loads(body)  # Convert JSON string to dictionary if necessary
-            except json.JSONDecodeError as e:
-                logger.error(f"Failed to parse JSON body: {e}")
-                response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Invalid JSON in request body.')
-                send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
-                return {
-                    'statusCode': STATUS_UNPROCESSABLE_ENTITY,
-                    'body': json.dumps('Invalid JSON in request body.')
-                }
 
         # Extract action and datas from the request body
         action = body.get('action')

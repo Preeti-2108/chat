@@ -174,7 +174,7 @@ def edit(event, context):
             }
         
         try:
-            body = json.loads(event['body'])
+            body = json.loads(event.get('body', '{}'))
         except json.JSONDecodeError as json_err:
             logger.error(f"Error parsing JSON body: {str(json_err)}")
             response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Invalid JSON format in request body.')

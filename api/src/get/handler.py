@@ -227,6 +227,13 @@ def get(event, context):
             'body': json.dumps('Internal server error')
         }
 
+    # Send the response to the client via WebSocket
+    try:
+        send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+    except Exception as websocket_err:
+        logger.error(f"Error sending response to client: {str(websocket_err)}")
+        # Don't return error here as the main operation might have succeeded
+
     return {
         'statusCode': status_code,
         'body': json.dumps('Message sent successfully.')

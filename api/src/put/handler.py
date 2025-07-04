@@ -12,6 +12,7 @@ from src.handler_websocket.handler import send_to_client
 from src.helpers.event_utils import extract_event_info  # Custom helper to extract necessary information from the event
 from src.helpers.decimal_converter import convert_decimal_to_json_serializable as decimal_to_json_serializable  # Custom helper to convert Decimal objects
 from src.helpers.auth_middleware import authenticate_websocket, get_user_email, get_authenticated_user  # Cognito authentication
+from src.helpers.scope_manager import require_resource_permission  # Scope validation
 
 """
 /**
@@ -98,6 +99,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))  # Set log level based on environment variable
 
 @authenticate_websocket()  # Require authentication for this handler
+@require_resource_permission('PYTHONTEMPLATEWEBSOCKET', 'UPDATE')  # Require UPDATE permission for this resource
 def edit(event, context):
     """
     Handles the WebSocket edit operation for updating a template in DynamoDB.
@@ -132,25 +134,32 @@ def edit(event, context):
     table = dynamodb.Table(table_name)
 
     # Extract necessary information from the event
-    event_info = extract_event_info(event)
-    url = event_info.get('url')
-    connectionId = event_info.get('connectionId')
-    
-    logger.debug(f"Event info extracted - URL: {url}, ConnectionId: {connectionId}")
-    
-    # Validate that we have the necessary connection information
-    if not connectionId:
-        logger.error("ConnectionId not found in event")
+    try:
+        event_info = extract_event_info(event)
+        url = event_info.get('url')
+        connectionId = event_info.get('connectionId')
+        
+        logger.debug(f"Event info extracted - URL: {url}, ConnectionId: {connectionId}")
+        
+        # Validate that we have the necessary connection information
+        if not connectionId:
+            logger.error("ConnectionId not found in event")
+            return {
+                'statusCode': STATUS_ERROR,
+                'body': json.dumps({'error': 'ConnectionId not found in event'})
+            }
+        
+        if not url:
+            logger.error("WebSocket URL not found in event")
+            return {
+                'statusCode': STATUS_ERROR,
+                'body': json.dumps({'error': 'WebSocket URL not found in event'})
+            }
+    except Exception as event_err:
+        logger.error(f"Error extracting event info: {str(event_err)}")
         return {
             'statusCode': STATUS_ERROR,
-            'body': json.dumps({'error': 'ConnectionId not found in event'})
-        }
-    
-    if not url:
-        logger.error("WebSocket URL not found in event")
-        return {
-            'statusCode': STATUS_ERROR,
-            'body': json.dumps({'error': 'WebSocket URL not found in event'})
+            'body': json.dumps('Error processing event')
         }
 
     try:
@@ -165,7 +174,17 @@ def edit(event, context):
                 'body': json.dumps('Request body is missing')
             }
         
-        body = json.loads(event['body'])
+        try:
+            body = json.loads(event['body'])
+        except json.JSONDecodeError as json_err:
+            logger.error(f"Error parsing JSON body: {str(json_err)}")
+            response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Invalid JSON format in request body.')
+            send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+            return {
+                'statusCode': STATUS_UNPROCESSABLE_ENTITY,
+                'body': json.dumps('Invalid JSON format')
+            }
+        
         logger.debug(f"Parsed body: {body}")
         
         action = body.get('action')
@@ -190,7 +209,17 @@ def edit(event, context):
 
         # Validate the request and retrieve validation errors
         logger.debug(f"Validating schema for action: {action}")
-        validation_schema = validate_request_datas_schema(action, datas)
+        try:
+            validation_schema = validate_request_datas_schema(action, datas)
+        except Exception as validation_err:
+            logger.error(f"Error during schema validation: {str(validation_err)}")
+            response_result = Responses.result_response(STATUS_ERROR, False, 'Schema validation error.')
+            send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+            return {
+                'statusCode': STATUS_ERROR,
+                'body': json.dumps('Schema validation error')
+            }
+        
         logger.debug(f"Validation result: {validation_schema}")
         
         if not validation_schema['success']:
@@ -223,17 +252,26 @@ def edit(event, context):
         expression = generate_update_query(validation_schema['datas'])
 
         # Check if the item exists in DynamoDB
-        existing_item = table.get_item(Key={'id': id})
-        if 'Item' not in existing_item:
-            logger.warning(f"Item with ID {id} not found in database")
-            response_result = Responses.result_response(STATUS_NOT_FOUND, False, f'Item with ID {id} not found.')
+        try:
+            existing_item = table.get_item(Key={'id': id})
+            if 'Item' not in existing_item:
+                logger.warning(f"Item with ID {id} not found in database")
+                response_result = Responses.result_response(STATUS_NOT_FOUND, False, f'Item with ID {id} not found.')
+                send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+                return {
+                    'statusCode': STATUS_NOT_FOUND,
+                    'body': json.dumps('Item not found')
+                }
+        except Exception as db_err:
+            logger.error(f"Error checking item existence: {str(db_err)}")
+            response_result = Responses.result_response(STATUS_ERROR, False, 'Database error during item lookup.')
             send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
             return {
-                'statusCode': STATUS_NOT_FOUND,
-                'body': json.dumps('Item not found')
+                'statusCode': STATUS_ERROR,
+                'body': json.dumps('Database error')
             }
-        else:
-            # Update the item in DynamoDB
+        # Update the item in DynamoDB
+        try:
             updated_item = table.update_item(
                 Key={'id': id},
                 ExpressionAttributeNames=expression['ExpressionAttributeNames'],
@@ -247,6 +285,15 @@ def edit(event, context):
 
             # Build a successful response with the updated attributes
             response_result = Responses.result_response(STATUS_UPDATED, True, f'Item with ID {id} updated successfully.', serializable_attributes)
+            
+        except Exception as update_err:
+            logger.error(f"Error updating item in database: {str(update_err)}")
+            response_result = Responses.result_response(STATUS_ERROR, False, 'Database error during item update.')
+            send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+            return {
+                'statusCode': STATUS_ERROR,
+                'body': json.dumps('Database error')
+            }
 
     except json.JSONDecodeError as json_err:
         # Handle JSON parsing errors specifically

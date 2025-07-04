@@ -12,8 +12,8 @@ from src.helpers.schema_validation import validate_request_datas_schema  # Custo
 from src.handler_websocket.handler import send_to_client  # Custom helper to send data to a client via WebSocket
 from src.helpers.event_utils import extract_event_info  # Custom helper to extract necessary information from the event
 from src.helpers.decimal_converter import convert_decimal_to_json_serializable  # Custom helper to convert Decimal objects
-from src.helpers.auth_middleware import authenticate_websocket, get_user_scopes, has_resource_permission  # Cognito authentication and scope management
-from src.helpers.scope_manager import filter_data_by_scope, get_user_resource_permissions  # Advanced scope utilities
+from src.helpers.auth_middleware import authenticate_websocket, get_user_scopes, has_resource_permission, get_user_email, get_authenticated_user  # Cognito authentication and scope management
+from src.helpers.scope_manager import filter_data_by_scope, get_user_resource_permissions, require_resource_permission  # Advanced scope utilities
 
 """
 /**
@@ -90,7 +90,8 @@ from src.helpers.scope_manager import filter_data_by_scope, get_user_resource_pe
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))  # Set Log Level
 
-@authenticate_websocket(required_scopes=['DEMO/PYTHONTEMPLATEWEBSOCKET.READ'])
+@authenticate_websocket()  # Require authentication for this handler
+@require_resource_permission('PYTHONTEMPLATEWEBSOCKET', 'READ')  # Require READ permission for this resource
 def list(event, context):
     """
     Main function to handle the listing of items.
@@ -118,19 +119,74 @@ def list(event, context):
     STATUS_OK = 200
 
     # Initialize DynamoDB resource and table
+    table_name = os.getenv('TABLE')
+    if not table_name:
+        logger.error("TABLE environment variable is not set")
+        response_result = Responses.result_response(STATUS_ERROR, False, 'Configuration error: TABLE environment variable not set.')
+        return {
+            'statusCode': STATUS_ERROR,
+            'body': json.dumps('Configuration error')
+        }
+    
     dynamodb = boto3.resource('dynamodb')
-    table = dynamodb.Table(os.getenv('TABLE'))
+    table = dynamodb.Table(table_name)
 
     # Extract necessary information from the event
-    event_info = extract_event_info(event)
-    url = event_info.get('url')
-    connectionId = event_info.get('connectionId')
+    try:
+        event_info = extract_event_info(event)
+        url = event_info.get('url')
+        connectionId = event_info.get('connectionId')
+        
+        if not connectionId:
+            logger.error("ConnectionId not found in event")
+            return {
+                'statusCode': STATUS_ERROR,
+                'body': json.dumps({'error': 'ConnectionId not found in event'})
+            }
+        
+        if not url:
+            logger.error("WebSocket URL not found in event")
+            return {
+                'statusCode': STATUS_ERROR,
+                'body': json.dumps({'error': 'WebSocket URL not found in event'})
+            }
+    except Exception as event_err:
+        logger.error(f"Error extracting event info: {str(event_err)}")
+        return {
+            'statusCode': STATUS_ERROR,
+            'body': json.dumps('Error processing event')
+        }
 
     try:
         # Parse the body of the event
-        body = json.loads(event.get('body', '{}'))
+        if not event.get('body'):
+            response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Request body is missing.')
+            send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+            return {
+                'statusCode': STATUS_UNPROCESSABLE_ENTITY,
+                'body': json.dumps('Request body is missing.')
+            }
+        
+        try:
+            body = json.loads(event.get('body', '{}'))
+        except json.JSONDecodeError as json_err:
+            # Handle JSON parsing errors
+            logger.error(f"JSON decode error: {str(json_err)}")
+            response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Invalid JSON format.')
+            send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+            return {
+                'statusCode': STATUS_UNPROCESSABLE_ENTITY,
+                'body': json.dumps('Invalid JSON format.')
+            }
+        
         action = body.get('action')
         datas = body.get('datas', {})
+        
+        # Get the authenticated user's email from the JWT token
+        user_info = get_authenticated_user(event)
+        email = get_user_email(event) or "system@example.com"
+        
+        logger.info(f"List operation performed by user: {user_info.get('username')} ({email})")
 
         # Convert query string format to dictionary if datas is a string
         if isinstance(datas, str):
@@ -138,22 +194,18 @@ def list(event, context):
         elif not isinstance(datas, dict):
             datas = {}
 
-    except json.JSONDecodeError:
-        # Handle JSON parsing errors
-        response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Invalid JSON format.')
-        send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
-        return {
-            'statusCode': STATUS_UNPROCESSABLE_ENTITY,
-            'body': json.dumps('Invalid JSON format.')
-        }
+        # Validate the request and retrieve validation errors
+        try:
+            validation_schema = validate_request_datas_schema(action, datas)
+        except Exception as validation_err:
+            logger.error(f"Error during schema validation: {str(validation_err)}")
+            response_result = Responses.result_response(STATUS_ERROR, False, 'Schema validation error.')
+            send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+            return {
+                'statusCode': STATUS_ERROR,
+                'body': json.dumps('Schema validation error')
+            }
 
-    # Validate the request and retrieve validation errors
-    validation_schema = validate_request_datas_schema(action, datas)
-
-    # Default response in case of an error
-    response_result = Responses.result_response(STATUS_ERROR, False, 'Error during the execution.')
-
-    try:
         # In case of validation errors, return a 422 response with error details
         if not validation_schema['success']:
             response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Validation errors.', validation_schema)
@@ -175,10 +227,20 @@ def list(event, context):
             response_result = Responses.result_response(STATUS_OK, True, 'No templates found with these filters.', items)
     except Exception as err:
         # Handle any exceptions that occur during processing
-        response_result = Responses.result_response(STATUS_ERROR, False, str(err))
+        logger.error(f"Unexpected error: {str(err)}", exc_info=True)
+        response_result = Responses.result_response(STATUS_ERROR, False, f"Internal server error: {str(err)}")
+        send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+        return {
+            'statusCode': STATUS_ERROR,
+            'body': json.dumps('Internal server error')
+        }
 
     # Send the response to the client
-    send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+    try:
+        send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+    except Exception as websocket_err:
+        logger.error(f"Error sending response to client: {str(websocket_err)}")
+        # Don't return error here as the main operation might have succeeded
 
     return {
         'statusCode': STATUS_OK,

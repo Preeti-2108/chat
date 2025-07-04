@@ -94,14 +94,9 @@ from src.helpers.scope_manager import require_resource_permission  # Scope valid
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))  # Set Log Level
 
-# Option 1: Utiliser le décorateur authenticate_websocket avec des scopes
-@authenticate_websocket(required_scopes=['DEMO/PYTHONTEMPLATEWEBSOCKET.CREATE'])
+@authenticate_websocket()
+@require_resource_permission('PYTHONTEMPLATEWEBSOCKET', 'CREATE')
 def create(event, context):
-
-# Option 2: Utiliser le décorateur require_resource_permission (plus flexible)
-# @authenticate_websocket()
-# @require_resource_permission('PYTHONTEMPLATEWEBSOCKET', 'CREATE')
-# def create(event, context):
     """
     Main function to handle the creation of a new item.
     

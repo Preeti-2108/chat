@@ -91,7 +91,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))  # Set Log Level
 
 @authenticate_websocket()  # Require authentication for this handler
-@require_resource_permission('PYTHONTEMPLATEWEBSOCKET', 'READ')  # Require READ permission for this resource
+@require_resource_permission('PYTHONTEMPLATECDKWEBSOCKET', 'READ')  # Require READ permission for this resource
 def list(event, context):
     """
     Main function to handle the listing of items.

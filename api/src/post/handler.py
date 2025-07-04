@@ -95,7 +95,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))  # Set Log Level
 
 @authenticate_websocket()
-@require_resource_permission('PYTHONTEMPLATEWEBSOCKET', 'CREATE')
+@require_resource_permission('PYTHONTEMPLATECDKWEBSOCKET', 'CREATE')
 def create(event, context):
     """
     Main function to handle the creation of a new item.

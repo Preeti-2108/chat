@@ -56,7 +56,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))  # Set log level based on environment variable
 
 @authenticate_websocket()  # Require authentication for this handler
-@require_resource_permission('PYTHONTEMPLATEWEBSOCKET', 'DELETE')  # Require DELETE permission for this resource
+@require_resource_permission('PYTHONTEMPLATECDKWEBSOCKET', 'DELETE')  # Require DELETE permission for this resource
 def delete(event, context):
     """
     Handles the deletion of a template based on the provided event data.

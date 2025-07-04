@@ -5,10 +5,25 @@
         <rate-limit-by-key calls="100" renewal-period="1" counter-key="@(context.Subscription.Key)" />
         <choose>
             <when condition="@(context.Request.Headers.ContainsKey("Authorization"))">
+                <set-header name="Authorization" exists-action="override">
+                    <value>@(context.Request.Headers.GetValueOrDefault("Authorization", ""))</value>
+                </set-header>
                 <set-query-parameter name="authorization" exists-action="override">
                     <value>@{
                         string authHeader = context.Request.Headers.GetValueOrDefault("Authorization", "");
                         return authHeader.StartsWith("Bearer ") ? authHeader.Substring(7) : authHeader;
+                    }</value>
+                </set-query-parameter>
+            </when>
+            <when condition="@(context.Request.Url.Query.ContainsKey("authorization") || context.Request.Url.Query.ContainsKey("Authorization"))">
+                <set-query-parameter name="authorization" exists-action="override">
+                    <value>@{
+                        string token = context.Request.Url.Query.GetValueOrDefault("authorization", "");
+                        if (string.IsNullOrEmpty(token))
+                        {
+                            token = context.Request.Url.Query.GetValueOrDefault("Authorization", "");
+                        }
+                        return token.StartsWith("Bearer ") ? token.Substring(7) : token;
                     }</value>
                 </set-query-parameter>
             </when>
@@ -19,6 +34,15 @@
     </backend>
     <outbound>
         <base />
+        <set-header name="X-Frame-Options" exists-action="override">
+            <value>DENY</value>
+        </set-header>
+        <set-header name="X-Content-Type-Options" exists-action="override">
+            <value>nosniff</value>
+        </set-header>
+        <set-header name="X-XSS-Protection" exists-action="override">
+            <value>1; mode=block</value>
+        </set-header>
     </outbound>
     <on-error>
         <base />

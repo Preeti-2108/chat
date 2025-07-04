@@ -90,13 +90,22 @@ provider "aws" {
   region     = var.AWS_DEFAULT_REGION
 }
 
+# Backend configuration - use local backend for development
+# For production, the CI/CD pipeline will override this with S3 backend
 terraform {
-  backend "s3" {
-    bucket = "%bucket%"
-    key    = "project/%TF_VAR_APIM_PRODUCT%/%ENV%/ms/%SLS_NAME%.tfstate"
-    region = "%AWS_DEFAULT_REGION%"
+  backend "local" {
+    path = "terraform.tfstate"
   }
 }
+
+# Production backend configuration (commented out for local development):
+# terraform {
+#   backend "s3" {
+#     bucket = "%bucket%"
+#     key    = "project/%TF_VAR_APIM_PRODUCT%/%ENV%/ms/%SLS_NAME%.tfstate"
+#     region = "%AWS_DEFAULT_REGION%"
+#   }
+# }
 
 # ######
 # ## External data source to extract title from asyncapi.json
@@ -132,15 +141,35 @@ resource "azurerm_api_management_api" "ics_api" {
 resource "null_resource" "apply_product_policy" {
   triggers = {
     policy_content = file("../api/policies.xml")
+    # Add timestamp to ensure policy is updated when needed
+    timestamp = timestamp()
   }
 
   provisioner "local-exec" {
     working_dir = "../api"
     command = <<-EOT
-      az rest --method put \
-        --url "https://management.azure.com/subscriptions/${var.AZ_SUB_ID}/resourceGroups/${var.APIM_RG}/providers/Microsoft.ApiManagement/service/${var.APIM_NAME}/products/${var.APIM_PRODUCT}/policies/policy?api-version=2021-08-01" \
-        --headers "Content-Type=application/vnd.ms-azure-apim.policy.raw+xml" \
-        --body @policies.xml
+      # Wait a moment to ensure previous operations complete
+      sleep 10
+      
+      # Use retry logic for the policy application
+      for i in {1..3}; do
+        echo "Attempt $i to apply product policy..."
+        if az rest --method put \
+          --url "https://management.azure.com/subscriptions/${var.AZ_SUB_ID}/resourceGroups/${var.APIM_RG}/providers/Microsoft.ApiManagement/service/${var.APIM_NAME}/products/${var.APIM_PRODUCT}/policies/policy?api-version=2021-08-01" \
+          --headers "Content-Type=application/vnd.ms-azure-apim.policy.raw+xml" \
+          --body @policies.xml; then
+          echo "Policy applied successfully"
+          break
+        else
+          echo "Attempt $i failed, waiting 30 seconds before retry..."
+          sleep 30
+        fi
+        
+        if [ $i -eq 3 ]; then
+          echo "All attempts failed"
+          exit 1
+        fi
+      done
     EOT
   }
 

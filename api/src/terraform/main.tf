@@ -125,9 +125,42 @@ resource "azurerm_api_management_api" "ics_api" {
     header = "api-key"
     query  = "api-key"
   }
+  
+  # Configuration des paramètres d'API via un template d'importation
+  import {
+    content_format = "openapi+json"
+    content_value = jsonencode({
+      openapi = "3.0.0"
+      info = {
+        title = "${data.external.asyncapi_title.result.title} - ${var.API_VERSION}"
+        version = var.API_VERSION
+      }
+      paths = {
+        "/" = {
+          get = {
+            parameters = [
+              {
+                name = "authorization"
+                in = "query"
+                required = false
+                schema = {
+                  type = "string"
+                }
+                description = "Authorization token"
+              }
+            ]
+            responses = {
+              "200" = {
+                description = "Success"
+              }
+            }
+          }
+        }
+      }
+    })
+  }
  
   description = "Documentation (CTRL+clic for open in a new tab) : https://${azurerm_storage_account.ics_products_documentation.name}.blob.core.windows.net/${var.API_SYSTEM_NAME}/index.html"
-
 }
 
 resource "azurerm_api_management_product_api" "ics_product_api" {

@@ -125,42 +125,17 @@ resource "azurerm_api_management_api" "ics_api" {
     header = "api-key"
     query  = "api-key"
   }
-  
-  # Configuration des paramètres d'API via un template d'importation
-  import {
-    content_format = "openapi+json"
-    content_value = jsonencode({
-      openapi = "3.0.0"
-      info = {
-        title = "${data.external.asyncapi_title.result.title} - ${var.API_VERSION}"
-        version = var.API_VERSION
-      }
-      paths = {
-        "/" = {
-          get = {
-            parameters = [
-              {
-                name = "authorization"
-                in = "query"
-                required = false
-                schema = {
-                  type = "string"
-                }
-                description = "Authorization token"
-              }
-            ]
-            responses = {
-              "200" = {
-                description = "Success"
-              }
-            }
-          }
-        }
-      }
-    })
-  }
  
   description = "Documentation (CTRL+clic for open in a new tab) : https://${azurerm_storage_account.ics_products_documentation.name}.blob.core.windows.net/${var.API_SYSTEM_NAME}/index.html"
+}
+
+# Politique pour gérer le paramètre d'autorisation
+resource "azurerm_api_management_api_policy" "ics_api_policy" {
+  api_name            = azurerm_api_management_api.ics_api.name
+  api_management_name = var.APIM_NAME
+  resource_group_name = var.APIM_RG
+
+  xml_content = file("policies.xml")
 }
 
 resource "azurerm_api_management_product_api" "ics_product_api" {

@@ -232,9 +232,17 @@ def construct_params(datas):
             if filter['type'] == 'boolean':
                 # Convert string boolean values to actual boolean types
                 val = filter['value']
-                val = re.sub('true', 'true', val, flags=re.IGNORECASE)
-                val = re.sub('false', 'false', val, flags=re.IGNORECASE)
-                val = True if filter['value'].lower() == 'true' else False
+                # Only apply regex operations if the value is a string
+                if isinstance(val, str):
+                    val = re.sub('true', 'true', val, flags=re.IGNORECASE)
+                    val = re.sub('false', 'false', val, flags=re.IGNORECASE)
+                    val = True if val.lower() == 'true' else False
+                elif isinstance(val, bool):
+                    # If it's already a boolean, use it as is
+                    val = val
+                else:
+                    # For other types, convert to string first then to boolean
+                    val = True if str(val).lower() == 'true' else False
                 params['ExpressionAttributeValues'][f":{filter['name']}"] = val
                 params['ExpressionAttributeNames'][filter['attribute']] = filter['name']
                 params['FilterExpression'] += f" AND {filter['attribute']} = :{filter['name']}" if params['FilterExpression'] else f"{filter['attribute']} = :{filter['name']}"

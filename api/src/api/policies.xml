@@ -3,6 +3,22 @@
         <base />
         <rate-limit-by-key calls="100" renewal-period="1" counter-key="@(context.Request.IpAddress)" />
         <rate-limit-by-key calls="100" renewal-period="1" counter-key="@(context.Subscription.Key)" />
+        <choose>
+            <when condition="@(context.Request.Url.Query.ContainsKey("authorization"))">
+                <set-variable name="authToken" value="@(context.Request.Url.Query.GetValueOrDefault("authorization", ""))" />
+                <choose>
+                    <when condition="@(string.IsNullOrEmpty((string)context.Variables["authToken"]))">
+                        <return-response>
+                            <set-status code="401" reason="Unauthorized" />
+                            <set-header name="Content-Type" exists-action="override">
+                                <value>application/json</value>
+                            </set-header>
+                            <set-body>{"error": "Authorization token cannot be empty"}</set-body>
+                        </return-response>
+                    </when>
+                </choose>
+            </when>
+        </choose>
     </inbound>
     <backend>
         <base />

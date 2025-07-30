@@ -1,52 +1,71 @@
 # Import necessary libraries for UUID handling, date parsing, JSON schema validation, and string manipulation
 import uuid
 import dateutil.parser
+import jsonschema
 from jsonschema import validate, FormatChecker
 from jsonschema.exceptions import ValidationError
 from jsonschema.validators import Draft7Validator
 from text_unidecode import unidecode
+from datetime import datetime
 
-def validate_request_body_schema(method, body):
+def validate_request_datas_schema(action, datas):
     """
-    Validates the request body against a predefined JSON schema based on the HTTP method.
+    Validates the structure and content of request data based on the specified action.
     
     Parameters:
-    - method (str): The HTTP method (e.g., 'POST', 'PUT', 'DELETE', 'GET').
-    - body (dict): The request body to be validated.
+    - action (str): The type of action being performed (e.g., 'create', 'update', 'delete', 'get', 'list' for WebSocket or 'POST', 'PUT', 'DELETE', 'GET' for HTTP).
+    - datas (dict): The data to be validated, structured as a dictionary.
     
     Returns:
-    - dict: A dictionary containing the validation result with keys 'success' (bool) and 'message' (str).
-            For 'POST' and 'PUT', it may also include 'data' (dict) with processed request data.
+    - dict: A dictionary indicating the success of the validation and any relevant messages or validated data.
     """
     
-    # Ensure 'method' is a string and 'body' is a dictionary
-    if not isinstance(method, str):
-        return {'success': False, 'message': 'Method should be a string'}
-    if not isinstance(body, dict):
-        return {'success': False, 'message': 'Body should be a dictionary'}
+    # Map WebSocket actions to HTTP methods for validation
+    action_mapping = {
+        'create': 'POST',
+        'update': 'PUT', 
+        'delete': 'DELETE',
+        'get': 'GET',
+        'list': 'GET'
+    }
+    
+    # Convert action to uppercase and map if needed
+    original_action = action
+    if isinstance(action, str):
+        # If it's a WebSocket action, map it to HTTP method
+        if action.lower() in action_mapping:
+            action = action_mapping[action.lower()]
+        else:
+            action = action.upper()  # Convert to uppercase for HTTP methods
+    
+    # Check if action is a string and datas is a dictionary
+    if not isinstance(action, str):
+        return {'success': False, 'message': 'Action should be a string'}
+    if not isinstance(datas, dict):
+        return {'success': False, 'message': 'Datas should be a dictionary'}
 
-    # Define a custom format checker for UUID validation
     def is_uuid_format(instance):
+        """Check if the given instance is a valid UUID format."""
         try:
-            uuid.UUID(instance)  # Attempt to create a UUID object
+            uuid.UUID(instance)
             return True
         except:
             return False
 
-    # Define a custom format checker for date-time validation
     def is_date_time_format(instance):
+        """Check if the given instance is a valid date-time format."""
         try:
-            dateutil.parser.parse(instance)  # Attempt to parse the string as a date-time
+            dateutil.parser.parse(instance)
             return True
         except:
             return False
 
-    # Initialize a format checker and register custom format checks
+    # Initialize a format checker with custom UUID and date-time format checks
     format_checker = FormatChecker()
     format_checker.checks("uuid", raises=ValueError)(is_uuid_format)
     format_checker.checks("date-time", raises=ValueError)(is_date_time_format)
 
-    # Define the JSON schema for validating the request body
+    # Define the JSON schema for validating the request data
     schema = {
         "type": "object",
         "properties": {
@@ -57,7 +76,6 @@ def validate_request_body_schema(method, body):
             "templateStatus": {"type": "string"},
             "templateAgentValidation": {"type": "boolean", "default": False},
             "templateIntentFailed": {"type": "boolean", "default": False},
-            "isActive": {"type": "boolean", "default": True},
             "templateActions": {"type": "array", "default": []},
             "createdBy": {"type": "string"},
             "updatedBy": {"type": "string"},
@@ -70,65 +88,61 @@ def validate_request_body_schema(method, body):
             "limit": {"type": "integer"},
             "offset": {"type": "integer"}
         },
-        # Require certain fields based on the HTTP method
-        "required": ["templateCompany", "templateAgent"] if method == 'POST' else []
+        # Require certain fields based on the action type
+        "required": ["templateCompany", "templateAgent"] if action == 'POST' else []
     }
     
-    datas = {}  # Initialize a dictionary to store processed request data
+    verifiedDatas = {}  # Initialize a dictionary to store verified data
     
-    # Handle validation for 'POST' and 'PUT' methods
-    if method == 'POST' or method == 'PUT':
-        for i in body:
+    # Handle validation for POST and PUT actions
+    if action == 'POST' or action == 'PUT':
+        for i in datas:
             # Convert string booleans to actual boolean values
-            if body[i] == 'true':
-                body[i] = True
-            elif body[i] == 'false':
-                body[i] = False
-            # Convert strings to uppercase and remove accents
-            if isinstance(body[i], str):
-                datas[i] = unidecode(body[i].upper())
+            if datas[i] == 'true':
+                datas[i] = True
+            elif datas[i] == 'false':
+                datas[i] = False
+            # Normalize string data to uppercase and remove accents
+            if isinstance(datas[i], str):
+                verifiedDatas[i] = unidecode(datas[i].upper())
             else:
-                datas[i] = body[i]
+                verifiedDatas[i] = datas[i]
 
-        # Validate the processed data against the schema
+        # Validate the verified data against the schema
         validator = Draft7Validator(schema, format_checker=format_checker)
-        errors = sorted(validator.iter_errors(datas), key=lambda e: e.path)
+        errors = sorted(validator.iter_errors(verifiedDatas), key=lambda e: e.path)
         if errors:
             # Return validation errors if any
             return {'success': False, 'message': ', '.join(error.message for error in errors)}
 
-        # Return success with processed data if validation passes
-        return {'success': True, 'message': '', 'data': datas}
+        return {'success': True, 'message': '', 'datas': verifiedDatas}
     
-    # Handle validation for 'DELETE' method
-    elif method == 'DELETE':
-        if 'id' not in body:
-            return {'success': False, 'message': 'ID not provided in the request body'}
+    # Handle validation for DELETE action
+    elif action == 'DELETE':
+        if 'id' not in datas:
+            return {'success': False, 'message': 'ID not provided in the request datas'}
         try:
-            # Validate only the 'id' field against the schema
-            validate(instance={'id': body['id']}, schema=schema, format_checker=format_checker)
+            # Validate the presence and format of 'id' in the data
+            validate(instance={'id': datas['id']}, schema=schema, format_checker=format_checker)
         except ValidationError as e:
-            # Return validation error if any
             return {'success': False, 'message': str(e)}
     
-        # Return success if validation passes
         return {'success': True}
 
-    # Handle validation for 'GET' method
-    elif method == 'GET':
-        for i in body:
-            datas[i] = body[i]  # Directly copy body data to datas
+    # Handle validation for GET action
+    elif action == 'GET':
+        for i in datas:
+            verifiedDatas[i] = datas[i]
 
-        # Validate the data against the schema
+        # Validate the verified data against the schema
         validator = Draft7Validator(schema, format_checker=format_checker)
-        errors = sorted(validator.iter_errors(datas), key=lambda e: e.path)
+        errors = sorted(validator.iter_errors(verifiedDatas), key=lambda e: e.path)
         if errors:
             # Return validation errors if any
             return {'success': False, 'message': ', '.join(error.message for error in errors)}
 
-        # Return success if validation passes
         return {'success': True}
     
     else:
-        # Return error for unsupported HTTP methods
-        return {'success': False, 'message': 'Invalid method'}
+        # Return an error message for unsupported actions
+        return {'success': False, 'message': f'Invalid action: {original_action}. Valid actions are: create, update, delete, get, list'}

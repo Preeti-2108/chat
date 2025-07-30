@@ -13,7 +13,7 @@ def get_env_var(var_name):
 
 api_name = get_env_var("API_NAME")
 version = get_env_var("API_VERSION")
-table_name = get_env_var("TABLE_NAME")
+table_name = get_env_var("TABLE")
 secret_name = get_env_var("SECRET_NAME")
 secret_value = get_env_var("SECRET_VALUE")
 user_pool_id = get_env_var("COGNITO_POOL_ID")
@@ -36,6 +36,9 @@ def does_secret_exist(name):
 
 create_table = not does_dynamodb_table_exist(table_name)
 create_secret = not does_secret_exist(secret_name)
+# Check if connections table exists
+connections_table_name = f"{table_name}-CONNECTIONS"
+create_connections_table = True  # Force creation of connections table
 
 resources_stack = ResourcesStack(
     app,
@@ -46,6 +49,7 @@ resources_stack = ResourcesStack(
     user_pool_id=user_pool_id,
     create_table=create_table,
     create_secret=create_secret,
+    create_connections_table=create_connections_table,
 )
 
 app.synth()

@@ -6,6 +6,28 @@ yarn-debug.log*
 yarn-error.log*
 lerna-debug.log*
 
+# Python cache and CDK output
+api/__pycache__/
+api/cdk.out/
+resources/__pycache__/
+resources/cdk.out/
+
+# Python virtual environments
+venv/
+env/
+**/venv/
+**/env/
+resources/venv/
+api/venv/
+
+# Python binaries and executables
+bin/
+**/bin/
+python
+python3
+pip
+pip3
+
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
@@ -41,6 +63,9 @@ build/Release
 node_modules/
 jspm_packages/
 
+# Lock files
+package-lock.json
+
 # Snowpack dependency directory (https://snowpack.dev/)
 web_modules/
 
@@ -71,6 +96,15 @@ web_modules/
 # dotenv environment variables file
 .env
 .env.test
+venv
+bin
+
+# Python virtual environments (additional patterns)
+pyvenv.cfg
+lib64/
+**/lib64/
+**/Scripts/
+Scripts/
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache
@@ -164,3 +198,5 @@ override.tf.json
 # Ignore CLI configuration files
 .terraformrc
 terraform.rc
+
+main_temp.tf

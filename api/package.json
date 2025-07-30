@@ -1,10 +1,10 @@
 {
-  "name": "templatepythoncdk",
+  "name": "templatepythoncdkwebsocket",
   "version": "1.0.0",
-  "description": "Generate Swagger file",
+  "description": "Generate file",
   "main": "src/index.js",
   "scripts": {
-    "swagger": "swagger-jsdoc -d ./src/helpers/swagger.js",
+    "asyncapi": "node ./src/helpers/asyncapi.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",

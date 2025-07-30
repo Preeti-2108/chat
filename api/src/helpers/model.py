@@ -1,10 +1,35 @@
 """
 /**
- * @openapi
- *
+ * @asyncapi
  * components:
+ *   messages:
+ *     NewTemplateResponse:
+ *       messageId: newTemplateResponse
+ *       contentType: application/json
+ *       payload:
+ *         $ref: '#/components/schemas/Template'
+ *     TemplateUpdateResponse:
+ *       messageId: templateUpdateResponse
+ *       contentType: application/json
+ *       payload:
+ *         $ref: '#/components/schemas/Template'
+ *     TemplateRetrievalResponse:
+ *       messageId: templateRetrievalResponse
+ *       contentType: application/json
+ *       payload:
+ *         $ref: '#/components/schemas/Template'
+ *     TemplateDeletionResponse:
+ *       messageId: templateDeletionResponse
+ *       contentType: application/json
+ *       payload:
+ *         $ref: '#/components/schemas/Template'
+ *     TemplateListResponse:
+ *       messageId: templateListResponse
+ *       contentType: application/json
+ *       payload:
+ *         $ref: '#/components/schemas/Template'
  *   schemas:
- *     TemplatePython:
+ *     Template:
  *       type: object
  *       properties:
  *         id:
@@ -27,28 +52,28 @@
  *         templateAgentValidation:
  *           type: boolean
  *           description: Template agent validation.
- *           example: True
+ *           example: true
  *         templateIntentFailed:
  *           type: boolean
  *           description: Template intent failed.
- *           example: False
+ *           example: false
  *         isActive:
  *           type: boolean
  *           description: Is active or not.
- *           example: True
+ *           example: true
  *         templateActions:
  *           type: array
  *           items:
  *             type: object
  *             properties:
  *               templateActionsTimeStamp:
- *                 type: string
+ *                 type: integer
  *                 description: Timestamp of the action.
  *                 example: 1639172876
  *               templateActionsTag:
  *                 type: string
  *                 description: Tag of the action.
- *                 example: Tag Action 
+ *                 example: Tag Action
  *         templateStatus:
  *           type: string
  *           description: Template status.
@@ -59,7 +84,7 @@
  *           example: Firstname Lastname
  *         updatedBy:
  *           type: string
- *           description: Identification of the person who updted the template.
+ *           description: Identification of the person who updated the template.
  *           example: Firstname Lastname
  *         createdAt:
  *           type: string
@@ -71,14 +96,5 @@
  *           format: date-time
  *           description: Date of modification of the template / date-time type.
  *           example: 2023-10-16T13:28:40.028Z
- *     Success:
- *       properties:
- *         success:
- *           type: boolean
- *         message:
- *           type: string
- *         data:
- *           properties: {}
- *           type: object
  */
 """

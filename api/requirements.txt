@@ -1,5 +1,4 @@
 setuptools>=78.1.1
-zipp>=3.19.1
 urllib3>=2.5.0
 PyJWT[crypto]==2.8.0
 jsonschema==4.21.1
@@ -13,5 +12,6 @@ aws-cdk.aws-apigatewayv2-alpha
 aws-cdk.aws-apigatewayv2-integrations-alpha
 constructs>=10.0.0,<11.0.0
 boto3
-requests>=2.32.4
+requests==2.32.4
 cryptography>=41.0.0
+zipp>=3.19.1

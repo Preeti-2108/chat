@@ -111,7 +111,7 @@ data "external" "asyncapi_title" {
 # ######
 
 resource "azurerm_api_management_api" "ics_api" {
-  name                = var.SLS_NAME
+  name                = var.API_SYSTEM_NAME
   resource_group_name = var.APIM_RG
   api_management_name = var.APIM_NAME
   revision            = "1"

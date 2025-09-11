@@ -9,6 +9,8 @@ from aws_cdk import (
     Duration,
 )
 from constructs import Construct
+import os
+import boto3
 
 class ResourcesStack(Stack):
     def __init__(
@@ -64,20 +66,40 @@ class ResourcesStack(Stack):
         else:
             self.connections_table = None
 
-        # Secret Manager
+        # Always import the secret if it exists, create it if it doesn't
+        # This avoids CDK conflicts between create vs import
+        if not secret_value and create_secret:
+            raise ValueError("secret_value is required when create_secret is True")
+            
         if create_secret:
-            if not secret_value:
-                raise ValueError("secret_value is required when create_secret is True")
+            # Create new secret
             self.secret = secretsmanager.Secret(
                 self, "Secret",
                 secret_name=secret_name,
                 description="Secret about microservice",
-                secret_string_value=SecretValue.unsafe_plain_text(secret_value)
+                secret_string_value=SecretValue.unsafe_plain_text(secret_value),
+                removal_policy=RemovalPolicy.RETAIN  # Prevent accidental deletion
             )
+            print(f"🆕 Creating new secret: {secret_name}")
         else:
+            # Import existing secret
             self.secret = secretsmanager.Secret.from_secret_name_v2(
                 self, "ImportedSecret", secret_name
             )
+            print(f"📥 Importing existing secret: {secret_name}")
+            
+        # Always update the secret value if provided (outside CDK construct creation)
+        if secret_value and not create_secret:
+            try:
+                secrets_client = boto3.client('secretsmanager')
+                secrets_client.update_secret(
+                    SecretId=secret_name,
+                    SecretString=secret_value
+                )
+                print(f"✅ Secret {secret_name} value updated successfully")
+            except Exception as e:
+                print(f"⚠️ Warning: Could not update secret {secret_name}: {e}")
+                # Don't fail the deployment, just warn
 
         # Cognito User Pool (toujours importé)
         self.user_pool = cognito.UserPool.from_user_pool_id(

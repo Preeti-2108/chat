@@ -294,6 +294,9 @@ def edit(event, context):
             }
         # Update the item in DynamoDB
         try:
+            logger.debug(f"Updating item with ID: {id}")
+            logger.debug(f"Update expression: {expression}")
+            
             updated_item = table.update_item(
                 Key={'id': id},
                 ExpressionAttributeNames=expression['ExpressionAttributeNames'],
@@ -302,9 +305,11 @@ def edit(event, context):
                 ReturnValues='ALL_NEW'
             )
 
+            logger.debug(f"Update successful, updated item: {updated_item}")
+
             # Compare existingItem and updatedItem to find updated fields
             updated_fields = []
-            for key, new_value in validation_schema["data"].items():
+            for key, new_value in validation_schema["datas"].items():  # Fixed: was "data", should be "datas"
                 if key == 'id':  # Skip the 'id' field
                     continue
                 old_value = existing_item["Item"].get(key) if "Item" in existing_item else None
@@ -344,12 +349,15 @@ def edit(event, context):
             response_result = Responses.result_response(STATUS_UPDATED, True, f'Item with ID {id} updated successfully.', serializable_attributes)
             
         except Exception as update_err:
-            logger.error(f"Error updating item in database: {str(update_err)}")
-            response_result = Responses.result_response(STATUS_ERROR, False, 'Database error during item update.')
+            logger.error(f"Error updating item in database: {str(update_err)}", exc_info=True)
+            logger.error(f"Table name: {table_name}")
+            logger.error(f"Item ID: {id}")
+            logger.error(f"Update expression: {expression}")
+            response_result = Responses.result_response(STATUS_ERROR, False, f'Database error during item update: {str(update_err)}')
             send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
             return {
                 'statusCode': STATUS_ERROR,
-                'body': json.dumps('Database error')
+                'body': json.dumps(f'Database error: {str(update_err)}')
             }
 
     except json.JSONDecodeError as json_err:

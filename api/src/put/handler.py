@@ -12,6 +12,7 @@ from src.helpers.event_utils import extract_event_info  # Custom helper to extra
 from src.helpers.decimal_converter import convert_decimal_to_json_serializable as decimal_to_json_serializable  # Custom helper to convert Decimal objects
 from src.helpers.auth_middleware import authenticate_websocket, get_user_email, get_authenticated_user  # Cognito authentication
 from src.helpers.scope_manager import require_resource_permission  # Scope validation
+from src.helpers.queue_helper import send_message_to_queue  # SQS queue helper
 
 """
 /**
@@ -293,6 +294,9 @@ def edit(event, context):
             }
         # Update the item in DynamoDB
         try:
+            logger.debug(f"Updating item with ID: {id}")
+            logger.debug(f"Update expression: {expression}")
+            
             updated_item = table.update_item(
                 Key={'id': id},
                 ExpressionAttributeNames=expression['ExpressionAttributeNames'],
@@ -301,6 +305,43 @@ def edit(event, context):
                 ReturnValues='ALL_NEW'
             )
 
+            logger.debug(f"Update successful, updated item: {updated_item}")
+
+            # Compare existingItem and updatedItem to find updated fields
+            updated_fields = []
+            for key, new_value in validation_schema["datas"].items():  # Fixed: was "data", should be "datas"
+                if key == 'id':  # Skip the 'id' field
+                    continue
+                old_value = existing_item["Item"].get(key) if "Item" in existing_item else None
+
+                # Use deep comparison for all types
+                if not deep_compare(old_value, new_value):
+                    updated_fields.append((key, new_value, old_value))
+
+            # Only send messages if there are updated fields
+            if updated_fields:
+                try:
+                    # Send a message to the queue for each updated field to log changes
+                    for key, new_value, old_value in updated_fields:
+                        # Use old_value if it exists, otherwise use '-'
+                        old_value_for_queue = old_value if old_value is not None else '-'
+
+                        params_for_queue = {
+                            'timestamp': datetime.now().isoformat(),
+                            'actionType': 'UPDATE',
+                            'entityType': os.getenv('SERVICE_NAME', os.getenv('TABLE')),
+                            'fieldName': key,  # The name of the field
+                            'oldValue': old_value_for_queue,  # The old value of the field
+                            'newValue': new_value,  # The new value of the field
+                            'userId': email,  # The email of the user who updated the item
+                        }
+
+                        # Send the message to the SQS queue
+                        send_message_to_queue(params_for_queue)
+                except Exception as queue_error:
+                    logger.error(f"Failed to send audit messages: {str(queue_error)}")
+                    # Don't fail the main operation if audit logging fails
+
             # Convert Decimal types to JSON-serializable types
             serializable_attributes = decimal_to_json_serializable(updated_item['Attributes'])
 
@@ -308,12 +349,15 @@ def edit(event, context):
             response_result = Responses.result_response(STATUS_UPDATED, True, f'Item with ID {id} updated successfully.', serializable_attributes)
             
         except Exception as update_err:
-            logger.error(f"Error updating item in database: {str(update_err)}")
-            response_result = Responses.result_response(STATUS_ERROR, False, 'Database error during item update.')
+            logger.error(f"Error updating item in database: {str(update_err)}", exc_info=True)
+            logger.error(f"Table name: {table_name}")
+            logger.error(f"Item ID: {id}")
+            logger.error(f"Update expression: {expression}")
+            response_result = Responses.result_response(STATUS_ERROR, False, f'Database error during item update: {str(update_err)}')
             send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
             return {
                 'statusCode': STATUS_ERROR,
-                'body': json.dumps('Database error')
+                'body': json.dumps(f'Database error: {str(update_err)}')
             }
 
     except json.JSONDecodeError as json_err:
@@ -385,3 +429,54 @@ def generate_update_query(fields):
     update_expression['UpdateExpression'] = update_expression['UpdateExpression'][:-1]
 
     return update_expression
+
+def deep_compare(obj1, obj2):
+    """
+    Helper function for deep comparison of nested structures.
+    Returns True if objects are equal, False otherwise.
+    """
+    # Handle null/undefined cases
+    if obj1 is None or obj2 is None:
+        return obj1 == obj2
+
+    # Handle arrays (including arrays of objects)
+    if isinstance(obj1, list) and isinstance(obj2, list):
+        if len(obj1) != len(obj2):
+            return False
+
+        # Sort arrays before comparison to handle order differences
+        try:
+            sorted_obj1 = sorted(obj1, key=lambda x: json.dumps(x, sort_keys=True, default=str))
+            sorted_obj2 = sorted(obj2, key=lambda x: json.dumps(x, sort_keys=True, default=str))
+        except (TypeError, ValueError):
+            # If sorting fails, compare as-is
+            sorted_obj1 = obj1
+            sorted_obj2 = obj2
+
+        # Compare each element recursively
+        for i in range(len(sorted_obj1)):
+            if not deep_compare(sorted_obj1[i], sorted_obj2[i]):
+                return False
+        return True
+
+    # Handle objects (including nested objects)
+    if isinstance(obj1, dict) and isinstance(obj2, dict):
+        keys1 = sorted(obj1.keys())
+        keys2 = sorted(obj2.keys())
+
+        # Check if they have the same number of keys
+        if len(keys1) != len(keys2):
+            return False
+
+        # Check if all keys are the same
+        if keys1 != keys2:
+            return False
+
+        # Recursively compare all values
+        for key in keys1:
+            if not deep_compare(obj1[key], obj2[key]):
+                return False
+        return True
+
+    # Handle primitive types
+    return obj1 == obj2

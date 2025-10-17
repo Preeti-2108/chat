@@ -14,6 +14,11 @@ api_name = get_env_var("API_NAME")
 version = get_env_var("API_VERSION")
 table_name = get_env_var("TABLE")
 user_pool_id = get_env_var("COGNITO_POOL_ID")
+service_name = get_env_var("SERVICE_NAME")
+aws_account_id = get_env_var("AWS_ACCOUNT_ID")
+sqs_queue_name = os.getenv("SQS_QUEUE_NAME", "AUDIT_QUEUE")
+dead_letter_queue_name = os.getenv("DEAD_LETTER_QUEUE_NAME", "AUDIT_DLQ")
+
 
 # Construct connections table name
 connections_table_name = f"{table_name}-CONNECTIONS"
@@ -24,6 +29,11 @@ lambdas_stack = LambdasStack(
     table_name=table_name,
     user_pool_id=user_pool_id,
     api_name=api_name,
+    service_name=service_name,
+    aws_account_id=aws_account_id,
+    sqs_queue_name=sqs_queue_name,
+    dead_letter_queue_name=dead_letter_queue_name,
+
     connections_table_name=connections_table_name,
 )
 

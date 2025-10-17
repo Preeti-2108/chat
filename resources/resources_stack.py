@@ -3,6 +3,7 @@ from aws_cdk import (
     aws_dynamodb as dynamodb,
     aws_secretsmanager as secretsmanager,
     aws_cognito as cognito,
+    aws_sqs as sqs,
     CfnOutput,
     RemovalPolicy,
     SecretValue,
@@ -21,8 +22,12 @@ class ResourcesStack(Stack):
         table_name: str,
         secret_name: str,
         user_pool_id: str,
+        sqs_queue_name: str,
+        dead_letter_queue_name: str,
+        environment: str = "dev",
         create_table: bool = False,
         create_secret: bool = False,
+        create_sqs_queues: bool = False,
         secret_value: str = "",
         create_connections_table: bool = False,
         **kwargs
@@ -106,12 +111,55 @@ class ResourcesStack(Stack):
             self, "ImportedUserPool", user_pool_id
         )
 
+        # SQS Queues
+        if create_sqs_queues:
+            # Dead Letter Queue
+            self.dead_letter_queue = sqs.Queue(
+                self, "DeadLetterQueue",
+                queue_name=dead_letter_queue_name,
+                removal_policy=RemovalPolicy.RETAIN if environment == "prod" else RemovalPolicy.DESTROY,
+                retention_period=Duration.days(14)
+            )
+
+            # Main SQS Queue with DLQ
+            self.sqs_queue = sqs.Queue(
+                self, "SQSQueue",
+                queue_name=sqs_queue_name,
+                dead_letter_queue=sqs.DeadLetterQueue(
+                    max_receive_count=3,
+                    queue=self.dead_letter_queue
+                ),
+                removal_policy=RemovalPolicy.RETAIN if environment == "prod" else RemovalPolicy.DESTROY,
+                visibility_timeout=Duration.seconds(300)
+            )
+            print(f"🆕 Creating SQS queues: {sqs_queue_name} and {dead_letter_queue_name}")
+        else:
+            # Import existing queues
+            self.sqs_queue = sqs.Queue.from_queue_attributes(
+                self, "ImportedSQSQueue",
+                queue_arn=f"arn:aws:sqs:{self.region}:{self.account}:{sqs_queue_name}",
+                queue_url=f"https://sqs.{self.region}.amazonaws.com/{self.account}/{sqs_queue_name}"
+            )
+            self.dead_letter_queue = sqs.Queue.from_queue_attributes(
+                self, "ImportedDeadLetterQueue", 
+                queue_arn=f"arn:aws:sqs:{self.region}:{self.account}:{dead_letter_queue_name}",
+                queue_url=f"https://sqs.{self.region}.amazonaws.com/{self.account}/{dead_letter_queue_name}"
+            )
+            print(f"📥 Importing existing SQS queues: {sqs_queue_name} and {dead_letter_queue_name}")
+
         # Outputs
         CfnOutput(self, "TableArn", value=self.table.table_arn)
         CfnOutput(self, "TableName", value=self.table.table_name)
         CfnOutput(self, "SecretId", value=self.secret.secret_arn)
         CfnOutput(self, "SecretName", value=self.secret.secret_name)
         CfnOutput(self, "UserPoolId", value=self.user_pool.user_pool_id)
+        CfnOutput(self, "SQSQueueName", value=self.sqs_queue.queue_name)
+        CfnOutput(self, "SQSQueueUrl", value=self.sqs_queue.queue_url)
+        CfnOutput(self, "SQSQueueArn", value=self.sqs_queue.queue_arn)
+        CfnOutput(self, "DeadLetterQueueName", value=self.dead_letter_queue.queue_name)
+        CfnOutput(self, "DeadLetterQueueUrl", value=self.dead_letter_queue.queue_url)
+        CfnOutput(self, "DeadLetterQueueArn", value=self.dead_letter_queue.queue_arn)
+
         
         # Connections table outputs (only if created)
         if self.connections_table:

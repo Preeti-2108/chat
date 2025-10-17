@@ -17,6 +17,10 @@ table_name = get_env_var("TABLE")
 secret_name = get_env_var("SECRET_NAME")
 secret_value = get_env_var("SECRET_VALUE")
 user_pool_id = get_env_var("COGNITO_POOL_ID")
+environment = os.getenv("TF_VAR_ENV", "dev")
+sqs_queue_name = "AUDIT_QUEUE"
+dead_letter_queue_name = "AUDIT_DLQ"
+
 
 def does_dynamodb_table_exist(name):
     client = boto3.client("dynamodb")
@@ -34,8 +38,22 @@ def does_secret_exist(name):
     except client.exceptions.ResourceNotFoundException:
         return False
 
+def does_sqs_queue_exist(name):
+    client = boto3.client("sqs")
+    try:
+        account_id = boto3.client("sts").get_caller_identity()["Account"]
+        region = boto3.Session().region_name
+        queue_url = f"https://sqs.{region}.amazonaws.com/{account_id}/{name}"
+        client.get_queue_attributes(QueueUrl=queue_url)
+        return True
+    except client.exceptions.QueueDoesNotExist:
+        return False
+    except Exception:
+        return False
+
 create_table = not does_dynamodb_table_exist(table_name)
 create_secret = not does_secret_exist(secret_name)
+create_sqs_queues = not (does_sqs_queue_exist(sqs_queue_name) and does_sqs_queue_exist(dead_letter_queue_name))
 # Check if connections table exists
 connections_table_name = f"{table_name}-CONNECTIONS"
 create_connections_table = True  # Force creation of connections table
@@ -47,8 +65,12 @@ resources_stack = ResourcesStack(
     secret_name=secret_name,
     secret_value=secret_value,
     user_pool_id=user_pool_id,
+    sqs_queue_name=sqs_queue_name,
+    dead_letter_queue_name=dead_letter_queue_name,
+    environment=environment,
     create_table=create_table,
     create_secret=create_secret,
+    create_sqs_queues=create_sqs_queues,
     create_connections_table=create_connections_table,
 )
 

@@ -33,6 +33,11 @@ class LambdasStack(Stack):
         table_name: str,
         user_pool_id: str,
         api_name: str,
+        service_name: str,
+        aws_account_id: str,
+        sqs_queue_name: str,
+        dead_letter_queue_name: str,
+
         connections_table_name: str = None,
         **kwargs
     ):
@@ -42,6 +47,11 @@ class LambdasStack(Stack):
             "TABLE": table_name,
             "REGION": self.region,
             "COGNITO_POOL_ID": user_pool_id,
+            "SERVICE_NAME": service_name,
+            "AWS_ACCOUNT_ID": aws_account_id,
+            "SQS_QUEUE_NAME": sqs_queue_name,
+            "DEAD_LETTER_QUEUE_NAME": dead_letter_queue_name,
+
         }
         
         # Add connections table environment variable if provided
@@ -122,6 +132,12 @@ class LambdasStack(Stack):
                     "execute-api:ManageConnections"
                 ],
                 resources=[f"arn:aws:execute-api:{self.region}:{self.account}:*/*/*"]
+            ))
+            
+            # Add SQS permissions
+            lambdas[name].add_to_role_policy(iam.PolicyStatement(
+                actions=["sqs:SendMessage"],
+                resources=["*"]  # As per your serverless configuration
             ))
 
         # WebSocket API

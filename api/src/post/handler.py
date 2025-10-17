@@ -11,6 +11,7 @@ from src.handler_websocket.handler import send_to_client  # Custom helper to sen
 from src.helpers.event_utils import extract_event_info  # Custom helper to extract necessary information from the event
 from src.helpers.auth_middleware import authenticate_websocket  # Cognito authentication
 from src.helpers.scope_manager import require_resource_permission  # Scope validation
+from src.helpers.queue_helper import send_message_to_queue  # Helper function to send messages to an SQS queue
 
 """
 /**
@@ -215,6 +216,27 @@ def create(event, context):
         try:
             # Insert the new item into the DynamoDB table
             table.put_item(Item=new_item)
+            # Iterate over each field in the new item and send a message for each field
+            try:
+                for key, value in new_item.items():
+                    if key == 'updatedBy':  # Skip the 'updatedBy' field
+                        continue
+                    
+                    params_for_queue = {
+                        'timestamp': datetime.now().isoformat(),  # Current timestamp
+                        'actionType': 'CREATE',  # Action type for the queue message
+                        'entityType': os.getenv('SERVICE_NAME', os.getenv('TABLE')),  # Entity type, derived from the service name
+                        'fieldName': key,  # The name of the field
+                        'oldValue': '-',  # Set oldValue to a hyphen
+                        'newValue': value,  # The new value of the field
+                        'userId': email,  # The email of the user who created the item
+                    }
+                    
+                    # Send the message to the SQS queue
+                    send_message_to_queue(params_for_queue)
+            except Exception as queue_error:
+                logger.error(f"Failed to send audit messages: {str(queue_error)}")
+                # Don't fail the main operation if audit logging fails
             logger.info('Item successfully inserted into DynamoDB')
             response_result = Responses.result_response(STATUS_CREATED, True, 'Item created successfully.', new_item)
         except Exception as dynamo_err:

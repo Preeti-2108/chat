@@ -11,6 +11,7 @@ from src.handler_websocket.handler import send_to_client  # WebSocket communicat
 from src.helpers.event_utils import extract_event_info  # Utility to extract information from events
 from src.helpers.auth_middleware import authenticate_websocket, get_user_email, get_authenticated_user  # Cognito authentication
 from src.helpers.scope_manager import require_resource_permission  # Scope validation
+from src.helpers.queue_helper import send_message_to_queue
 
 """
 /**
@@ -213,6 +214,24 @@ def delete(event, context):
             else:
                 # Delete the item if it exists
                 table.delete_item(Key=params)
+                # Get authenticated user info from the JWT token (added by auth middleware)
+                user_info = event.get('auth', {}).get('user_info', {})
+                email = user_info.get('email') or user_info.get('username', 'unknown@example.com')
+                # Construct a message for the deleted item
+                try:
+                    from datetime import datetime
+                    params_for_queue = {
+                        'timestamp': datetime.now().isoformat(),  # Current timestamp
+                        'actionType': 'DELETE',  # Action type for the queue message
+                        'entityType': os.getenv('SERVICE_NAME', os.getenv('TABLE')),  # Entity type, derived from the table name
+                        'oldValue': existing_item["Item"],  # Include the deleted item
+                        'userId': email,  # The email of the user who deleted the item
+                    }
+                    # Send the message to the SQS queue
+                    send_message_to_queue(params_for_queue)
+                except Exception as queue_error:
+                    logger.error(f"Failed to send audit message: {str(queue_error)}")
+                    # Don't fail the main operation if audit logging fails
                 response_result = Responses.result_response(STATUS_DELETED, True, f'Template with ID {id} successfully deleted.')
         except ClientError as e:
             # Log and respond with an error if there is a DynamoDB client error

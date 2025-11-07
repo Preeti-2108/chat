@@ -18,7 +18,7 @@ service_name = get_env_var("SERVICE_NAME")
 aws_account_id = get_env_var("AWS_ACCOUNT_ID")
 sqs_queue_name = os.getenv("SQS_QUEUE_NAME", "AUDIT_QUEUE")
 dead_letter_queue_name = os.getenv("DEAD_LETTER_QUEUE_NAME", "AUDIT_DLQ")
-var_example = get_env_var("VAR_EXAMPLE")
+# var_example = get_env_var("VAR_EXAMPLE")
 
 
 # Construct connections table name
@@ -35,7 +35,7 @@ lambdas_stack = LambdasStack(
     sqs_queue_name=sqs_queue_name,
     dead_letter_queue_name=dead_letter_queue_name,
     connections_table_name=connections_table_name,
-    var_example=var_example
+    # var_example=var_example
 )
 
 app.synth()

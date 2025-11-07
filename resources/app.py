@@ -2,15 +2,15 @@ from aws_cdk import App
 from resources_stack import ResourcesStack
 import os
 import boto3
-
+ 
 app = App()
-
+ 
 def get_env_var(var_name):
     value = os.getenv(var_name)
     if not value:
         raise ValueError(f"{var_name} is not defined in the environment variables")
     return value
-
+ 
 api_name = get_env_var("API_NAME")
 version = get_env_var("API_VERSION")
 table_name = get_env_var("TABLE")
@@ -20,8 +20,8 @@ user_pool_id = get_env_var("COGNITO_POOL_ID")
 environment = os.getenv("TF_VAR_ENV", "dev")
 sqs_queue_name = "AUDIT_QUEUE"
 dead_letter_queue_name = "AUDIT_DLQ"
-
-
+ 
+ 
 def does_dynamodb_table_exist(name):
     client = boto3.client("dynamodb")
     try:
@@ -29,7 +29,7 @@ def does_dynamodb_table_exist(name):
         return True
     except client.exceptions.ResourceNotFoundException:
         return False
-
+ 
 def does_secret_exist(name):
     client = boto3.client("secretsmanager")
     try:
@@ -37,7 +37,7 @@ def does_secret_exist(name):
         return True
     except client.exceptions.ResourceNotFoundException:
         return False
-
+ 
 def does_sqs_queue_exist(name):
     client = boto3.client("sqs")
     try:
@@ -50,14 +50,14 @@ def does_sqs_queue_exist(name):
         return False
     except Exception:
         return False
-
+ 
 create_table = not does_dynamodb_table_exist(table_name)
 create_secret = not does_secret_exist(secret_name)
 create_sqs_queues = not (does_sqs_queue_exist(sqs_queue_name) and does_sqs_queue_exist(dead_letter_queue_name))
 # Check if connections table exists
 connections_table_name = f"{table_name}-CONNECTIONS"
-create_connections_table = True  # Force creation of connections table
-
+create_connections_table = not does_dynamodb_table_exist(connections_table_name)
+ 
 resources_stack = ResourcesStack(
     app,
     f"{api_name}-resources-{version}",
@@ -73,5 +73,5 @@ resources_stack = ResourcesStack(
     create_sqs_queues=create_sqs_queues,
     create_connections_table=create_connections_table,
 )
-
+ 
 app.synth()

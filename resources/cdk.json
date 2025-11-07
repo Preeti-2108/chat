@@ -1,6 +1,6 @@
 {
   "app": "python app.py",
   "context": {
-    "@aws-cdk/core:stackName": "cdk-python-template-websocket-resources-stack"
+    "@aws-cdk/core:stackName": "cdk-chat-internal-kb-bedrock-websocket-resources-stack"
   }
 }

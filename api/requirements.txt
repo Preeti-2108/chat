@@ -15,3 +15,8 @@ boto3
 requests==2.32.4
 cryptography>=41.0.0
 zipp>=3.19.1
+
+##Langchain requirements
+langchain
+langgraph
+langchain-openai

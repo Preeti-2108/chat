@@ -17,13 +17,13 @@ from src.helpers.queue_helper import send_message_to_queue  # Helper function to
 /**
  * @asyncapi
  * channels:
- *   newTemplate:
- *     description: Channel for posting and initiating new template.
+ *   chat:
+ *     description: Initiate a new chat.
  *     publish:
- *       operationId: newTemplate
- *       summary: Post and initiate a new template.
+ *       operationId: chat
+ *       summary: Post and initiate a new chat.
  *       message:
- *         messageId: newTemplate
+ *         messageId: chat
  *         contentType: application/json
  *         payload:
  *           type: object
@@ -87,7 +87,7 @@ from src.helpers.queue_helper import send_message_to_queue  # Helper function to
  *       operationId: newTemplateResponse
  *       summary: Receive response for the initiated template.
  *       message:
- *         $ref: '#/components/messages/NewTemplateResponse'
+ *         $ref: '#/components/messages/CHATINTERNALKBBEDROCK'
  */
 """
 
@@ -96,7 +96,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))  # Set Log Level
 
 @authenticate_websocket()
-@require_resource_permission('PYTHONTEMPLATECDKWEBSOCKET', 'CREATE')
+@require_resource_permission('CHATINTERNALKBBEDROCKWEBSOCKET', 'CREATE')
 def create(event, context):
     """
     Main function to handle the creation of a new item.

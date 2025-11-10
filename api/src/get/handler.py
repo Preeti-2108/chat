@@ -18,13 +18,13 @@ from src.helpers.scope_manager import require_resource_permission  # Scope valid
 /**
  * @asyncapi
  * channels:
- *   templateGet:
+ *   get:
  *     description: Channel for retrieving a specific template by ID.
  *     publish:
- *       operationId: templateGet
+ *       operationId: get
  *       summary: Get a specific template.
  *       message:
- *         messageId: templateGet
+ *         messageId: get
  *         contentType: application/json
  *         payload:
  *           type: object
@@ -46,10 +46,10 @@ from src.helpers.scope_manager import require_resource_permission  # Scope valid
  *                   description: The unique identifier of the template to retrieve.
  *                   example: 123e4567-e89b-12d3-a456-426614174000
  *     subscribe:
- *       operationId: templateGetResponse
+ *       operationId: getResponse
  *       summary: Receive response for the retrieved template.
  *       message:
- *         $ref: '#/components/messages/TemplateGetResponse'
+ *         $ref: '#/components/messages/GetResponse'
  */
 """
 

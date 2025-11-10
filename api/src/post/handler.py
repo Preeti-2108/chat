@@ -17,13 +17,13 @@ from src.helpers.queue_helper import send_message_to_queue  # Helper function to
 /**
  * @asyncapi
  * channels:
- *   newTemplate:
+ *   create:
  *     description: Channel for posting and initiating new template.
  *     publish:
- *       operationId: newTemplate
+ *       operationId: create
  *       summary: Post and initiate a new template.
  *       message:
- *         messageId: newTemplate
+ *         messageId: create
  *         contentType: application/json
  *         payload:
  *           type: object
@@ -84,10 +84,10 @@ from src.helpers.queue_helper import send_message_to_queue  # Helper function to
  *                   description: Template status.
  *                   example: Template Status
  *     subscribe:
- *       operationId: newTemplateResponse
+ *       operationId: createResponse
  *       summary: Receive response for the initiated template.
  *       message:
- *         $ref: '#/components/messages/NewTemplateResponse'
+ *         $ref: '#/components/messages/CreateResponse'
  */
 """
 

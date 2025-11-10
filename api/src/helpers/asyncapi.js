@@ -8,12 +8,12 @@ const yaml = require('js-yaml');
 // Define the base AsyncAPI document structure
 const asyncapiDefinition = {
     "asyncapi": "2.6.0", // Specify the AsyncAPI version
-    "id": "urn:templatepython:api", // Unique identifier for the API
+    "id": "urn:dpsws:chat:internal:kb:bedrock:api", // Unique identifier for the API
     "defaultContentType": "application/json", // Default content type for messages
     "info": {
-      "title": "Python Template CDK Websocket", // Title of the API
+      "title": "DPS WS Chat Internal KB Bedrock", // Title of the API
       "version": "1.0.0", // Version of the API
-      "description": "API for Template", // Brief description of the API
+      "description": "API for DPS WS Chat Internal KB Bedrock", // Brief description of the API
       "contact": {
         "name": "API Support", // Contact name for API support
         "email": "support.dps.fr.api.contact@soprasteria.com", // Contact email for API support
@@ -26,8 +26,8 @@ const asyncapiDefinition = {
     },
     "tags": [
       {
-        "name": "Template", // Tag name for categorizing operations
-        "description": "Operations related to template" // Description of the tag
+        "name": "DPS WS Chat Internal KB Bedrock", // Tag name for categorizing operations
+        "description": "Operations related to DPS WS Chat Internal KB Bedrock" // Description of the tag
       }
     ],
     "servers": {
@@ -110,11 +110,11 @@ async function generateAsyncAPIDocument(baseDir = './src') {
 
     // Generate missing response messages
     const missingMessages = [
-        'TemplateDeleteResponse',
-        'TemplateGetResponse',
-        'NewTemplateResponse',
-        'TemplateUpdateResponse',
-        'TemplateListResponse'
+        'CreateResponse',
+        'UpdateResponse',
+        'DeleteResponse',
+        'GetResponse',
+        'ListResponse'
     ];
 
     missingMessages.forEach(messageName => {

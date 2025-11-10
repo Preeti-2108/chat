@@ -3,28 +3,28 @@
  * @asyncapi
  * components:
  *   messages:
- *     NewTemplateResponse:
- *       messageId: newTemplateResponse
+ *     CreateResponse:
+ *       messageId: createResponse
  *       contentType: application/json
  *       payload:
  *         $ref: '#/components/schemas/Template'
- *     TemplateUpdateResponse:
- *       messageId: templateUpdateResponse
+ *     UpdateResponse:
+ *       messageId: updateResponse
  *       contentType: application/json
  *       payload:
  *         $ref: '#/components/schemas/Template'
- *     TemplateRetrievalResponse:
- *       messageId: templateRetrievalResponse
+ *     GetResponse:
+ *       messageId: getResponse
  *       contentType: application/json
  *       payload:
  *         $ref: '#/components/schemas/Template'
- *     TemplateDeletionResponse:
- *       messageId: templateDeletionResponse
+ *     DeleteResponse:
+ *       messageId: deleteResponse
  *       contentType: application/json
  *       payload:
  *         $ref: '#/components/schemas/Template'
- *     TemplateListResponse:
- *       messageId: templateListResponse
+ *     ListResponse:
+ *       messageId: listResponse
  *       contentType: application/json
  *       payload:
  *         $ref: '#/components/schemas/Template'

@@ -1,5 +1,5 @@
 {
-  "name": "templatepythoncdkwebsocket",
+  "name": "dps-ws-chat-internalkb-bedrock",
   "version": "1.0.0",
   "description": "Generate file",
   "main": "src/index.js",

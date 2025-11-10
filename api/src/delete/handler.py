@@ -17,13 +17,13 @@ from src.helpers.queue_helper import send_message_to_queue
 /**
  * @asyncapi
  * channels:
- *   templateDelete:
+ *   delete:
  *     description: Channel for deleting a specific template by ID.
  *     publish:
- *       operationId: templateDelete
+ *       operationId: delete
  *       summary: Delete a specific template.
  *       message:
- *         messageId: templateDelete
+ *         messageId: delete
  *         contentType: application/json
  *         payload:
  *           type: object
@@ -45,10 +45,10 @@ from src.helpers.queue_helper import send_message_to_queue
  *                   description: The unique identifier of the template to delete.
  *                   example: 123e4567-e89b-12d3-a456-426614174000
  *     subscribe:
- *       operationId: templateDeleteResponse
+ *       operationId: deleteResponse
  *       summary: Receive response for the deleted template.
  *       message:
- *         $ref: '#/components/messages/TemplateDeleteResponse'
+ *         $ref: '#/components/messages/DeleteResponse'
  */
 """
 

@@ -18,13 +18,13 @@ from src.helpers.scope_manager import get_user_resource_permissions, require_res
 /**
  * @asyncapi
  * channels:
- *   templateList:
+ *   list:
  *     description: Channel for retrieving a list of templates.
  *     publish:
- *       operationId: templateList
+ *       operationId: list
  *       summary: Return a list of templates.
  *       message:
- *         messageId: templateList
+ *         messageId: list
  *         contentType: application/json
  *         payload:
  *           type: array
@@ -78,10 +78,10 @@ from src.helpers.scope_manager import get_user_resource_permissions, require_res
  *                 description: Template modification date.
  *                 example: 2023-10-16T13:28:40.028Z
  *     subscribe:
- *       operationId: templateListResponse
+ *       operationId: listResponse
  *       summary: Retrieve templates based on query parameters.
  *       message:
- *         $ref: '#/components/messages/TemplateListResponse'
+ *         $ref: '#/components/messages/ListResponse'
  */
 """
 

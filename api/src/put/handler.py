@@ -18,13 +18,13 @@ from src.helpers.queue_helper import send_message_to_queue  # SQS queue helper
 /**
  * @asyncapi
  * channels:
- *   templateUpdate:
+ *   update:
  *     description: Channel for updating a template by ID.
  *     publish:
- *       operationId: templateUpdate
+ *       operationId: update
  *       summary: Update a template by ID.
  *       message:
- *         messageId: templateUpdate
+ *         messageId: update
  *         contentType: application/json
  *         payload:
  *           type: object
@@ -87,10 +87,10 @@ from src.helpers.queue_helper import send_message_to_queue  # SQS queue helper
  *                   description: Template status.
  *                   example: Template Status
  *     subscribe:
- *       operationId: templateUpdateResponse
+ *       operationId: updateResponse
  *       summary: Receive response for the updated template.
  *       message:
- *         $ref: '#/components/messages/TemplateUpdateResponse'
+ *         $ref: '#/components/messages/UpdateResponse'
  */
 """
 

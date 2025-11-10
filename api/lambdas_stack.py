@@ -49,11 +49,7 @@ class LambdasStack(Stack):
             "SERVICE_NAME": service_name,
             "AWS_ACCOUNT_ID": aws_account_id,
             "SQS_QUEUE_NAME": sqs_queue_name,
-            "DEAD_LETTER_QUEUE_NAME": dead_letter_queue_name,
-            "KNOWLEDGE_BASE_ID": "653783183133",  # Your Bedrock Knowledge Base ID
-            "OPENAI_MODEL_ID": "gpt-4o",  # OpenAI model to use
-            "OPENAI_API_KEY": os.environ.get("OPENAI_API_KEY", ""),  # OpenAI API key from environment
-            "AWS_DEFAULT_REGION": self.region,
+            "DEAD_LETTER_QUEUE_NAME": dead_letter_queue_name
         }
         
         # Add connections table environment variable if provided

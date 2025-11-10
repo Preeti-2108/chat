@@ -18,10 +18,10 @@ from src.helpers.queue_helper import send_message_to_queue  # Helper function to
  * @asyncapi
  * channels:
  *   create:
- *     description: Channel for posting and initiating new template.
+ *     description: Channel for posting and creating a new chat conversation.
  *     publish:
  *       operationId: create
- *       summary: Post and initiate a new template.
+ *       summary: Post and initiate a new chat.
  *       message:
  *         messageId: create
  *         contentType: application/json
@@ -33,59 +33,30 @@ from src.helpers.queue_helper import send_message_to_queue  # Helper function to
  *           properties:
  *             action:
  *               type: string
- *               description: The action to perform.
+ *               description: "The action to perform (create for new conversations)."
  *               example: create
  *             datas:
  *               type: object
  *               required:
- *                 - templateCompany
- *                 - templateAgent
- *                 - templateActions
+ *                 - query
+ *                 - modelName
+ *                 - assistantId
  *               properties:
- *                 templateCompany:
+ *                 query:
  *                   type: string
- *                   description: Template company name.
- *                   example: Company Name
- *                 templateAgent:
+ *                   description: The user's query for the AI assistant.
+ *                   example: "What is the process to apply for leave?"
+ *                 modelName:
  *                   type: string
- *                   description: Template agent name.
- *                   example: Agent Name
- *                 templateRootCause:
+ *                   description: The model name to use for the AI assistant.
+ *                   example: "gpt-4o"
+ *                 assistantId:
  *                   type: string
- *                   description: Template root cause.
- *                   example: Root Cause
- *                 templateAgentValidation:
- *                   type: boolean
- *                   description: Template agent validation.
- *                   example: true
- *                 templateIntentFailed:
- *                   type: boolean
- *                   description: Template intent failed.
- *                   example: false
- *                 isActive:
- *                   type: boolean
- *                   description: Is active or not.
- *                   example: true
- *                 templateActions:
- *                   type: array
- *                   items:
- *                     type: object
- *                     properties:
- *                       templateActionsTimeStamp:
- *                         type: integer
- *                         description: Timestamp of the action.
- *                         example: 1639172876
- *                       templateActionsTag:
- *                         type: string
- *                         description: Tag of the action.
- *                         example: Tag Action
- *                 templateStatus:
- *                   type: string
- *                   description: Template status.
- *                   example: Template Status
+ *                   description: The ID of the chat assistant.
+ *                   example: "184CF8DA-B821-4FF4-BD6C-CDAFA166E2E0"
  *     subscribe:
  *       operationId: createResponse
- *       summary: Receive response for the initiated template.
+ *       summary: Receive response for the initiated chat  .
  *       message:
  *         $ref: '#/components/messages/CreateResponse'
  */
@@ -96,7 +67,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))  # Set Log Level
 
 @authenticate_websocket()
-@require_resource_permission('PYTHONTEMPLATECDKWEBSOCKET', 'CREATE')
+@require_resource_permission('CHATKBBEDROCKCDKWEBSOCKET', 'CREATE')
 def create(event, context):
     """
     Main function to handle the creation of a new item.

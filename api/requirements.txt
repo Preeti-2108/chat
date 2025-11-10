@@ -16,7 +16,9 @@ requests==2.32.4
 cryptography>=41.0.0
 zipp>=3.19.1
 
-##Langchain requirements
-langchain
-langgraph
-langchain-openai
+##Langchain and LangGraph requirements
+langchain>=0.2.0
+langchain-core>=0.2.0
+langchain-community>=0.2.0
+langchain-openai>=0.1.0
+langgraph>=0.1.0

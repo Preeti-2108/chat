@@ -50,6 +50,10 @@ class LambdasStack(Stack):
             "AWS_ACCOUNT_ID": aws_account_id,
             "SQS_QUEUE_NAME": sqs_queue_name,
             "DEAD_LETTER_QUEUE_NAME": dead_letter_queue_name,
+            "KNOWLEDGE_BASE_ID": "653783183133",  # Your Bedrock Knowledge Base ID
+            "OPENAI_MODEL_ID": "gpt-4o",  # OpenAI model to use
+            "OPENAI_API_KEY": os.environ.get("OPENAI_API_KEY", ""),  # OpenAI API key from environment
+            "AWS_DEFAULT_REGION": self.region,
         }
         
         # Add connections table environment variable if provided
@@ -136,6 +140,17 @@ class LambdasStack(Stack):
             lambdas[name].add_to_role_policy(iam.PolicyStatement(
                 actions=["sqs:SendMessage"],
                 resources=["*"]  # As per your serverless configuration
+            ))
+            
+            # Add Bedrock permissions for AI/ML functionality
+            lambdas[name].add_to_role_policy(iam.PolicyStatement(
+                actions=[
+                    "bedrock:InvokeModel",
+                    "bedrock:InvokeModelWithResponseStream",
+                    "bedrock-agent-runtime:Retrieve",
+                    "bedrock-agent-runtime:RetrieveAndGenerate"
+                ],
+                resources=["*"]  # Bedrock models and knowledge bases
             ))
 
         # WebSocket API

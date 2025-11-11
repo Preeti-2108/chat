@@ -25,6 +25,7 @@ AZURE_OPENAI_API_VERSION = os.getenv("AZURE_OPENAI_API_VERSION")
 AZURE_OPENAI_API_KEY = get_env_var("AZURE_OPENAI_API_KEY")
 AZURE_OPENAI_TEMPERATURE = os.getenv("AZURE_OPENAI_TEMPERATURE")
 AZURE_OPENAI_MAX_TOKENS = os.getenv("AZURE_OPENAI_MAX_TOKENS")
+BASE_URL = get_env_var("BASE_URL")
 
 
 # Construct connections table name
@@ -47,7 +48,8 @@ lambdas_stack = LambdasStack(
     azure_openai_api_version=AZURE_OPENAI_API_VERSION,
     azure_openai_api_key=AZURE_OPENAI_API_KEY,
     azure_openai_temperature=AZURE_OPENAI_TEMPERATURE,
-    azure_openai_max_tokens=AZURE_OPENAI_MAX_TOKENS
+    azure_openai_max_tokens=AZURE_OPENAI_MAX_TOKENS,
+    base_url=BASE_URL
 )
 
 app.synth()

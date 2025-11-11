@@ -38,6 +38,7 @@ class LambdasStack(Stack):
         sqs_queue_name: str,
         dead_letter_queue_name: str,
         connections_table_name: str = None,
+        knowledge_base_id: str = None,
         **kwargs
     ):
         super().__init__(scope, id, **kwargs)
@@ -49,7 +50,8 @@ class LambdasStack(Stack):
             "SERVICE_NAME": service_name,
             "AWS_ACCOUNT_ID": aws_account_id,
             "SQS_QUEUE_NAME": sqs_queue_name,
-            "DEAD_LETTER_QUEUE_NAME": dead_letter_queue_name
+            "DEAD_LETTER_QUEUE_NAME": dead_letter_queue_name,
+            "KNOWLEDGE_BASE_ID": knowledge_base_id
         }
         
         # Add connections table environment variable if provided

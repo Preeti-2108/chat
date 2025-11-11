@@ -190,6 +190,12 @@ class BedrockKnowledgeBaseWorkflow:
                         
             except Exception as e:
                 logger.error(f"Error retrieving from Knowledge Base: {e}")
+        elif not KNOWLEDGE_BASE_ID:
+            logger.warning("⚠️  Knowledge Base retrieval skipped: KNOWLEDGE_BASE_ID not configured")
+        elif not user_query:
+            logger.warning("⚠️  Knowledge Base retrieval skipped: No user query provided")
+        elif not self.bedrock_agent_client:
+            logger.warning("⚠️  Knowledge Base retrieval skipped: Bedrock agent client not available")
         
         # Update state
         state["context_documents"] = context_documents

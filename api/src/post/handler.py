@@ -58,7 +58,7 @@ from src.helpers.queue_helper import send_message_to_queue  # Helper function to
  *                 modelName:
  *                   type: string
  *                   description: The model name to use for the AI assistant.
- *                   example: "gpt-4o"
+ *                   example: "AZURE_OPENAI_GPT_4O"
  *                 assistantId:
  *                   type: string
  *                   description: The ID of the chat assistant.
@@ -77,7 +77,7 @@ logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))  # Set Log Level
 
 # Configuration
 KNOWLEDGE_BASE_ID = os.getenv('KNOWLEDGE_BASE_ID')
-OPENAI_MODEL_ID = os.getenv('OPENAI_MODEL_ID', 'gpt-4o')
+OPENAI_MODEL_ID = os.getenv('OPENAI_MODEL_ID', 'AZURE_OPENAI_GPT_4O')
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 AWS_REGION = os.getenv('AWS_DEFAULT_REGION', 'eu-north-1')
 
@@ -124,7 +124,7 @@ class BedrockKnowledgeBaseWorkflow:
                 return None
                 
             return ChatOpenAI(
-                model='gpt-4o',
+                model='AZURE_OPENAI_GPT_4O',
                 api_key='4de9f620bfa94c2d9338e29bbf18110e',
                 max_tokens=1000,
                 temperature=0.7,
@@ -269,7 +269,7 @@ Provide a helpful and accurate response."""
                 "context_used": final_state.get("has_context", False),
                 "sources_count": len(final_state.get("context_documents", [])),
                 "conversation_id": final_state.get("conversation_id", ""),
-                "model_used": "gpt-4o",
+                "model_used": "AZURE_OPENAI_GPT_4O",
                 "timestamp": datetime.now().isoformat()
             }
             
@@ -404,7 +404,7 @@ def create(event, context):
                     validation_schema['datas']['aiResponse'] = workflow_result.get('ai_response', '')
                     validation_schema['datas']['contextUsed'] = workflow_result.get('context_used', False)
                     validation_schema['datas']['sourcesCount'] = workflow_result.get('sources_count', 0)
-                    validation_schema['datas']['modelUsed'] = workflow_result.get('model_used', 'gpt-4o')
+                    validation_schema['datas']['modelUsed'] = workflow_result.get('model_used', 'AZURE_OPENAI_GPT_4O')
                     validation_schema['datas']['conversationId'] = workflow_result.get('conversation_id', conversation_id)
                     
                     logger.info("LangGraph workflow completed successfully")
@@ -427,7 +427,7 @@ def create(event, context):
                     validation_schema['datas']['aiResponse'] = 'AI processing temporarily unavailable'
                     validation_schema['datas']['contextUsed'] = False
                     validation_schema['datas']['sourcesCount'] = 0
-                    validation_schema['datas']['modelUsed'] = 'gpt-4o'
+                    validation_schema['datas']['modelUsed'] = 'AZURE_OPENAI_GPT_4O'
                     validation_schema['datas']['conversationId'] = conversation_id
                     
             except Exception as workflow_err:
@@ -436,7 +436,7 @@ def create(event, context):
                 validation_schema['datas']['aiResponse'] = 'AI processing encountered an error'
                 validation_schema['datas']['contextUsed'] = False
                 validation_schema['datas']['sourcesCount'] = 0
-                validation_schema['datas']['modelUsed'] = 'gpt-4o'
+                validation_schema['datas']['modelUsed'] = 'AZURE_OPENAI_GPT_4O'
                 validation_schema['datas']['conversationId'] = conversation_id
         else:
             logger.warning("No query provided for AI processing")

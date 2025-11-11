@@ -19,6 +19,7 @@ aws_account_id = get_env_var("AWS_ACCOUNT_ID")
 sqs_queue_name = os.getenv("SQS_QUEUE_NAME", "AUDIT_QUEUE")
 dead_letter_queue_name = os.getenv("DEAD_LETTER_QUEUE_NAME", "AUDIT_DLQ")
 KNOWLEDGE_BASE_ID = get_env_var("KNOWLEDGE_BASE_ID")
+AZURE_OPENAI_API_ENDPOINT = get_env_var("AZURE_OPENAI_API_ENDPOINT")
 
 
 # Construct connections table name
@@ -35,7 +36,8 @@ lambdas_stack = LambdasStack(
     sqs_queue_name=sqs_queue_name,
     dead_letter_queue_name=dead_letter_queue_name,
     connections_table_name=connections_table_name,
-    knowledge_base_id=KNOWLEDGE_BASE_ID
+    knowledge_base_id=KNOWLEDGE_BASE_ID,
+    azure_openai_api_endpoint=AZURE_OPENAI_API_ENDPOINT
 )
 
 app.synth()

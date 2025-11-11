@@ -78,7 +78,7 @@ logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))  # Set Log Level
 # Configuration
 KNOWLEDGE_BASE_ID = os.getenv('KNOWLEDGE_BASE_ID')
 AZURE_OPENAI_MODEL = os.getenv('AZURE_OPENAI_MODEL', 'gpt-4o')
-AZURE_OPENAI_API_ENDPOINT = os.getenv('AZURE_OPENAI_API_ENDPOINT', '')
+AZURE_OPENAI_API_ENDPOINT = os.getenv('AZURE_OPENAI_API_ENDPOINT', 'https://apiportal1689852356.azure-api.net/api/v10/azureopenai')
 AZURE_OPENAI_API_VERSION = os.getenv('AZURE_OPENAI_API_VERSION', '2024-03-01-preview')
 AZURE_OPENAI_API_KEY = os.getenv('AZURE_OPENAI_API_KEY','4de9f620bfa94c2d9338e29bbf18110e')
 AZURE_OPENAI_TEMPERATURE = float(os.getenv('AZURE_OPENAI_TEMPERATURE', '0.2'))

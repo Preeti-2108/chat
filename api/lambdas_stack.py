@@ -39,6 +39,7 @@ class LambdasStack(Stack):
         dead_letter_queue_name: str,
         connections_table_name: str = None,
         knowledge_base_id: str = None,
+        azure_openai_api_endpoint: str = None,
         **kwargs
     ):
         super().__init__(scope, id, **kwargs)
@@ -51,7 +52,8 @@ class LambdasStack(Stack):
             "AWS_ACCOUNT_ID": aws_account_id,
             "SQS_QUEUE_NAME": sqs_queue_name,
             "DEAD_LETTER_QUEUE_NAME": dead_letter_queue_name,
-            "KNOWLEDGE_BASE_ID": knowledge_base_id
+            "KNOWLEDGE_BASE_ID": knowledge_base_id,
+            "AZURE_OPENAI_API_ENDPOINT": azure_openai_api_endpoint
         }
         
         # Add connections table environment variable if provided

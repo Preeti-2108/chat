@@ -83,7 +83,7 @@ AZURE_OPENAI_API_VERSION = os.getenv('AZURE_OPENAI_API_VERSION', '2024-03-01-pre
 AZURE_OPENAI_API_KEY = os.getenv('AZURE_OPENAI_API_KEY','4de9f620bfa94c2d9338e29bbf18110e')
 AZURE_OPENAI_TEMPERATURE = float(os.getenv('AZURE_OPENAI_TEMPERATURE', '0.2'))
 AZURE_OPENAI_MAX_TOKENS = int(os.getenv('AZURE_OPENAI_MAX_TOKENS', '4000'))
-# AWS_REGION = os.getenv('AWS_DEFAULT_REGION', 'eu-north-1')
+AWS_REGION = os.getenv('AWS_DEFAULT_REGION', 'eu-north-1')
 
 logger.info(f"Knowledge Base ID: {KNOWLEDGE_BASE_ID}")
 logger.info(f"Azure OpenAI Model: {AZURE_OPENAI_MODEL}")

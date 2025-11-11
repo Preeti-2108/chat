@@ -10,7 +10,7 @@ from typing import Dict, Any, List
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 from langchain_core.messages import HumanMessage, AIMessage
-from langchain_openai import AzureOpenAI
+from langchain_openai import AzureChatOpenAI
 from botocore.config import Config
 
 from src.helpers.api_responses import Responses  # Custom helper for API responses
@@ -78,7 +78,7 @@ logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))  # Set Log Level
 # Configuration
 KNOWLEDGE_BASE_ID = os.getenv('KNOWLEDGE_BASE_ID')
 AZURE_OPENAI_MODEL = os.getenv('AZURE_OPENAI_MODEL', 'gpt-4o')
-AZURE_OPENAI_API_ENDPOINT = os.getenv('AZURE_OPENAI_API_ENDPOINT', 'https://apiportal1689852356.azure-api.net/api/v10/azureopenai')
+AZURE_OPENAI_API_ENDPOINT = os.getenv('AZURE_OPENAI_API_ENDPOINT', '')
 AZURE_OPENAI_API_VERSION = os.getenv('AZURE_OPENAI_API_VERSION', '2024-03-01-preview')
 AZURE_OPENAI_API_KEY = os.getenv('AZURE_OPENAI_API_KEY','4de9f620bfa94c2d9338e29bbf18110e')
 AZURE_OPENAI_TEMPERATURE = float(os.getenv('AZURE_OPENAI_TEMPERATURE', '0.2'))
@@ -137,10 +137,17 @@ class BedrockKnowledgeBaseWorkflow:
                 logger.error("❌ AZURE_OPENAI_API_ENDPOINT not set, chat model will not be available")
                 return None
                 
-            logger.info(f"🔧 Setting up Azure OpenAI with model: {AZURE_OPENAI_MODEL}")
+            logger.info(f"🔧 Setting up Azure OpenAI with deployment: {AZURE_OPENAI_MODEL}")
+            logger.info(f"🔧 Azure OpenAI Endpoint: {AZURE_OPENAI_API_ENDPOINT}")
+            logger.info(f"🔧 Azure OpenAI API Version: {AZURE_OPENAI_API_VERSION}")
+            logger.info(f"🔧 Azure OpenAI API Key (first 8 chars): {AZURE_OPENAI_API_KEY[:8]}...")
             
-            llm = AzureOpenAI(
-                model=AZURE_OPENAI_MODEL,
+            # Validate endpoint format
+            if not AZURE_OPENAI_API_ENDPOINT.startswith('https://'):
+                logger.error(f"❌ Invalid endpoint format: {AZURE_OPENAI_API_ENDPOINT}")
+                return None
+            
+            llm = AzureChatOpenAI(
                 deployment_name=AZURE_OPENAI_MODEL,
                 azure_endpoint=AZURE_OPENAI_API_ENDPOINT,
                 api_version=AZURE_OPENAI_API_VERSION,
@@ -261,7 +268,8 @@ Provide a helpful and accurate response."""
                 # Create message for the chat model
                 messages = [HumanMessage(content=prompt)]
                 
-                # Invoke the Bedrock chat model
+                logger.info("Invoking Azure OpenAI chat model...")
+                # Invoke the Azure OpenAI chat model
                 response = self.chat_model.invoke(messages)
                 ai_response = response.content if hasattr(response, 'content') else str(response)
                 
@@ -273,6 +281,11 @@ Provide a helpful and accurate response."""
                 
         except Exception as e:
             logger.error(f"Error generating AI response: {e}")
+            logger.error(f"Error type: {type(e).__name__}")
+            if hasattr(e, 'status_code'):
+                logger.error(f"HTTP Status Code: {e.status_code}")
+            if hasattr(e, 'response'):
+                logger.error(f"Response: {e.response}")
             ai_response = "I encountered an error while processing your request. Please try again."
         
         # Update state with response

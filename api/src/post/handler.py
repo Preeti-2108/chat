@@ -10,7 +10,7 @@ from typing import Dict, Any, List
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 from langchain_core.messages import HumanMessage, AIMessage
-from langchain_openai import ChatOpenAI
+from langchain_openai import AzureOpenAI
 from botocore.config import Config
 
 from src.helpers.api_responses import Responses  # Custom helper for API responses
@@ -77,11 +77,20 @@ logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))  # Set Log Level
 
 # Configuration
 KNOWLEDGE_BASE_ID = os.getenv('KNOWLEDGE_BASE_ID')
-OPENAI_MODEL_ID = os.getenv('OPENAI_MODEL_ID', 'AZURE_OPENAI_GPT_4O')
-OPENAI_API_KEY = os.getenv('OPENAI_API_KEY','4de9f620bfa94c2d9338e29bbf18110e')
-AWS_REGION = os.getenv('AWS_DEFAULT_REGION', 'eu-north-1')
+AZURE_OPENAI_MODEL = os.getenv('AZURE_OPENAI_MODEL', 'gpt-4o')
+AZURE_OPENAI_API_ENDPOINT = os.getenv('AZURE_OPENAI_API_ENDPOINT', 'https://apiportal1689852356.azure-api.net/api/v10/azureopenai')
+AZURE_OPENAI_API_VERSION = os.getenv('AZURE_OPENAI_API_VERSION', '2024-03-01-preview')
+AZURE_OPENAI_API_KEY = os.getenv('AZURE_OPENAI_API_KEY','4de9f620bfa94c2d9338e29bbf18110e')
+AZURE_OPENAI_TEMPERATURE = float(os.getenv('AZURE_OPENAI_TEMPERATURE', '0.2'))
+AZURE_OPENAI_MAX_TOKENS = int(os.getenv('AZURE_OPENAI_MAX_TOKENS', '4000'))
+# AWS_REGION = os.getenv('AWS_DEFAULT_REGION', 'eu-north-1')
 
 logger.info(f"Knowledge Base ID: {KNOWLEDGE_BASE_ID}")
+logger.info(f"Azure OpenAI Model: {AZURE_OPENAI_MODEL}")
+logger.info(f"Azure OpenAI Endpoint configured: {'Yes' if AZURE_OPENAI_API_ENDPOINT else 'No'}")
+logger.info(f"Azure OpenAI API Key configured: {'Yes' if AZURE_OPENAI_API_KEY else 'No'}")
+logger.info(f"Azure OpenAI Temperature: {AZURE_OPENAI_TEMPERATURE}")
+logger.info(f"Azure OpenAI Max Tokens: {AZURE_OPENAI_MAX_TOKENS}")
 
 # State interface for LangGraph workflow
 class State(Dict[str, Any]):
@@ -117,20 +126,36 @@ class BedrockKnowledgeBaseWorkflow:
             return None
     
     def _setup_chat_model(self):
-        """Setup OpenAI chat model using LangChain"""
+        """Setup Azure OpenAI chat model using LangChain"""
         try:
-            if not OPENAI_API_KEY:
-                logger.warning("OPENAI_API_KEY not set, chat model will not be available")
+            # Validate required Azure OpenAI configuration
+            if not AZURE_OPENAI_API_KEY:
+                logger.error("❌ AZURE_OPENAI_API_KEY not set, chat model will not be available")
+                return None
+            
+            if not AZURE_OPENAI_API_ENDPOINT:
+                logger.error("❌ AZURE_OPENAI_API_ENDPOINT not set, chat model will not be available")
                 return None
                 
-            return ChatOpenAI(
-                model='AZURE_OPENAI_GPT_4O',
-                api_key='4de9f620bfa94c2d9338e29bbf18110e',
-                max_tokens=1000,
-                temperature=0.7,
+            logger.info(f"🔧 Setting up Azure OpenAI with model: {AZURE_OPENAI_MODEL}")
+            
+            llm = AzureOpenAI(
+                model=AZURE_OPENAI_MODEL,
+                deployment_name=AZURE_OPENAI_MODEL,
+                azure_endpoint=AZURE_OPENAI_API_ENDPOINT,
+                api_version=AZURE_OPENAI_API_VERSION,
+                api_key=AZURE_OPENAI_API_KEY,
+                temperature=AZURE_OPENAI_TEMPERATURE,
+                max_tokens=AZURE_OPENAI_MAX_TOKENS,
             )
+            
+            logger.info("✅ Azure OpenAI chat model setup successful")
+            return llm
+            
         except Exception as e:
-            logger.error(f"Failed to setup OpenAI chat model: {e}")
+            logger.error(f"❌ Failed to setup Azure OpenAI chat model: {e}")
+            logger.error(f"❌ Model: {AZURE_OPENAI_MODEL}")
+            logger.error(f"❌ Endpoint: {AZURE_OPENAI_API_ENDPOINT}")
             return None
     
     def _create_workflow(self):
@@ -284,7 +309,7 @@ Provide a helpful and accurate response."""
                 "context_used": final_state.get("has_context", False),
                 "sources_count": len(final_state.get("context_documents", [])),
                 "conversation_id": final_state.get("conversation_id", ""),
-                "model_used": "AZURE_OPENAI_GPT_4O",
+                "model_used": AZURE_OPENAI_MODEL,
                 "timestamp": datetime.now().isoformat()
             }
             
@@ -419,7 +444,7 @@ def create(event, context):
                     validation_schema['datas']['aiResponse'] = workflow_result.get('ai_response', '')
                     validation_schema['datas']['contextUsed'] = workflow_result.get('context_used', False)
                     validation_schema['datas']['sourcesCount'] = workflow_result.get('sources_count', 0)
-                    validation_schema['datas']['modelUsed'] = workflow_result.get('model_used', 'AZURE_OPENAI_GPT_4O')
+                    validation_schema['datas']['modelUsed'] = workflow_result.get('model_used', AZURE_OPENAI_MODEL)
                     validation_schema['datas']['conversationId'] = workflow_result.get('conversation_id', conversation_id)
                     
                     logger.info("LangGraph workflow completed successfully")

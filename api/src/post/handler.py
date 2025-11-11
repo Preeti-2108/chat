@@ -146,11 +146,6 @@ class BedrockKnowledgeBaseWorkflow:
             logger.info(f"🔧 Azure OpenAI API Version: {AZURE_OPENAI_API_VERSION}")
             logger.info(f"🔧 Azure OpenAI API Key (first 8 chars): {AZURE_OPENAI_API_KEY[:8]}...")
             
-            # Validate endpoint format
-            if not AZURE_OPENAI_API_ENDPOINT.startswith('https://'):
-                logger.error(f"❌ Invalid endpoint format: {AZURE_OPENAI_API_ENDPOINT}")
-                return None
-            
             llm = AzureChatOpenAI(
                 deployment_name=AZURE_OPENAI_MODEL,
                 azure_endpoint=f"{BASE_URL}{AZURE_OPENAI_API_ENDPOINT}",

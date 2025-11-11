@@ -78,7 +78,7 @@ logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))  # Set Log Level
 # Configuration
 KNOWLEDGE_BASE_ID = os.getenv('KNOWLEDGE_BASE_ID')
 OPENAI_MODEL_ID = os.getenv('OPENAI_MODEL_ID', 'AZURE_OPENAI_GPT_4O')
-OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY','4de9f620bfa94c2d9338e29bbf18110e')
 AWS_REGION = os.getenv('AWS_DEFAULT_REGION', 'eu-north-1')
 
 logger.info(f"Knowledge Base ID: {KNOWLEDGE_BASE_ID}")

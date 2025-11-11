@@ -157,10 +157,19 @@ class BedrockKnowledgeBaseWorkflow:
         user_query = state.get("user_query", "")
         context_documents = []
         
-        if self.bedrock_agent_client and user_query:
+        if self.bedrock_agent_client and user_query and KNOWLEDGE_BASE_ID:
+            # Validate Knowledge Base ID length before making the call
+            if len(KNOWLEDGE_BASE_ID) > 10:
+                logger.error(f"❌ Cannot retrieve from Knowledge Base: Invalid ID length ({len(KNOWLEDGE_BASE_ID)} chars)")
+                logger.error(f"❌ Knowledge Base ID '{KNOWLEDGE_BASE_ID}' exceeds 10 character limit")
+                state["context_documents"] = context_documents
+                state["has_context"] = False
+                return state
+            
             try:
+                logger.info(f"🔍 Querying Knowledge Base ID: {KNOWLEDGE_BASE_ID}")
                 response = self.bedrock_agent_client.retrieve(
-                    knowledgeBaseId='653783183133',
+                    knowledgeBaseId=KNOWLEDGE_BASE_ID,
                     retrievalQuery={'text': user_query},
                     retrievalConfiguration={
                         'vectorSearchConfiguration': {

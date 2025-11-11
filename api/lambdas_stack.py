@@ -143,12 +143,10 @@ class LambdasStack(Stack):
             # Add Bedrock permissions for AI/ML functionality
             lambdas[name].add_to_role_policy(iam.PolicyStatement(
                 actions=[
-                    "bedrock:InvokeModel",
-                    "bedrock:InvokeModelWithResponseStream",
-                    "bedrock-agent-runtime:Retrieve",
-                    "bedrock-agent-runtime:RetrieveAndGenerate"
+                    "bedrock:Retrieve",
+                    "bedrock:RetrieveAndGenerate"
                 ],
-                resources=["*"]  # Bedrock models and knowledge bases
+                resources=[f"arn:aws:bedrock:{self.region}:{self.account}:knowledge-base/*"]
             ))
 
         # WebSocket API

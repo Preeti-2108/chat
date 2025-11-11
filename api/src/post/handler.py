@@ -287,7 +287,7 @@ Provide a helpful and accurate response."""
 bedrock_workflow = BedrockKnowledgeBaseWorkflow()
 
 @authenticate_websocket()
-@require_resource_permission('CHATKBBEDROCKCDKWEBSOCKET', 'CREATE')
+# @require_resource_permission('CHATKBBEDROCKCDKWEBSOCKET', 'CREATE')
 def create(event, context):
     """
     Main function to handle the creation of a new item.

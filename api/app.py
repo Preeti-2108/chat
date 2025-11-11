@@ -20,6 +20,11 @@ sqs_queue_name = os.getenv("SQS_QUEUE_NAME", "AUDIT_QUEUE")
 dead_letter_queue_name = os.getenv("DEAD_LETTER_QUEUE_NAME", "AUDIT_DLQ")
 KNOWLEDGE_BASE_ID = get_env_var("KNOWLEDGE_BASE_ID")
 AZURE_OPENAI_API_ENDPOINT = get_env_var("AZURE_OPENAI_API_ENDPOINT")
+AZURE_OPENAI_MODEL = os.getenv("AZURE_OPENAI_MODEL")
+AZURE_OPENAI_API_VERSION = os.getenv("AZURE_OPENAI_API_VERSION")
+AZURE_OPENAI_API_KEY = get_env_var("AZURE_OPENAI_API_KEY")
+AZURE_OPENAI_TEMPERATURE = os.getenv("AZURE_OPENAI_TEMPERATURE")
+AZURE_OPENAI_MAX_TOKENS = os.getenv("AZURE_OPENAI_MAX_TOKENS")
 
 
 # Construct connections table name
@@ -37,7 +42,12 @@ lambdas_stack = LambdasStack(
     dead_letter_queue_name=dead_letter_queue_name,
     connections_table_name=connections_table_name,
     knowledge_base_id=KNOWLEDGE_BASE_ID,
-    azure_openai_api_endpoint=AZURE_OPENAI_API_ENDPOINT
+    azure_openai_api_endpoint=AZURE_OPENAI_API_ENDPOINT,
+    azure_openai_model=AZURE_OPENAI_MODEL,
+    azure_openai_api_version=AZURE_OPENAI_API_VERSION,
+    azure_openai_api_key=AZURE_OPENAI_API_KEY,
+    azure_openai_temperature=AZURE_OPENAI_TEMPERATURE,
+    azure_openai_max_tokens=AZURE_OPENAI_MAX_TOKENS
 )
 
 app.synth()

@@ -40,6 +40,11 @@ class LambdasStack(Stack):
         connections_table_name: str = None,
         knowledge_base_id: str = None,
         azure_openai_api_endpoint: str = None,
+        azure_openai_model: str = None,
+        azure_openai_api_version: str = None,
+        azure_openai_api_key: str = None,
+        azure_openai_temperature: str = None,
+        azure_openai_max_tokens: str = None,
         **kwargs
     ):
         super().__init__(scope, id, **kwargs)
@@ -53,7 +58,12 @@ class LambdasStack(Stack):
             "SQS_QUEUE_NAME": sqs_queue_name,
             "DEAD_LETTER_QUEUE_NAME": dead_letter_queue_name,
             "KNOWLEDGE_BASE_ID": knowledge_base_id,
-            "AZURE_OPENAI_API_ENDPOINT": azure_openai_api_endpoint
+            "AZURE_OPENAI_API_ENDPOINT": azure_openai_api_endpoint,
+            "AZURE_OPENAI_MODEL": azure_openai_model,
+            "AZURE_OPENAI_API_VERSION": azure_openai_api_version,
+            "AZURE_OPENAI_API_KEY": azure_openai_api_key,
+            "AZURE_OPENAI_TEMPERATURE": azure_openai_temperature,
+            "AZURE_OPENAI_MAX_TOKENS": azure_openai_max_tokens
         }
         
         # Add connections table environment variable if provided

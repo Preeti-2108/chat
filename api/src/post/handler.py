@@ -77,18 +77,21 @@ logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))  # Set Log Level
 
 # Configuration
 KNOWLEDGE_BASE_ID = os.getenv('KNOWLEDGE_BASE_ID')
-AZURE_OPENAI_MODEL = os.getenv('AZURE_OPENAI_MODEL', 'gpt-4o')
-AZURE_OPENAI_API_ENDPOINT = os.getenv('AZURE_OPENAI_API_ENDPOINT', 'https://apiportal1689852356.azure-api.net/api/v10/azureopenai')
-AZURE_OPENAI_API_VERSION = os.getenv('AZURE_OPENAI_API_VERSION', '2024-03-01-preview')
-AZURE_OPENAI_API_KEY = os.getenv('AZURE_OPENAI_API_KEY','4de9f620bfa94c2d9338e29bbf18110e')
-AZURE_OPENAI_TEMPERATURE = float(os.getenv('AZURE_OPENAI_TEMPERATURE', '0.2'))
-AZURE_OPENAI_MAX_TOKENS = int(os.getenv('AZURE_OPENAI_MAX_TOKENS', '4000'))
-AWS_REGION = os.getenv('AWS_DEFAULT_REGION', 'eu-north-1')
+AWS_REGION = os.getenv('REGION')  # Use REGION from CDK environment
+AZURE_OPENAI_MODEL = os.getenv('AZURE_OPENAI_MODEL')
+BASE_URL = os.getenv('BASE_URL')  # Base URL for Azure OpenAI
+AZURE_OPENAI_API_ENDPOINT = os.getenv('AZURE_OPENAI_API_ENDPOINT')
+AZURE_OPENAI_API_VERSION = os.getenv('AZURE_OPENAI_API_VERSION')
+AZURE_OPENAI_API_KEY = os.getenv('AZURE_OPENAI_API_KEY')
+AZURE_OPENAI_TEMPERATURE = float(os.getenv('AZURE_OPENAI_TEMPERATURE'))
+AZURE_OPENAI_MAX_TOKENS = int(os.getenv('AZURE_OPENAI_MAX_TOKENS'))
 
+logger.info(f"AWS Region: {AWS_REGION}")
 logger.info(f"Knowledge Base ID: {KNOWLEDGE_BASE_ID}")
 logger.info(f"Azure OpenAI Model: {AZURE_OPENAI_MODEL}")
-logger.info(f"Azure OpenAI Endpoint configured: {'Yes' if AZURE_OPENAI_API_ENDPOINT else 'No'}")
-logger.info(f"Azure OpenAI API Key configured: {'Yes' if AZURE_OPENAI_API_KEY else 'No'}")
+logger.info(f"Base URL for Azure OpenAI: {BASE_URL}")
+logger.info(f"Azure OpenAI Endpoint configured: {AZURE_OPENAI_API_ENDPOINT}")
+logger.info(f"Azure OpenAI API Key configured: {AZURE_OPENAI_API_KEY}")
 logger.info(f"Azure OpenAI Temperature: {AZURE_OPENAI_TEMPERATURE}")
 logger.info(f"Azure OpenAI Max Tokens: {AZURE_OPENAI_MAX_TOKENS}")
 
@@ -120,6 +123,7 @@ class BedrockKnowledgeBaseWorkflow:
                 region_name=AWS_REGION,
                 retries={'max_attempts': 3, 'mode': 'standard'}
             )
+            logger.info(f"Setting up Bedrock agent client in region: {AWS_REGION}")
             return boto3.client('bedrock-agent-runtime', config=config)
         except Exception as e:
             logger.error(f"Failed to setup Bedrock agent client: {e}")
@@ -149,7 +153,7 @@ class BedrockKnowledgeBaseWorkflow:
             
             llm = AzureChatOpenAI(
                 deployment_name=AZURE_OPENAI_MODEL,
-                azure_endpoint=AZURE_OPENAI_API_ENDPOINT,
+                azure_endpoint=f"{BASE_URL}{AZURE_OPENAI_API_ENDPOINT}",
                 api_version=AZURE_OPENAI_API_VERSION,
                 api_key=AZURE_OPENAI_API_KEY,
                 temperature=AZURE_OPENAI_TEMPERATURE,

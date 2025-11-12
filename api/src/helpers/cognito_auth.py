@@ -182,6 +182,9 @@ def extract_user_info(decoded_token: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Dict containing user information
     """
+    print('Decoded Token:++++++++++++++++++++++++++++++++++++++++++++++++')
+    print( decoded_token.get('email'))
+    print('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
     return {
         'user_id': decoded_token.get('sub'),
         'username': decoded_token.get('username') or decoded_token.get('cognito:username'),

@@ -462,18 +462,43 @@ def create(event, context):
                     logger.info("LangGraph workflow completed successfully")
                     
                     # Send immediate AI response to client via WebSocket
-                    # Extract user info from the event (from authentication context)
-                    user_email = event.get('requestContext', {}).get('authorizer', {}).get('email', '')
-                    if not user_email:
-                        # Try to extract from token if available in event
-                        try:
+                    # Extract user info from the event (from authentication middleware)
+                    user_email = 'unknown@example.com'  # Default fallback
+                    
+                    try:
+                        # Method 1: From authentication middleware (added by @authenticate_websocket decorator)
+                        auth_info = event.get('auth', {})
+                        if auth_info and auth_info.get('is_authenticated'):
+                            user_info = auth_info.get('user_info', {})
+                            user_email = user_info.get('email', '')
+                            if user_email:
+                                logger.info(f"Found email from auth middleware: {user_email}")
+                        
+                        # Method 2: From requestContext (for REST APIs)
+                        if not user_email:
+                            user_email = event.get('requestContext', {}).get('authorizer', {}).get('email', '')
+                            if user_email:
+                                logger.info(f"Found email in requestContext: {user_email}")
+                        
+                        # Method 3: Extract from JWT token directly as fallback
+                        if not user_email:
                             from src.helpers.cognito_auth import extract_token_from_event, extract_user_info
                             token = extract_token_from_event(event)
                             if token:
                                 user_info = extract_user_info(token)
                                 user_email = user_info.get('email', '')
-                        except:
-                            user_email = 'unknown@example.com'  # fallback
+                                if user_email:
+                                    logger.info(f"Found email from JWT token: {user_email}")
+                            
+                    except Exception as e:
+                        logger.error(f"Error extracting user email: {e}")
+                    
+                    # Final fallback
+                    if not user_email or user_email == '':
+                        user_email = 'unknown@example.com'
+                        logger.warning("Could not extract user email, using fallback")
+                    
+                    logger.info(f"Using user email: {user_email}")
                     
                     # Create chat history entry
                     chat_history_entry = {

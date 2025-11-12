@@ -189,13 +189,6 @@ class BedrockKnowledgeBaseWorkflow:
         context_documents = []
         
         if self.bedrock_agent_client and user_query and KNOWLEDGE_BASE_ID:
-            # Validate Knowledge Base ID length before making the call
-            if len(KNOWLEDGE_BASE_ID) > 10:
-                logger.error(f"❌ Cannot retrieve from Knowledge Base: Invalid ID length ({len(KNOWLEDGE_BASE_ID)} chars)")
-                logger.error(f"❌ Knowledge Base ID '{KNOWLEDGE_BASE_ID}' exceeds 10 character limit")
-                state["context_documents"] = context_documents
-                state["has_context"] = False
-                return state
             
             try:
                 logger.info(f"🔍 Querying Knowledge Base ID: {KNOWLEDGE_BASE_ID}")
@@ -265,24 +258,62 @@ class BedrockKnowledgeBaseWorkflow:
         context_documents = state.get("context_documents", [])
         conversation_id = state.get("conversation_id", "")
         
-        # Prepare context-aware prompt
+        # Prepare context-aware prompt with detailed system instructions
+        system_instructions = """You are an AI assistant designed to provide accurate and comprehensive answers based on information from the vector database. Follow these guidelines:
+
+1. **Context-Based Information**:
+- Use only the data available in the current context from the vector database.
+- If the required information is not present in the context, respond with: "I am not able to obtain an answer for this particular query."
+
+2. **Detailed Information**:
+- Provide thorough and well-organized responses using the context data.
+- Use headings, bullet points, or numbered lists to structure information clearly.
+- Apply bold or italic formatting for emphasis where needed.
+
+3. **Emotes**:
+- Incorporate appropriate emotes based on the content and tone of the query.
+- Use positive emotes for encouraging responses and neutral or informative emotes for factual information.
+
+4. **Table Generation**:
+- If the query requests data in a table format, generate and present the information using the context data.
+- Ensure the table is well-organized with headers and properly aligned columns.
+- Use Markdown or other formatting tools to enhance readability.
+
+5. **Chat Format**:
+- For chat or conversation-related queries, structure your response in a conversational format.
+- Use formatting to differentiate between user inputs and responses.
+
+6. **Specific Formats**:
+- If the user requests information in a specific format (e.g., JSON, XML, Markdown), provide the response using the context data.
+- Ensure the format is applied correctly and the data is structured appropriately.
+
+7. **Non-Professional Topics**:
+- If the query concerns non-professional subjects (e.g., politics, sports), politely redirect the user to relevant professional topics.
+- Suggest related professional queries and provide a concise explanation.
+
+8. **Accuracy and Citations**:
+- Ensure responses are accurate and solely based on the data in the current context.
+- Do not provide information not mentioned in the context. Do not add any additional information that is not present in the context.
+
+Keep your responses clear, informative, and engaging, ensuring they are derived exclusively from the provided context."""
+
         if context_documents:
             # Use top 2 most relevant documents
             context = "\n\n".join(context_documents[:2])
-            prompt = f"""You are a helpful AI assistant. Use the following context to answer the user's question accurately and concisely.
+            prompt = f"""{system_instructions}
 
 Context:
 {context}
 
 User Question: {user_query}
 
-Please provide a helpful answer based on the context above. If the context doesn't contain relevant information, mention that and provide a general response."""
+Please provide a well-formatted answer based on the context above following the guidelines specified."""
         else:
-            prompt = f"""You are a helpful AI assistant. Please answer the following question:
+            prompt = f"""{system_instructions}
 
-{user_query}
+User Question: {user_query}
 
-Provide a helpful and accurate response."""
+Since no specific context is available from the vector database, please respond with: "I am not able to obtain an answer for this particular query." and suggest the user provide more specific information or try rephrasing their question."""
         
         try:
             if self.chat_model:

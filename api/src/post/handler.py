@@ -482,18 +482,21 @@ def create(event, context):
                         "traceId": workflow_result.get('conversation_id', conversation_id)
                     }
                     
-                    # Create new response format
+                    # Create new response format (clean format without nested data)
                     new_format_response = {
-                        "data": {
-                            "userId": user_email,
-                            "conversationId": workflow_result.get('conversation_id', conversation_id),
-                            "chatHistory": [chat_history_entry],
-                            "trace_id": workflow_result.get('conversation_id', conversation_id)
-                        },
+                        "userId": user_email,
+                        "conversationId": workflow_result.get('conversation_id', conversation_id),
+                        "chatHistory": [chat_history_entry],
+                        "trace_id": workflow_result.get('conversation_id', conversation_id)
+                    }
+                    
+                    # Final response with data and status at top level
+                    final_response = {
+                        "data": new_format_response,
                         "status": 201
                     }
                     
-                    send_to_client(connectionId, json.dumps(new_format_response), url)
+                    send_to_client(connectionId, json.dumps(final_response), url)
                     
                 else:
                     # Workflow failed, but continue with regular processing

@@ -227,6 +227,9 @@ class BedrockKnowledgeBaseWorkflow:
                 
                 # Extract retrieved content
                 for result in response.get('retrievalResults', []):
+                    print('___________________________________________________')
+                    print(result.get('location', {}))
+                    print('___________________________________________________')
                     document_info = {
                         'content': result.get('content', {}).get('text', ''),
                         'score': result.get('score', 0),  # Relevance score

@@ -199,15 +199,37 @@ class BedrockKnowledgeBaseWorkflow:
             
             try:
                 logger.info(f"🔍 Querying Knowledge Base ID: {KNOWLEDGE_BASE_ID}")
+                
+                # Get environment and vector_db parameters
+                env = os.getenv('ENV', 'dev')  # Default to 'dev' if not set
+                vector_db = "872051E8-E5C8-4AD1-83A8-ADB347D6C2CC"  # Use KB ID as fallback
+                
+                # Build retrieval configuration with filters
+                retrieval_config = {
+                    "vectorSearchConfiguration": {
+                        "numberOfResults": 5,
+                        "overrideSearchType": "SEMANTIC",
+                        "filter": {
+                            "andAll": [
+                                {"equals": {"key": "knowledgeBaseId", "value": vector_db}},
+                                {
+                                    "startsWith": {
+                                        "key": "x-amz-bedrock-kb-source-uri",
+                                        "value": f"s3://docops-kb-{env}/{vector_db}/",
+                                    }
+                                },
+                            ]
+                        }
+                    }
+                }
+                
+                logger.info(f"🔍 Using filters - Environment: {env}, Vector DB: {vector_db}")
+                logger.info(f"🔍 S3 path filter: s3://docops-kb-{env}/{vector_db}/")
+                
                 response = self.bedrock_agent_client.retrieve(
                     knowledgeBaseId=KNOWLEDGE_BASE_ID,
                     retrievalQuery={'text': user_query},
-                    retrievalConfiguration={
-                        'vectorSearchConfiguration': {
-                            'numberOfResults': 3,
-                            'overrideSearchType': 'HYBRID'  # Use hybrid search for better results
-                        }
-                    }
+                    retrievalConfiguration=retrieval_config
                 )
                 
                 # Extract retrieved content
@@ -296,7 +318,7 @@ Provide a helpful and accurate response."""
         
         return state
     
-    def process_chat_query(self, user_query: str, conversation_id: str = None) -> Dict[str, Any]:
+    def process_chat_query(self, user_query: str, conversation_id: str = None, vector_db: str = None) -> Dict[str, Any]:
         """
         Main method to process a chat query through the LangGraph workflow
         """
@@ -308,7 +330,8 @@ Provide a helpful and accurate response."""
                 "context_documents": [],
                 "messages": [],
                 "ai_response": "",
-                "has_context": False
+                "has_context": False,
+                "vector_db": vector_db or KNOWLEDGE_BASE_ID
             }
             
             # Execute the workflow
@@ -443,13 +466,15 @@ def create(event, context):
         # Process chat query using LangGraph workflow with Bedrock Knowledge Base
         user_query = validation_schema['datas'].get('query', '')
         conversation_id = validation_schema['datas'].get('conversationId', str(uuid.uuid4()))
+        vector_db = validation_schema['datas'].get('vectorDb', KNOWLEDGE_BASE_ID)  # Get vector DB parameter
         
         if user_query:
             logger.info(f"Processing chat query with LangGraph workflow: {user_query[:100]}...")
+            logger.info(f"Using vector DB: {vector_db}")
             
             try:
-                # Execute LangGraph workflow
-                workflow_result = bedrock_workflow.process_chat_query(user_query, conversation_id)
+                # Execute LangGraph workflow with vector DB filter
+                workflow_result = bedrock_workflow.process_chat_query(user_query, conversation_id, vector_db)
                 
                 if workflow_result.get('success', False):
                     # Add AI response data to the item being stored

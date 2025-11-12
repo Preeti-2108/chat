@@ -462,16 +462,38 @@ def create(event, context):
                     logger.info("LangGraph workflow completed successfully")
                     
                     # Send immediate AI response to client via WebSocket
-                    ai_response_data = {
-                        "message": workflow_result.get('ai_response', ''),
-                        "contextUsed": workflow_result.get('context_used', False),
-                        "sourcesCount": workflow_result.get('sources_count', 0),
-                        "conversationId": workflow_result.get('conversation_id', conversation_id),
-                        "timestamp": workflow_result.get('timestamp', datetime.now().isoformat())
+                    # Extract user info from the event (from authentication context)
+                    user_email = event.get('requestContext', {}).get('authorizer', {}).get('email', '')
+                    if not user_email:
+                        # Try to extract from token if available in event
+                        try:
+                            from src.helpers.cognito_auth import extract_token_from_event, extract_user_info
+                            token = extract_token_from_event(event)
+                            if token:
+                                user_info = extract_user_info(token)
+                                user_email = user_info.get('email', '')
+                        except:
+                            user_email = 'unknown@example.com'  # fallback
+                    
+                    # Create chat history entry
+                    chat_history_entry = {
+                        "user": validation_schema['datas'].get('query', ''),
+                        "aiAssistant": workflow_result.get('ai_response', ''),
+                        "traceId": workflow_result.get('conversation_id', conversation_id)
                     }
                     
-                    ai_response_result = Responses.result_response(200, True, 'AI Response Generated', ai_response_data)
-                    send_to_client(connectionId, json.dumps(construct_response(ai_response_result)), url)
+                    # Create new response format
+                    new_format_response = {
+                        "data": {
+                            "userId": user_email,
+                            "conversationId": workflow_result.get('conversation_id', conversation_id),
+                            "chatHistory": [chat_history_entry],
+                            "trace_id": workflow_result.get('conversation_id', conversation_id)
+                        },
+                        "status": 201
+                    }
+                    
+                    send_to_client(connectionId, json.dumps(new_format_response), url)
                     
                 else:
                     # Workflow failed, but continue with regular processing

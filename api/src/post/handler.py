@@ -227,10 +227,14 @@ class BedrockKnowledgeBaseWorkflow:
                 
                 # Extract retrieved content
                 for result in response.get('retrievalResults', []):
-                    content = result.get('content', {}).get('text', '')
-                    if content:
-                        context_documents.append(content)
-                        logger.debug(f"Retrieved context snippet: {content[:100]}...")
+                    document_info = {
+                        'content': result.get('content', {}).get('text', ''),
+                        'score': result.get('score', 0),  # Relevance score
+                        'location': result.get('location', {}),  # Source location
+                        'metadata': result.get('metadata', {})  # Additional metadata
+                    }
+                    context_documents.append(document_info)
+                    logger.debug(f"Retrieved context snippet: {document_info['content'][:100]}...")
                         
                 logger.info(f"Retrieved {len(context_documents)} documents from Knowledge Base")
                         
@@ -299,7 +303,7 @@ Keep your responses clear, informative, and engaging, ensuring they are derived 
 
         if context_documents:
             # Use top 2 most relevant documents
-            context = "\n\n".join(context_documents[:2])
+            context = "\n\n".join([doc['content'] for doc in context_documents[:2]])
             prompt = f"""{system_instructions}
 
 Context:

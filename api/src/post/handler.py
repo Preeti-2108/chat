@@ -354,6 +354,20 @@ Since no specific context is available from the vector database, please respond 
             AIMessage(content=ai_response)
         ]
         
+        # Extract source information from context documents
+        sources_info = []
+        for doc in context_documents:
+            if isinstance(doc, dict):
+                location = doc.get('location', {})
+                source_info = {
+                    'uri': location.get('s3Location', {}).get('uri', ''),
+                    'score': doc.get('score', 0),
+                    'type': location.get('type', ''),
+                    'metadata': doc.get('metadata', {})
+                }
+                sources_info.append(source_info)
+        
+        state["sources_info"] = sources_info
         return state
     
     def process_chat_query(self, user_query: str, conversation_id: str = None, vector_db: str = None) -> Dict[str, Any]:
@@ -381,6 +395,7 @@ Since no specific context is available from the vector database, please respond 
                 "ai_response": final_state.get("ai_response", ""),
                 "context_used": final_state.get("has_context", False),
                 "sources_count": len(final_state.get("context_documents", [])),
+                "sources_info": final_state.get("sources_info", []),
                 "conversation_id": final_state.get("conversation_id", ""),
                 "model_used": AZURE_OPENAI_MODEL,
                 "timestamp": datetime.now().isoformat()
@@ -519,6 +534,7 @@ def create(event, context):
                     validation_schema['datas']['aiResponse'] = workflow_result.get('ai_response', '')
                     validation_schema['datas']['contextUsed'] = workflow_result.get('context_used', False)
                     validation_schema['datas']['sourcesCount'] = workflow_result.get('sources_count', 0)
+                    validation_schema['datas']['sourcesInfo'] = workflow_result.get('sources_info', [])
                     validation_schema['datas']['modelUsed'] = workflow_result.get('model_used', AZURE_OPENAI_MODEL)
                     validation_schema['datas']['conversationId'] = workflow_result.get('conversation_id', conversation_id)
                     
@@ -575,7 +591,10 @@ def create(event, context):
                         "userId": user_email,
                         "conversationId": workflow_result.get('conversation_id', conversation_id),
                         "chatHistory": [chat_history_entry],
-                        "trace_id": workflow_result.get('conversation_id', conversation_id)
+                        "trace_id": workflow_result.get('conversation_id', conversation_id),
+                        "sources": workflow_result.get('sources_info', []),
+                        "contextUsed": workflow_result.get('context_used', False),
+                        "sourcesCount": workflow_result.get('sources_count', 0)
                     }
                     
                     # Final response with data and status at top level

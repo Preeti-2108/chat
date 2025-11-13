@@ -427,16 +427,13 @@ class BedrockKnowledgeBaseWorkflow:
         """
         logger.info("Retrieving context from Bedrock Knowledge Base")
         
-        # Debug: Check if websocket_connection is preserved in state
-        logger.info(f"🔍 KB Node Debug - websocket_connection in state: {state.get('websocket_connection', {})}")
-        
         user_query = state.get("user_query", "")
         context_documents = []
         
         if self.bedrock_agent_client and user_query and KNOWLEDGE_BASE_ID:
             
             try:
-                logger.info(f"🔍 Querying Knowledge Base ID: {KNOWLEDGE_BASE_ID}")
+                logger.info(f"Querying Knowledge Base ID: {KNOWLEDGE_BASE_ID}")
                 
                 # Get environment and vector_db parameters
                 env = os.getenv('ENV', 'dev')  # Default to 'dev' if not set
@@ -461,8 +458,7 @@ class BedrockKnowledgeBaseWorkflow:
                     }
                 }
                 
-                logger.info(f"🔍 Using filters - Environment: {env}, Vector DB: {vector_db}")
-                logger.info(f"🔍 S3 path filter: s3://docops-kb-{env}/{vector_db}/")
+
                 
                 response = self.bedrock_agent_client.retrieve(
                     knowledgeBaseId=KNOWLEDGE_BASE_ID,
@@ -496,9 +492,6 @@ class BedrockKnowledgeBaseWorkflow:
         state["context_documents"] = context_documents
         state["has_context"] = bool(context_documents)
         
-        # Debug: Ensure websocket_connection is preserved
-        logger.info(f"🔍 KB Node End Debug - websocket_connection being returned: {state.get('websocket_connection', {})}")
-        
         return state
     
     def generate_chat_response(self, state: State) -> State:
@@ -506,10 +499,6 @@ class BedrockKnowledgeBaseWorkflow:
         Node 2: Generate response using Bedrock chat model with retrieved context
         """
         logger.info("Generating chat response using Bedrock model")
-        
-        # Debug: Check what's in the state at the beginning of this method
-        logger.info(f"🔍 Generate Response Debug - Full state keys: {list(state.keys())}")
-        logger.info(f"🔍 Generate Response Debug - websocket_connection in state: {state.get('websocket_connection', {})}")
         
         user_query = state.get("user_query", "")
         context_documents = state.get("context_documents", [])
@@ -612,12 +601,6 @@ RESPONSE: I cannot find relevant information in the available documents for this
                 connection_id = connection_info.get("connectionId")
                 url = connection_info.get("url")
                 
-                # Debug logging for WebSocket connection troubleshooting
-                logger.info(f"🔍 WebSocket Debug - Connection Info: {connection_info}")
-                logger.info(f"🔍 WebSocket Debug - Connection ID: {connection_id}")
-                logger.info(f"🔍 WebSocket Debug - URL: {url}")
-                logger.info(f"🔍 WebSocket Debug - ENABLE_WEBSOCKET_STREAMING: {ENABLE_WEBSOCKET_STREAMING}")
-                
                 if connection_id and url and ENABLE_WEBSOCKET_STREAMING:
                     # Use WordLevelStreamingHandler for advanced streaming
                     streaming_handler = WordLevelStreamingHandler(
@@ -639,63 +622,6 @@ RESPONSE: I cannot find relevant information in the available documents for this
                     logger.info("Using regular invoke (streaming disabled or no WebSocket info)")
                     response = self.chat_model.invoke(messages)
                     ai_response = response.content if hasattr(response, 'content') else str(response)
-                
-                # Validate response is KB-only (post-processing check)
-                ai_response = self._validate_kb_only_response(ai_response, context_documents)
-                
-                # Extract and append sources to the AI response
-                if context_documents:
-                    logger.info("Extracting and appending sources to AI response")
-                    doc_links = []
-                    
-                    for i, doc in enumerate(context_documents):
-                        try:
-                            # Extract docLink from location metadata
-                            location = doc.get('location', {})
-                            s3_location = location.get('s3Location', {})
-                            uri = s3_location.get('uri', '')
-                            
-                            # Extract docLink from metadata
-                            metadata = doc.get('metadata', {})
-                            doc_link = None
-                            
-                            # Try to find docLink in various metadata fields
-                            for key, value in metadata.items():
-                                if 'doclink' in key.lower() or 'doc_link' in key.lower():
-                                    doc_link = value
-                                    break
-                                elif 'uri' in key.lower() and value and 'http' in str(value):
-                                    doc_link = value
-                                    break
-                            
-                            # If no docLink found, try extracting from URI
-                            if not doc_link and uri:
-                                # Extract potential docLink patterns from URI
-                                if '/docLink=' in uri:
-                                    doc_link = uri.split('/docLink=')[1].split('/')[0]
-                                elif 'doclink' in uri.lower():
-                                    doc_link = uri
-                            
-                            if doc_link and doc_link != 'N/A':
-                                doc_links.append(doc_link)
-                                logger.debug(f"Extracted docLink {i+1}: {doc_link}")
-                            
-                        except Exception as e:
-                            logger.error(f"Error extracting docLink from document {i}: {e}")
-                    
-                    # Append sources to AI response if we have docLinks
-                    if doc_links:
-                        # Remove duplicates while preserving order
-                        unique_doc_links = list(dict.fromkeys(doc_links))
-                        source_links = ", ".join(unique_doc_links)
-                        sources_text = f"\n\n**Sources:** {source_links}"
-                        
-                        # Add sources to the end of the AI response
-                        ai_response = ai_response.rstrip() + sources_text
-                        logger.info(f"✅ Added {len(unique_doc_links)} docLinks to AI response")
-                        logger.info(f"📎 DocLinks: {unique_doc_links}")
-                    else:
-                        logger.warning("⚠️ No docLinks found in sources")
                 
                 logger.info("Successfully generated AI response")
                 
@@ -724,52 +650,6 @@ RESPONSE: I cannot find relevant information in the available documents for this
         
         return state
     
-    def _validate_kb_only_response(self, response: str, context_documents: List[Dict]) -> str:
-        """
-        Validate that the response appears to be based on KB documents only
-        """
-        try:
-
-            
-            # Check if response starts with required prefix
-            if not response.startswith("Based on the available documents:") and not response.startswith("I cannot find"):
-                logger.warning("⚠️ Response does not start with required KB-only prefix")
-                # Force compliance
-                if context_documents:
-                    response = f"Based on the available documents: {response}"
-                else:
-                    return "I cannot find relevant information in the available documents for this query."
-            
-            # Check for forbidden phrases that indicate external knowledge use
-            forbidden_phrases = [
-                "generally", "typically", "usually", "commonly", "in most cases",
-                "as we know", "it is known that", "according to research", 
-                "studies show", "experts say", "it's important to note"
-            ]
-            
-            response_lower = response.lower()
-            violations = [phrase for phrase in forbidden_phrases if phrase in response_lower]
-            
-            if violations:
-                logger.warning(f"⚠️ Response contains forbidden phrases indicating external knowledge: {violations}")
-                # Could implement stricter filtering here if needed
-            
-            # Ensure we have context if making claims
-            if not context_documents and not response.startswith("I cannot find"):
-                logger.warning("⚠️ No context documents but response doesn't indicate this")
-                return "I cannot find relevant information in the available documents for this query."
-            
-
-            
-            logger.info("✅ Response passed KB-only validation")
-            return response
-            
-        except Exception as e:
-            logger.error(f"Error in response validation: {e}")
-            return response  # Return original if validation fails
-    
-
-    
     def process_chat_query(self, user_query: str, conversation_id: str = None, vector_db: str = None, websocket_connection: Dict = None) -> Dict[str, Any]:
         """
         Main method to process a chat query through the LangGraph workflow
@@ -787,29 +667,15 @@ RESPONSE: I cannot find relevant information in the available documents for this
                 "websocket_connection": websocket_connection or {}
             }
             
-            # Debug logging for workflow state initialization
-            logger.info(f"🔍 Workflow Debug - Initial websocket_connection: {websocket_connection}")
-            logger.info(f"🔍 Workflow Debug - Initial state websocket_connection: {initial_state['websocket_connection']}")
-            
             # Execute the workflow
             final_state = self.workflow.invoke(initial_state)
-            
-            # Count sources from the AI response
-            sources_count = 0
-            ai_response = final_state.get("ai_response", "")
-            if "**Sources:**" in ai_response:
-                # Extract sources from the response text
-                sources_section = ai_response.split("**Sources:**")[1].strip()
-                if sources_section:
-                    # Count comma-separated sources
-                    sources_count = len([s.strip() for s in sources_section.split(",") if s.strip()])
             
             # Return structured response
             return {
                 "success": True,
                 "ai_response": final_state.get("ai_response", ""),
                 "context_used": final_state.get("has_context", False),
-                "sources_count": sources_count,
+                "sources_count": 0,
                 "conversation_id": final_state.get("conversation_id", ""),
                 "model_used": AZURE_OPENAI_MODEL,
                 "timestamp": datetime.now().isoformat()
@@ -860,11 +726,6 @@ def create(event, context):
         event_info = extract_event_info(event)
         url = event_info.get('url')
         connectionId = event_info.get('connectionId')
-        
-        # Debug: Log what extract_event_info returns
-        logger.info(f"🔍 Event Info Debug - Full event_info: {event_info}")
-        logger.info(f"🔍 Event Info Debug - Raw event keys: {list(event.keys())}")
-        logger.info(f"🔍 Event Info Debug - requestContext: {event.get('requestContext', {})}")
         
         if not connectionId:
             logger.error("No connection ID found in event")
@@ -940,15 +801,6 @@ def create(event, context):
                     "url": url
                 }
                 
-                # Debug logging for main function WebSocket values
-                logger.info(f"🔍 Main Function Debug - connectionId: {connectionId}")
-                logger.info(f"🔍 Main Function Debug - url: {url}")
-                logger.info(f"🔍 Main Function Debug - websocket_connection: {websocket_connection}")
-                logger.info(f"🔍 Main Function Debug - connectionId type: {type(connectionId)}")
-                logger.info(f"🔍 Main Function Debug - url type: {type(url)}")
-                logger.info(f"🔍 Main Function Debug - connectionId is None: {connectionId is None}")
-                logger.info(f"🔍 Main Function Debug - url is None: {url is None}")
-                
                 # Execute LangGraph workflow with vector DB filter and WebSocket streaming
                 workflow_result = bedrock_workflow.process_chat_query(user_query, conversation_id, vector_db, websocket_connection)
                 
@@ -965,74 +817,6 @@ def create(event, context):
                     validation_schema['datas']['conversationId'] = workflow_result.get('conversation_id', conversation_id)
                     
                     logger.info("LangGraph workflow completed successfully")
-                    
-                    # Send immediate AI response to client via WebSocket
-                    # Extract user info from the event (from authentication middleware)
-                    user_email = 'unknown@example.com'  # Default fallback
-                    
-                    try:
-                        # Method 1: From authentication middleware (added by @authenticate_websocket decorator)
-                        auth_info = event.get('auth', {})
-                        if auth_info and auth_info.get('is_authenticated'):
-                            user_info = auth_info.get('user_info', {})
-                            user_email = user_info.get('email', '')
-                            if user_email:
-                                logger.info(f"Found email from auth middleware: {user_email}")
-                        
-                        # Method 2: From requestContext (for REST APIs)
-                        if not user_email:
-                            user_email = event.get('requestContext', {}).get('authorizer', {}).get('email', '')
-                            if user_email:
-                                logger.info(f"Found email in requestContext: {user_email}")
-                        
-                        # Method 3: Extract from JWT token directly as fallback
-                        if not user_email:
-                            from src.helpers.cognito_auth import extract_token_from_event, extract_user_info
-                            token = extract_token_from_event(event)
-                            if token:
-                                user_info = extract_user_info(token)
-                                user_email = user_info.get('email', '')
-                                if user_email:
-                                    logger.info(f"Found email from JWT token: {user_email}")
-                            
-                    except Exception as e:
-                        logger.error(f"Error extracting user email: {e}")
-                    
-                    # Final fallback
-                    if not user_email or user_email == '':
-                        user_email = 'unknown@example.com'
-                        logger.warning("Could not extract user email, using fallback")
-                    
-                    logger.info(f"Using user email: {user_email}")
-                    
-                    # Create chat history entry with AI response
-                    ai_response = workflow_result.get('ai_response', '')
-                    chat_history_entry = {
-                        "user": validation_schema['datas'].get('query', ''),
-                        "aiAssistant": ai_response,
-                        "traceId": workflow_result.get('conversation_id', conversation_id)
-                    }
-                    
-                    logger.info(f"🔍 Final Response Debug - AI response length: {len(ai_response)}")
-                    
-                    # Create new response format (clean format without nested data)
-                    new_format_response = {
-                        "userId": user_email,
-                        "conversationId": workflow_result.get('conversation_id', conversation_id),
-                        "chatHistory": [chat_history_entry],
-                        "trace_id": workflow_result.get('conversation_id', conversation_id),
-                        "sources": [],
-                        "contextUsed": workflow_result.get('context_used', False),
-                        "sourcesCount": workflow_result.get('sources_count', 0)
-                    }
-                    
-                    # Final response with data and status at top level
-                    final_response = {
-                        "data": new_format_response,
-                        "status": 201
-                    }
-                    
-                    send_to_client(connectionId, json.dumps(final_response), url)
                     
                 else:
                     # Workflow failed, but continue with regular processing
@@ -1074,10 +858,6 @@ def create(event, context):
             }
 
         try:
-            # Debug: Log what we're trying to insert
-            logger.info(f"🔍 DynamoDB Debug - Item keys: {list(new_item.keys())}")
-            logger.info(f"🔍 DynamoDB Debug - Item types: {[(k, type(v)) for k, v in new_item.items()]}")
-            
             # Insert the new item into the DynamoDB table
             table.put_item(Item=new_item)
             # Iterate over each field in the new item and send a message for each field

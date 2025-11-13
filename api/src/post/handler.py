@@ -594,7 +594,7 @@ RESPONSE: I cannot find relevant information in the available documents for this
                 # Create message for the chat model
                 messages = [HumanMessage(content=prompt)]
                 
-                logger.info("Starting Azure OpenAI streaming response...")
+                logger.info("Starting Azure OpenAI streaming response...", messages)
                 
                 # Check if WebSocket connection info is available in state
                 connection_info = state.get("websocket_connection", {})

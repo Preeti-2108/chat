@@ -142,8 +142,10 @@ class WordLevelStreamingHandler:
                 "chunk": chunk,
                 "chunk_index": self.chunk_count,
                 "is_final": is_final,
-                "full_response": self.full_response if is_final else None,
-                "streaming_mode": "word_level"
+                "full_response": self.full_response,  # Always include accumulated response
+                "partial_response": self.full_response,  # Current accumulated text
+                "streaming_mode": "word_level",
+                "response_length": len(self.full_response)  # Length for debugging
             }
             
             # Send the chunk to the client
@@ -155,6 +157,7 @@ class WordLevelStreamingHandler:
             
             self.chunk_count += 1
             logger.debug(f"Sent word chunk {self.chunk_count}: '{chunk}' to {self.connection_id}")
+            logger.debug(f"Full response so far ({len(self.full_response)} chars): '{self.full_response[:100]}...'")
             
         except Exception as e:
             logger.error(f"Error sending word chunk: {str(e)}")
@@ -235,6 +238,7 @@ class WordLevelStreamingHandler:
             for chunk in generator:
                 chunk_text = self._extract_clean_text(chunk)
                 if chunk_text:
+                    # Add to full response before processing
                     self.full_response += chunk_text
                     chunk_count += 1
                     

@@ -657,7 +657,15 @@ RESPONSE: I cannot find relevant information in the available documents for this
         sources_info = []
         logger.info(f"Processing {len(context_documents)} context documents for source extraction")
         
-        for i, doc in enumerate(context_documents):
+        # Only process sources for documents that met the relevance threshold and were used in response
+        relevant_context_docs = []
+        for doc in context_documents:
+            if doc.get('score', 0) > 0.3:  # Same threshold as used in prompt generation
+                relevant_context_docs.append(doc)
+        
+        logger.info(f"Processing {len(relevant_context_docs)} relevant context documents (score > 0.3) for source extraction")
+        
+        for i, doc in enumerate(relevant_context_docs):
             logger.info(f"Document {i+1} structure: {type(doc)}")
             logger.info(f"Document {i+1} keys: {doc.keys() if isinstance(doc, dict) else 'Not a dict'}")
             
@@ -727,8 +735,36 @@ RESPONSE: I cannot find relevant information in the available documents for this
             # Add sources to the end of the AI response
             ai_response = ai_response.rstrip() + sources_text
             logger.info(f"Added {len(sources_info)} formatted sources to AI response")
+            
+            # If we're in streaming mode, send sources as additional streaming chunk
+            connection_info = state.get("websocket_connection", {})
+            connection_id = connection_info.get("connectionId")
+            url = connection_info.get("url")
+            
+            if connection_id and url and ENABLE_WEBSOCKET_STREAMING:
+                try:
+                    # Send sources as a separate streaming chunk
+                    sources_payload = {
+                        "type": "streaming_sources",
+                        "sources_text": sources_text,
+                        "sources_data": sources_info,
+                        "streaming_mode": "word_level"
+                    }
+                    
+                    send_to_client(
+                        connection_id,
+                        json.dumps(sources_payload),
+                        url
+                    )
+                    logger.info(f"Sent sources as separate streaming chunk to {connection_id}")
+                except Exception as e:
+                    logger.error(f"Error sending sources streaming chunk: {str(e)}")
         
         logger.info(f"Final sources_info: {sources_info}")
+        logger.info(f"🔍 Sources Debug - Number of sources: {len(sources_info)}")
+        logger.info(f"🔍 Sources Debug - AI response length: {len(ai_response)}")
+        logger.info(f"🔍 Sources Debug - Sources in AI response: {'**Sources:**' in ai_response}")
+        
         state["sources_info"] = sources_info
         
         # Update the AI response in state with sources included
@@ -1022,12 +1058,28 @@ def create(event, context):
                     
                     logger.info(f"Using user email: {user_email}")
                     
-                    # Create chat history entry
+                    # Create chat history entry with full AI response including sources
+                    ai_response_with_sources = workflow_result.get('ai_response', '')
                     chat_history_entry = {
                         "user": validation_schema['datas'].get('query', ''),
-                        "aiAssistant": workflow_result.get('ai_response', ''),
+                        "aiAssistant": ai_response_with_sources,
                         "traceId": workflow_result.get('conversation_id', conversation_id)
                     }
+                    
+                    # Debug: Log if sources are included in AI response
+                    has_sources_in_response = "**Sources:**" in ai_response_with_sources or "Sources:" in ai_response_with_sources
+                    sources_count = workflow_result.get('sources_count', 0)
+                    sources_info_list = workflow_result.get('sources_info', [])
+                    
+                    logger.info(f"🔍 Final Response Debug - AI response length: {len(ai_response_with_sources)}")
+                    logger.info(f"🔍 Final Response Debug - Has sources in response: {has_sources_in_response}")
+                    logger.info(f"🔍 Final Response Debug - Sources count: {sources_count}")
+                    logger.info(f"🔍 Final Response Debug - Sources info length: {len(sources_info_list)}")
+                    logger.info(f"🔍 Final Response Debug - AI response preview: {ai_response_with_sources[:200]}...")
+                    if has_sources_in_response:
+                        sources_start = ai_response_with_sources.find("**Sources:**")
+                        if sources_start > 0:
+                            logger.info(f"🔍 Final Response Debug - Sources section: {ai_response_with_sources[sources_start:sources_start+300]}...")
                     
                     # Create new response format (clean format without nested data)
                     new_format_response = {

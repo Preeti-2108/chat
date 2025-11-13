@@ -105,6 +105,9 @@ class State(Dict[str, Any]):
     conversation_id: str
     ai_response: str
     has_context: bool
+    websocket_connection: Dict[str, Any]
+    vector_db: str
+    sources_info: List[Dict[str, Any]]
 
 class WordLevelStreamingHandler:
     """
@@ -421,6 +424,9 @@ class BedrockKnowledgeBaseWorkflow:
         """
         logger.info("Retrieving context from Bedrock Knowledge Base")
         
+        # Debug: Check if websocket_connection is preserved in state
+        logger.info(f"🔍 KB Node Debug - websocket_connection in state: {state.get('websocket_connection', {})}")
+        
         user_query = state.get("user_query", "")
         context_documents = []
         
@@ -489,6 +495,10 @@ class BedrockKnowledgeBaseWorkflow:
         # Update state
         state["context_documents"] = context_documents
         state["has_context"] = bool(context_documents)
+        
+        # Debug: Ensure websocket_connection is preserved
+        logger.info(f"🔍 KB Node End Debug - websocket_connection being returned: {state.get('websocket_connection', {})}")
+        
         return state
     
     def generate_chat_response(self, state: State) -> State:
@@ -496,6 +506,10 @@ class BedrockKnowledgeBaseWorkflow:
         Node 2: Generate response using Bedrock chat model with retrieved context
         """
         logger.info("Generating chat response using Bedrock model")
+        
+        # Debug: Check what's in the state at the beginning of this method
+        logger.info(f"🔍 Generate Response Debug - Full state keys: {list(state.keys())}")
+        logger.info(f"🔍 Generate Response Debug - websocket_connection in state: {state.get('websocket_connection', {})}")
         
         user_query = state.get("user_query", "")
         context_documents = state.get("context_documents", [])
@@ -737,6 +751,11 @@ def create(event, context):
         url = event_info.get('url')
         connectionId = event_info.get('connectionId')
         
+        # Debug: Log what extract_event_info returns
+        logger.info(f"🔍 Event Info Debug - Full event_info: {event_info}")
+        logger.info(f"🔍 Event Info Debug - Raw event keys: {list(event.keys())}")
+        logger.info(f"🔍 Event Info Debug - requestContext: {event.get('requestContext', {})}")
+        
         if not connectionId:
             logger.error("No connection ID found in event")
             return {
@@ -815,6 +834,10 @@ def create(event, context):
                 logger.info(f"🔍 Main Function Debug - connectionId: {connectionId}")
                 logger.info(f"🔍 Main Function Debug - url: {url}")
                 logger.info(f"🔍 Main Function Debug - websocket_connection: {websocket_connection}")
+                logger.info(f"🔍 Main Function Debug - connectionId type: {type(connectionId)}")
+                logger.info(f"🔍 Main Function Debug - url type: {type(url)}")
+                logger.info(f"🔍 Main Function Debug - connectionId is None: {connectionId is None}")
+                logger.info(f"🔍 Main Function Debug - url is None: {url is None}")
                 
                 # Execute LangGraph workflow with vector DB filter and WebSocket streaming
                 workflow_result = bedrock_workflow.process_chat_query(user_query, conversation_id, vector_db, websocket_connection)

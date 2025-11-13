@@ -471,19 +471,47 @@ class BedrockKnowledgeBaseWorkflow:
                     retrievalConfiguration=retrieval_config
                 )
                 
-                # Extract retrieved content
-                for result in response.get('retrievalResults', []):
-                    print('___________________________________________________')
-                    print(result.get('location', {}))
-                    print('___________________________________________________')
+                # Extract retrieved content with enhanced docLink extraction
+                for i, result in enumerate(response.get('retrievalResults', []), 1):
+                    logger.info(f"📄 Processing Bedrock retrieval result {i}:")
+                    logger.info(f"   Location: {result.get('location', {})}")
+                    
+                    metadata = result.get('metadata', {})
+                    logger.info(f"   Metadata: {metadata}")
+                    
+                    # Extract docLink from sourceMetadata (similar to LlamaIndex approach)
+                    doc_link = ''
+                    source_metadata = {}
+                    
+                    if isinstance(metadata, dict):
+                        # Check for sourceMetadata first
+                        source_metadata = metadata.get('sourceMetadata', {})
+                        if isinstance(source_metadata, dict):
+                            doc_link = source_metadata.get('docLink', '')
+                            if doc_link:
+                                logger.info(f"   📎 Found docLink in sourceMetadata: {doc_link}")
+                        
+                        # Also check direct metadata for docLink
+                        if not doc_link:
+                            doc_link = metadata.get('docLink', '')
+                            if doc_link:
+                                logger.info(f"   📎 Found docLink in direct metadata: {doc_link}")
+                    
                     document_info = {
                         'content': result.get('content', {}).get('text', ''),
                         'score': result.get('score', 0),  # Relevance score
                         'location': result.get('location', {}),  # Source location
-                        'metadata': result.get('metadata', {})  # Additional metadata
+                        'metadata': metadata,  # Additional metadata
+                        'docLink': doc_link,  # Extract docLink for LangGraph response
+                        'sourceMetadata': source_metadata  # Include sourceMetadata for debugging
                     }
                     context_documents.append(document_info)
-                    logger.debug(f"Retrieved context snippet: {document_info['content'][:100]}...")
+                    logger.info(f"   📝 Content preview: {document_info['content'][:100]}...")
+                    logger.info(f"   ⭐ Relevance score: {document_info['score']}")
+                    if doc_link:
+                        logger.info(f"   🔗 DocLink available: {doc_link}")
+                    else:
+                        logger.info(f"   ❌ No docLink found in metadata")
                         
                 logger.info(f"Retrieved {len(context_documents)} documents from Knowledge Base")
                         
@@ -682,59 +710,76 @@ RESPONSE: I cannot find relevant information in the available documents for this
                 elif 'uri' in location:
                     uri = location.get('uri', '')
                 
+                # Extract docLink from document (added for LangGraph compatibility)
+                doc_link = doc.get('docLink', '')
+                source_metadata = doc.get('sourceMetadata', {})
+                
                 # Extract document title/name from metadata or URI
                 doc_title = ''
                 if isinstance(metadata, dict):
                     doc_title = metadata.get('title', metadata.get('name', metadata.get('fileName', '')))
+                    
+                    # Also check sourceMetadata for title
+                    if not doc_title and isinstance(source_metadata, dict):
+                        doc_title = source_metadata.get('title', source_metadata.get('name', ''))
                 
-                # If no title found in metadata, extract from URI
-                if not doc_title and uri:
-                    # Extract filename from S3 URI
-                    if '/' in uri:
-                        doc_title = uri.split('/')[-1]
-                    else:
-                        doc_title = uri
+                # If no title found in metadata, extract from docLink or URI
+                if not doc_title:
+                    title_source = doc_link or uri
+                    if title_source and '/' in title_source:
+                        doc_title = title_source.split('/')[-1]
+                    elif title_source:
+                        doc_title = title_source
                 
-                # Remove file extension for cleaner display
+                # Remove file extension for cleaner display and clean up name
                 if doc_title and '.' in doc_title:
                     doc_title = '.'.join(doc_title.split('.')[:-1])
                 
+                # Clean up document name (remove special characters, underscores, etc.)
+                if doc_title:
+                    import re
+                    doc_title = re.sub(r'[^A-Za-z0-9 ]+', ' ', doc_title)
+                    doc_title = doc_title.replace("_", " ").replace("-", " ")
+                    doc_title = " ".join(doc_title.split())  # Remove extra spaces
+                
                 source_info = {
                     'uri': uri,
+                    'docLink': doc_link,  # Add docLink for LangGraph response
                     'title': doc_title or f'Document {i+1}',
                     'score': doc.get('score', 0),
                     'type': location.get('type', 'unknown'),
                     'metadata': metadata,
+                    'sourceMetadata': source_metadata,  # Include sourceMetadata
                     'location_raw': location  # Include raw location for debugging
                 }
                 sources_info.append(source_info)
                 logger.info(f"Added source info: {source_info}")
         
-        # Append sources to AI response if sources exist and response is from KB
+        # Simple docLink-only sources formatting
         if sources_info and ai_response and not ai_response.startswith("I cannot find"):
-            sources_text = "\n\n**Sources:**\n"
-            for i, source in enumerate(sources_info, 1):
-                title = source.get('title', f'Document {i}')
-                uri = source.get('uri', '')
-                score = source.get('score', 0)
-                doc_type = source.get('type', 'document')
-                
-                # Format the source entry
-                if uri:
-                    # Clean up the URI for better display
-                    display_uri = uri
-                    if 's3://' in uri:
-                        # Extract just the filename from S3 path for cleaner display
-                        display_uri = uri.split('/')[-1] if '/' in uri else uri
-                    
-                    sources_text += f"📄 **{title}** ({doc_type.title()}, Relevance: {score:.1f})\n"
-                    sources_text += f"   🔗 {display_uri}\n\n"
-                else:
-                    sources_text += f"📄 **{title}** ({doc_type.title()}, Relevance: {score:.1f})\n\n"
+            # Extract only docLinks (no other info)
+            doc_links = []
             
-            # Add sources to the end of the AI response
-            ai_response = ai_response.rstrip() + sources_text
-            logger.info(f"Added {len(sources_info)} formatted sources to AI response")
+            for source in sources_info:
+                doc_link = source.get('docLink', '')
+                
+                # Only include if docLink exists
+                if doc_link:
+                    doc_links.append(doc_link)
+            
+            # Format final response with docLinks only
+            if doc_links:
+                # Remove duplicates while preserving order
+                unique_doc_links = list(dict.fromkeys(doc_links))
+                source_links = ", ".join(unique_doc_links)
+                sources_text = f"\n\nSource(s): {source_links}"
+                
+                # Add sources to the end of the AI response
+                ai_response = ai_response.rstrip() + sources_text
+                logger.info(f"✅ Added {len(unique_doc_links)} docLinks to AI response")
+                logger.info(f"📎 DocLinks: {unique_doc_links}")
+            else:
+                logger.warning("⚠️ No docLinks found in sources")
             
             # If we're in streaming mode, send sources as additional streaming chunk
             connection_info = state.get("websocket_connection", {})
@@ -743,11 +788,25 @@ RESPONSE: I cannot find relevant information in the available documents for this
             
             if connection_id and url and ENABLE_WEBSOCKET_STREAMING:
                 try:
-                    # Send sources as a separate streaming chunk
+                    # Prepare docLinks-only data for streaming
+                    doc_links_only = []
+                    for source in sources_info:
+                        doc_link = source.get('docLink', '')
+                        
+                        # Only include if docLink exists
+                        if doc_link:
+                            doc_links_only.append(doc_link)
+                    
+                    # Remove duplicates while preserving order
+                    unique_doc_links = list(dict.fromkeys(doc_links_only))
+                    
+                    # Send sources as a separate streaming chunk with docLinks only
                     sources_payload = {
                         "type": "streaming_sources",
-                        "sources_text": sources_text,
-                        "sources_data": sources_info,
+                        "sources_text": sources_text if 'sources_text' in locals() else "",
+                        "sources_data": unique_doc_links,  # Only docLinks
+                        "sources_count": len(unique_doc_links),
+                        "docLinks_available": len(unique_doc_links),
                         "streaming_mode": "word_level"
                     }
                     
@@ -756,9 +815,13 @@ RESPONSE: I cannot find relevant information in the available documents for this
                         json.dumps(sources_payload),
                         url
                     )
-                    logger.info(f"Sent sources as separate streaming chunk to {connection_id}")
+                    logger.info(f"📡 Sent docLinks streaming chunk to {connection_id} - {len(unique_doc_links)} docLinks only")
+                    
+                    # Log docLink streaming
+                    logger.info(f"📊 Streaming docLinks: {unique_doc_links}")
+                    
                 except Exception as e:
-                    logger.error(f"Error sending sources streaming chunk: {str(e)}")
+                    logger.error(f"❌ Error sending enhanced sources streaming chunk: {str(e)}")
         
         logger.info(f"Final sources_info: {sources_info}")
         logger.info(f"🔍 Sources Debug - Number of sources: {len(sources_info)}")

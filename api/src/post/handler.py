@@ -107,7 +107,6 @@ class State(Dict[str, Any]):
     has_context: bool
     websocket_connection: Dict[str, Any]
     vector_db: str
-    sources_info: List[Dict[str, Any]]
 
 class WordLevelStreamingHandler:
     """
@@ -471,47 +470,16 @@ class BedrockKnowledgeBaseWorkflow:
                     retrievalConfiguration=retrieval_config
                 )
                 
-                # Extract retrieved content with enhanced docLink extraction
-                for i, result in enumerate(response.get('retrievalResults', []), 1):
-                    logger.info(f"📄 Processing Bedrock retrieval result {i}:")
-                    logger.info(f"   Location: {result.get('location', {})}")
-                    
-                    metadata = result.get('metadata', {})
-                    logger.info(f"   Metadata: {metadata}")
-                    
-                    # Extract docLink from sourceMetadata (similar to LlamaIndex approach)
-                    doc_link = ''
-                    source_metadata = {}
-                    
-                    if isinstance(metadata, dict):
-                        # Check for sourceMetadata first
-                        source_metadata = metadata.get('sourceMetadata', {})
-                        if isinstance(source_metadata, dict):
-                            doc_link = source_metadata.get('docLink', '')
-                            if doc_link:
-                                logger.info(f"   📎 Found docLink in sourceMetadata: {doc_link}")
-                        
-                        # Also check direct metadata for docLink
-                        if not doc_link:
-                            doc_link = metadata.get('docLink', '')
-                            if doc_link:
-                                logger.info(f"   📎 Found docLink in direct metadata: {doc_link}")
-                    
+                # Extract retrieved content
+                for result in response.get('retrievalResults', []):
                     document_info = {
                         'content': result.get('content', {}).get('text', ''),
                         'score': result.get('score', 0),  # Relevance score
                         'location': result.get('location', {}),  # Source location
-                        'metadata': metadata,  # Additional metadata
-                        'docLink': doc_link,  # Extract docLink for LangGraph response
-                        'sourceMetadata': source_metadata  # Include sourceMetadata for debugging
+                        'metadata': result.get('metadata', {})  # Additional metadata
                     }
                     context_documents.append(document_info)
-                    logger.info(f"   📝 Content preview: {document_info['content'][:100]}...")
-                    logger.info(f"   ⭐ Relevance score: {document_info['score']}")
-                    if doc_link:
-                        logger.info(f"   🔗 DocLink available: {doc_link}")
-                    else:
-                        logger.info(f"   ❌ No docLink found in metadata")
+                    logger.debug(f"Retrieved context snippet: {document_info['content'][:100]}...")
                         
                 logger.info(f"Retrieved {len(context_documents)} documents from Knowledge Base")
                         
@@ -681,156 +649,7 @@ RESPONSE: I cannot find relevant information in the available documents for this
             AIMessage(content=ai_response)
         ]
         
-        # Extract source information from context documents and append to AI response
-        sources_info = []
-        logger.info(f"Processing {len(context_documents)} context documents for source extraction")
-        
-        # Only process sources for documents that met the relevance threshold and were used in response
-        relevant_context_docs = []
-        for doc in context_documents:
-            if doc.get('score', 0) > 0.3:  # Same threshold as used in prompt generation
-                relevant_context_docs.append(doc)
-        
-        logger.info(f"Processing {len(relevant_context_docs)} relevant context documents (score > 0.3) for source extraction")
-        
-        for i, doc in enumerate(relevant_context_docs):
-            logger.info(f"Document {i+1} structure: {type(doc)}")
-            logger.info(f"Document {i+1} keys: {doc.keys() if isinstance(doc, dict) else 'Not a dict'}")
-            
-            if isinstance(doc, dict):
-                location = doc.get('location', {})
-                metadata = doc.get('metadata', {})
-                logger.info(f"Document {i+1} location: {location}")
-                logger.info(f"Document {i+1} metadata: {metadata}")
-                
-                # Handle different possible location structures
-                uri = ''
-                if 's3Location' in location:
-                    uri = location.get('s3Location', {}).get('uri', '')
-                elif 'uri' in location:
-                    uri = location.get('uri', '')
-                
-                # Extract docLink from document (added for LangGraph compatibility)
-                doc_link = doc.get('docLink', '')
-                source_metadata = doc.get('sourceMetadata', {})
-                
-                # Extract document title/name from metadata or URI
-                doc_title = ''
-                if isinstance(metadata, dict):
-                    doc_title = metadata.get('title', metadata.get('name', metadata.get('fileName', '')))
-                    
-                    # Also check sourceMetadata for title
-                    if not doc_title and isinstance(source_metadata, dict):
-                        doc_title = source_metadata.get('title', source_metadata.get('name', ''))
-                
-                # If no title found in metadata, extract from docLink or URI
-                if not doc_title:
-                    title_source = doc_link or uri
-                    if title_source and '/' in title_source:
-                        doc_title = title_source.split('/')[-1]
-                    elif title_source:
-                        doc_title = title_source
-                
-                # Remove file extension for cleaner display and clean up name
-                if doc_title and '.' in doc_title:
-                    doc_title = '.'.join(doc_title.split('.')[:-1])
-                
-                # Clean up document name (remove special characters, underscores, etc.)
-                if doc_title:
-                    import re
-                    doc_title = re.sub(r'[^A-Za-z0-9 ]+', ' ', doc_title)
-                    doc_title = doc_title.replace("_", " ").replace("-", " ")
-                    doc_title = " ".join(doc_title.split())  # Remove extra spaces
-                
-                source_info = {
-                    'uri': uri,
-                    'docLink': doc_link,  # Add docLink for LangGraph response
-                    'title': doc_title or f'Document {i+1}',
-                    'score': doc.get('score', 0),
-                    'type': location.get('type', 'unknown'),
-                    'metadata': metadata,
-                    'sourceMetadata': source_metadata,  # Include sourceMetadata
-                    'location_raw': location  # Include raw location for debugging
-                }
-                sources_info.append(source_info)
-                logger.info(f"Added source info: {source_info}")
-        
-        # Simple docLink-only sources formatting
-        if sources_info and ai_response and not ai_response.startswith("I cannot find"):
-            # Extract only docLinks (no other info)
-            doc_links = []
-            
-            for source in sources_info:
-                doc_link = source.get('docLink', '')
-                
-                # Only include if docLink exists
-                if doc_link:
-                    doc_links.append(doc_link)
-            
-            # Format final response with docLinks only
-            if doc_links:
-                # Remove duplicates while preserving order
-                unique_doc_links = list(dict.fromkeys(doc_links))
-                source_links = ", ".join(unique_doc_links)
-                sources_text = f"\n\nSource(s): {source_links}"
-                
-                # Add sources to the end of the AI response
-                ai_response = ai_response.rstrip() + sources_text
-                logger.info(f"✅ Added {len(unique_doc_links)} docLinks to AI response")
-                logger.info(f"📎 DocLinks: {unique_doc_links}")
-            else:
-                logger.warning("⚠️ No docLinks found in sources")
-            
-            # If we're in streaming mode, send sources as additional streaming chunk
-            connection_info = state.get("websocket_connection", {})
-            connection_id = connection_info.get("connectionId")
-            url = connection_info.get("url")
-            
-            if connection_id and url and ENABLE_WEBSOCKET_STREAMING:
-                try:
-                    # Prepare docLinks-only data for streaming
-                    doc_links_only = []
-                    for source in sources_info:
-                        doc_link = source.get('docLink', '')
-                        
-                        # Only include if docLink exists
-                        if doc_link:
-                            doc_links_only.append(doc_link)
-                    
-                    # Remove duplicates while preserving order
-                    unique_doc_links = list(dict.fromkeys(doc_links_only))
-                    
-                    # Send sources as a separate streaming chunk with docLinks only
-                    sources_payload = {
-                        "type": "streaming_sources",
-                        "sources_text": sources_text if 'sources_text' in locals() else "",
-                        "sources_data": unique_doc_links,  # Only docLinks
-                        "sources_count": len(unique_doc_links),
-                        "docLinks_available": len(unique_doc_links),
-                        "streaming_mode": "word_level"
-                    }
-                    
-                    send_to_client(
-                        connection_id,
-                        json.dumps(sources_payload),
-                        url
-                    )
-                    logger.info(f"📡 Sent docLinks streaming chunk to {connection_id} - {len(unique_doc_links)} docLinks only")
-                    
-                    # Log docLink streaming
-                    logger.info(f"📊 Streaming docLinks: {unique_doc_links}")
-                    
-                except Exception as e:
-                    logger.error(f"❌ Error sending enhanced sources streaming chunk: {str(e)}")
-        
-        logger.info(f"Final sources_info: {sources_info}")
-        logger.info(f"🔍 Sources Debug - Number of sources: {len(sources_info)}")
-        logger.info(f"🔍 Sources Debug - AI response length: {len(ai_response)}")
-        logger.info(f"🔍 Sources Debug - Sources in AI response: {'**Sources:**' in ai_response}")
-        
-        state["sources_info"] = sources_info
-        
-        # Update the AI response in state with sources included
+        # Update the AI response in state
         state["ai_response"] = ai_response
         
         return state
@@ -840,18 +659,7 @@ RESPONSE: I cannot find relevant information in the available documents for this
         Validate that the response appears to be based on KB documents only
         """
         try:
-            # Preserve sources section if it exists
-            sources_section = ""
-            if "**Sources:**" in response:
-                parts = response.split("**Sources:**", 1)
-                if len(parts) == 2:
-                    response = parts[0].strip()
-                    sources_section = "**Sources:**" + parts[1]
-            elif "Sources:" in response:
-                parts = response.split("Sources:", 1)
-                if len(parts) == 2:
-                    response = parts[0].strip()
-                    sources_section = "Sources:" + parts[1]
+
             
             # Check if response starts with required prefix
             if not response.startswith("Based on the available documents:") and not response.startswith("I cannot find"):
@@ -881,9 +689,7 @@ RESPONSE: I cannot find relevant information in the available documents for this
                 logger.warning("⚠️ No context documents but response doesn't indicate this")
                 return "I cannot find relevant information in the available documents for this query."
             
-            # Reattach sources section if it existed
-            if sources_section:
-                response = response + "\n\n" + sources_section
+
             
             logger.info("✅ Response passed KB-only validation")
             return response
@@ -923,8 +729,7 @@ RESPONSE: I cannot find relevant information in the available documents for this
                 "success": True,
                 "ai_response": final_state.get("ai_response", ""),
                 "context_used": final_state.get("has_context", False),
-                "sources_count": len(final_state.get("context_documents", [])),
-                "sources_info": final_state.get("sources_info", []),
+                "sources_count": 0,
                 "conversation_id": final_state.get("conversation_id", ""),
                 "model_used": AZURE_OPENAI_MODEL,
                 "timestamp": datetime.now().isoformat()
@@ -1074,8 +879,7 @@ def create(event, context):
                     validation_schema['datas']['sourcesCount'] = workflow_result.get('sources_count', 0)
                     
                     # Convert complex sourcesInfo to JSON string for DynamoDB compatibility
-                    sources_info = workflow_result.get('sources_info', [])
-                    validation_schema['datas']['sourcesInfo'] = json.dumps(sources_info) if sources_info else '[]'
+                    validation_schema['datas']['sourcesInfo'] = '[]'
                     
                     validation_schema['datas']['modelUsed'] = workflow_result.get('model_used', AZURE_OPENAI_MODEL)
                     validation_schema['datas']['conversationId'] = workflow_result.get('conversation_id', conversation_id)
@@ -1121,28 +925,15 @@ def create(event, context):
                     
                     logger.info(f"Using user email: {user_email}")
                     
-                    # Create chat history entry with full AI response including sources
-                    ai_response_with_sources = workflow_result.get('ai_response', '')
+                    # Create chat history entry with AI response
+                    ai_response = workflow_result.get('ai_response', '')
                     chat_history_entry = {
                         "user": validation_schema['datas'].get('query', ''),
-                        "aiAssistant": ai_response_with_sources,
+                        "aiAssistant": ai_response,
                         "traceId": workflow_result.get('conversation_id', conversation_id)
                     }
                     
-                    # Debug: Log if sources are included in AI response
-                    has_sources_in_response = "**Sources:**" in ai_response_with_sources or "Sources:" in ai_response_with_sources
-                    sources_count = workflow_result.get('sources_count', 0)
-                    sources_info_list = workflow_result.get('sources_info', [])
-                    
-                    logger.info(f"🔍 Final Response Debug - AI response length: {len(ai_response_with_sources)}")
-                    logger.info(f"🔍 Final Response Debug - Has sources in response: {has_sources_in_response}")
-                    logger.info(f"🔍 Final Response Debug - Sources count: {sources_count}")
-                    logger.info(f"🔍 Final Response Debug - Sources info length: {len(sources_info_list)}")
-                    logger.info(f"🔍 Final Response Debug - AI response preview: {ai_response_with_sources[:200]}...")
-                    if has_sources_in_response:
-                        sources_start = ai_response_with_sources.find("**Sources:**")
-                        if sources_start > 0:
-                            logger.info(f"🔍 Final Response Debug - Sources section: {ai_response_with_sources[sources_start:sources_start+300]}...")
+                    logger.info(f"🔍 Final Response Debug - AI response length: {len(ai_response)}")
                     
                     # Create new response format (clean format without nested data)
                     new_format_response = {
@@ -1150,7 +941,7 @@ def create(event, context):
                         "conversationId": workflow_result.get('conversation_id', conversation_id),
                         "chatHistory": [chat_history_entry],
                         "trace_id": workflow_result.get('conversation_id', conversation_id),
-                        "sources": workflow_result.get('sources_info', []),
+                        "sources": [],
                         "contextUsed": workflow_result.get('context_used', False),
                         "sourcesCount": workflow_result.get('sources_count', 0)
                     }

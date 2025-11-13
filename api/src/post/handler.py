@@ -519,62 +519,74 @@ class BedrockKnowledgeBaseWorkflow:
         context_documents = state.get("context_documents", [])
         conversation_id = state.get("conversation_id", "")
         
-        # Prepare context-aware prompt with detailed system instructions
-        system_instructions = """You are an AI assistant designed to provide accurate and comprehensive answers based on information from the vector database. Follow these guidelines:
+        # Prepare STRICT KB-only prompt with strong enforcement
+        system_instructions = """CRITICAL: You are a STRICT document retrieval assistant. You MUST follow these rules without exception:
 
-1. **Context-Based Information**:
-- Use only the data available in the current context from the vector database.
-- If the required information is not present in the context, respond with: "I am not able to obtain an answer for this particular query."
+RULE 1 - CONTEXT-ONLY RESPONSES:
+- You can ONLY use information from the provided context documents below
+- You CANNOT use any external knowledge, training data, or general information
+- If information is not in the context, you MUST say: "I cannot find this information in the available documents."
 
-2. **Detailed Information**:
-- Provide thorough and well-organized responses using the context data.
-- Use headings, bullet points, or numbered lists to structure information clearly.
-- Apply bold or italic formatting for emphasis where needed.
+RULE 2 - FORBIDDEN ACTIONS:
+- DO NOT supplement with general knowledge
+- DO NOT make assumptions beyond the context
+- DO NOT provide information not explicitly stated in the context
+- DO NOT use phrases like "typically," "generally," "usually" that indicate external knowledge
 
-3. **Emotes**:
-- Incorporate appropriate emotes based on the content and tone of the query.
-- Use positive emotes for encouraging responses and neutral or informative emotes for factual information.
+RULE 3 - RESPONSE FORMAT:
+- Start responses with: "Based on the available documents:"
+- Quote relevant sections when possible
+- If context is insufficient, clearly state: "The available documents do not contain enough information about [topic]."
 
-4. **Table Generation**:
-- If the query requests data in a table format, generate and present the information using the context data.
-- Ensure the table is well-organized with headers and properly aligned columns.
-- Use Markdown or other formatting tools to enhance readability.
+RULE 4 - NO CONTEXT SCENARIOS:
+- If no relevant context is provided, respond EXACTLY: "I cannot find relevant information in the available documents for this query. Please try a different question or provide more specific details."
 
-5. **Chat Format**:
-- For chat or conversation-related queries, structure your response in a conversational format.
-- Use formatting to differentiate between user inputs and responses.
-
-6. **Specific Formats**:
-- If the user requests information in a specific format (e.g., JSON, XML, Markdown), provide the response using the context data.
-- Ensure the format is applied correctly and the data is structured appropriately.
-
-7. **Non-Professional Topics**:
-- If the query concerns non-professional subjects (e.g., politics, sports), politely redirect the user to relevant professional topics.
-- Suggest related professional queries and provide a concise explanation.
-
-8. **Accuracy and Citations**:
-- Ensure responses are accurate and solely based on the data in the current context.
-- Do not provide information not mentioned in the context. Do not add any additional information that is not present in the context.
-
-Keep your responses clear, informative, and engaging, ensuring they are derived exclusively from the provided context."""
+VIOLATION DETECTION: Any response using information not in the provided context is a CRITICAL ERROR."""
 
         if context_documents:
-            # Use top 2 most relevant documents
-            context = "\n\n".join([doc['content'] for doc in context_documents[:2]])
-            prompt = f"""{system_instructions}
+            # Use top 2 most relevant documents and validate relevance
+            relevant_docs = []
+            context_texts = []
+            
+            for doc in context_documents[:2]:
+                content = doc['content']
+                score = doc.get('score', 0)
+                
+                # Only include documents with sufficient relevance score
+                if score > 0.3:  # Minimum relevance threshold (lowered to include more sources)
+                    relevant_docs.append(doc)
+                    context_texts.append(f"Document {len(relevant_docs)} (Relevance: {score:.2f}):\n{content}")
+                    logger.info(f"Including document with score {score:.2f}: {content[:100]}...")
+                else:
+                    logger.info(f"Excluding low-relevance document (score: {score:.2f}): {content[:100]}...")
+            
+            if relevant_docs:
+                context = "\n\n".join(context_texts)
+                logger.info(f"📚 KB-ONLY MODE: Using {len(relevant_docs)} relevant documents for response")
+                prompt = f"""{system_instructions}
 
-Context:
+PROVIDED CONTEXT DOCUMENTS:
 {context}
 
-User Question: {user_query}
+USER QUESTION: {user_query}
 
-Please provide a well-formatted answer based on the context above following the guidelines specified."""
+INSTRUCTIONS: Answer using ONLY the information from the context documents above. Start your response with "Based on the available documents:" """
+            else:
+                # No sufficiently relevant documents found
+                logger.warning(f"📚 KB-ONLY MODE: No documents met relevance threshold (>0.3) for query: {user_query}")
+                prompt = f"""{system_instructions}
+
+USER QUESTION: {user_query}
+
+RESPONSE: I cannot find relevant information in the available documents for this query. The documents in our knowledge base do not appear to contain information about this topic."""
         else:
+            # No context documents retrieved
+            logger.warning(f"📚 KB-ONLY MODE: No context documents retrieved for query: {user_query}")
             prompt = f"""{system_instructions}
 
-User Question: {user_query}
+USER QUESTION: {user_query}
 
-Since no specific context is available from the vector database, please respond with: "I am not able to obtain an answer for this particular query." and suggest the user provide more specific information or try rephrasing their question."""
+RESPONSE: I cannot find relevant information in the available documents for this query. Please try a different question or provide more specific details."""
         
         try:
             if self.chat_model:
@@ -616,6 +628,9 @@ Since no specific context is available from the vector database, please respond 
                     response = self.chat_model.invoke(messages)
                     ai_response = response.content if hasattr(response, 'content') else str(response)
                 
+                # Validate response is KB-only (post-processing check)
+                ai_response = self._validate_kb_only_response(ai_response, context_documents)
+                
                 logger.info("Successfully generated AI response")
                 
             else:
@@ -638,7 +653,7 @@ Since no specific context is available from the vector database, please respond 
             AIMessage(content=ai_response)
         ]
         
-        # Extract source information from context documents
+        # Extract source information from context documents and append to AI response
         sources_info = []
         logger.info(f"Processing {len(context_documents)} context documents for source extraction")
         
@@ -648,7 +663,9 @@ Since no specific context is available from the vector database, please respond 
             
             if isinstance(doc, dict):
                 location = doc.get('location', {})
+                metadata = doc.get('metadata', {})
                 logger.info(f"Document {i+1} location: {location}")
+                logger.info(f"Document {i+1} metadata: {metadata}")
                 
                 # Handle different possible location structures
                 uri = ''
@@ -657,19 +674,124 @@ Since no specific context is available from the vector database, please respond 
                 elif 'uri' in location:
                     uri = location.get('uri', '')
                 
+                # Extract document title/name from metadata or URI
+                doc_title = ''
+                if isinstance(metadata, dict):
+                    doc_title = metadata.get('title', metadata.get('name', metadata.get('fileName', '')))
+                
+                # If no title found in metadata, extract from URI
+                if not doc_title and uri:
+                    # Extract filename from S3 URI
+                    if '/' in uri:
+                        doc_title = uri.split('/')[-1]
+                    else:
+                        doc_title = uri
+                
+                # Remove file extension for cleaner display
+                if doc_title and '.' in doc_title:
+                    doc_title = '.'.join(doc_title.split('.')[:-1])
+                
                 source_info = {
                     'uri': uri,
+                    'title': doc_title or f'Document {i+1}',
                     'score': doc.get('score', 0),
                     'type': location.get('type', 'unknown'),
-                    'metadata': doc.get('metadata', {}),
+                    'metadata': metadata,
                     'location_raw': location  # Include raw location for debugging
                 }
                 sources_info.append(source_info)
                 logger.info(f"Added source info: {source_info}")
         
+        # Append sources to AI response if sources exist and response is from KB
+        if sources_info and ai_response and not ai_response.startswith("I cannot find"):
+            sources_text = "\n\n**Sources:**\n"
+            for i, source in enumerate(sources_info, 1):
+                title = source.get('title', f'Document {i}')
+                uri = source.get('uri', '')
+                score = source.get('score', 0)
+                doc_type = source.get('type', 'document')
+                
+                # Format the source entry
+                if uri:
+                    # Clean up the URI for better display
+                    display_uri = uri
+                    if 's3://' in uri:
+                        # Extract just the filename from S3 path for cleaner display
+                        display_uri = uri.split('/')[-1] if '/' in uri else uri
+                    
+                    sources_text += f"📄 **{title}** ({doc_type.title()}, Relevance: {score:.1f})\n"
+                    sources_text += f"   🔗 {display_uri}\n\n"
+                else:
+                    sources_text += f"📄 **{title}** ({doc_type.title()}, Relevance: {score:.1f})\n\n"
+            
+            # Add sources to the end of the AI response
+            ai_response = ai_response.rstrip() + sources_text
+            logger.info(f"Added {len(sources_info)} formatted sources to AI response")
+        
         logger.info(f"Final sources_info: {sources_info}")
         state["sources_info"] = sources_info
+        
+        # Update the AI response in state with sources included
+        state["ai_response"] = ai_response
+        
         return state
+    
+    def _validate_kb_only_response(self, response: str, context_documents: List[Dict]) -> str:
+        """
+        Validate that the response appears to be based on KB documents only
+        """
+        try:
+            # Preserve sources section if it exists
+            sources_section = ""
+            if "**Sources:**" in response:
+                parts = response.split("**Sources:**", 1)
+                if len(parts) == 2:
+                    response = parts[0].strip()
+                    sources_section = "**Sources:**" + parts[1]
+            elif "Sources:" in response:
+                parts = response.split("Sources:", 1)
+                if len(parts) == 2:
+                    response = parts[0].strip()
+                    sources_section = "Sources:" + parts[1]
+            
+            # Check if response starts with required prefix
+            if not response.startswith("Based on the available documents:") and not response.startswith("I cannot find"):
+                logger.warning("⚠️ Response does not start with required KB-only prefix")
+                # Force compliance
+                if context_documents:
+                    response = f"Based on the available documents: {response}"
+                else:
+                    return "I cannot find relevant information in the available documents for this query."
+            
+            # Check for forbidden phrases that indicate external knowledge use
+            forbidden_phrases = [
+                "generally", "typically", "usually", "commonly", "in most cases",
+                "as we know", "it is known that", "according to research", 
+                "studies show", "experts say", "it's important to note"
+            ]
+            
+            response_lower = response.lower()
+            violations = [phrase for phrase in forbidden_phrases if phrase in response_lower]
+            
+            if violations:
+                logger.warning(f"⚠️ Response contains forbidden phrases indicating external knowledge: {violations}")
+                # Could implement stricter filtering here if needed
+            
+            # Ensure we have context if making claims
+            if not context_documents and not response.startswith("I cannot find"):
+                logger.warning("⚠️ No context documents but response doesn't indicate this")
+                return "I cannot find relevant information in the available documents for this query."
+            
+            # Reattach sources section if it existed
+            if sources_section:
+                response = response + "\n\n" + sources_section
+            
+            logger.info("✅ Response passed KB-only validation")
+            return response
+            
+        except Exception as e:
+            logger.error(f"Error in response validation: {e}")
+            return response  # Return original if validation fails
     
 
     

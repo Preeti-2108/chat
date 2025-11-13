@@ -516,28 +516,44 @@ class BedrockKnowledgeBaseWorkflow:
         conversation_id = state.get("conversation_id", "")
         
         # Prepare STRICT KB-only prompt with strong enforcement
-        system_instructions = """CRITICAL: You are a STRICT document retrieval assistant. You MUST follow these rules without exception:
+        system_instructions = """You are an AI assistant designed to provide accurate and comprehensive answers based on information from the vector database. You have two search tools at your disposal:
 
-RULE 1 - CONTEXT-ONLY RESPONSES:
-- You can ONLY use information from the provided context documents below
-- You CANNOT use any external knowledge, training data, or general information
-- If information is not in the context, you MUST say: "I cannot find this information in the available documents."
+                1. **Context-Based Information**:
+                - Use only the data available in the current context from the vector database.
+                - If the required information is not present in the context, respond with: "I am not able to obtain an answer for this particular query."
 
-RULE 2 - FORBIDDEN ACTIONS:
-- DO NOT supplement with general knowledge
-- DO NOT make assumptions beyond the context
-- DO NOT provide information not explicitly stated in the context
-- DO NOT use phrases like "typically," "generally," "usually" that indicate external knowledge
+                2. **Detailed Information**:
+                - Provide thorough and well-organized responses using the context data.
+                - Use headings, bullet points, or numbered lists to structure information clearly.
+                - Apply bold or italic formatting for emphasis where needed.
 
-RULE 3 - RESPONSE FORMAT:
-- Start responses with: "Based on the available documents:"
-- Quote relevant sections when possible
-- If context is insufficient, clearly state: "The available documents do not contain enough information about [topic]."
+                3. **Emotes**:
+                - Incorporate appropriate emotes based on the content and tone of the query.
+                - Use positive emotes for encouraging responses and neutral or informative emotes for factual information.
 
-RULE 4 - NO CONTEXT SCENARIOS:
-- If no relevant context is provided, respond EXACTLY: "I cannot find relevant information in the available documents for this query. Please try a different question or provide more specific details."
+                4. **Table Generation**:
+                - If the query requests data in a table format, generate and present the information using the context data.
+                - Ensure the table is well-organized with headers and properly aligned columns.
+                - Use Markdown or other formatting tools to enhance readability.
 
-VIOLATION DETECTION: Any response using information not in the provided context is a CRITICAL ERROR."""
+                5. **Chat Format**:
+                - For chat or conversation-related queries, structure your response in a conversational format.
+                - Use formatting to differentiate between user inputs and responses.
+
+                6. **Specific Formats**:
+                - If the user requests information in a specific format (e.g., JSON, XML, Markdown), provide the response using the context data.
+                - Ensure the format is applied correctly and the data is structured appropriately.
+
+                7. **Non-Professional Topics**:
+                - If the query concerns non-professional subjects (e.g., politics, sports), politely redirect the user to relevant professional topics.
+                - Suggest related professional queries and provide a concise explanation.
+
+                8. **Accuracy and Citations**:
+                - Ensure responses are accurate and solely based on the data in the current context.
+                - Do not provide information not mentioned in the context. Do not add any additional information that is not present in the context.
+
+                Keep your responses clear, informative, and engaging, ensuring they are derived exclusively from the provided context.
+                """
 
         if context_documents:
             # Use top 2 most relevant documents and validate relevance
@@ -626,6 +642,60 @@ RESPONSE: I cannot find relevant information in the available documents for this
                 
                 # Validate response is KB-only (post-processing check)
                 ai_response = self._validate_kb_only_response(ai_response, context_documents)
+                
+                # Extract and append sources to the AI response
+                if context_documents:
+                    logger.info("Extracting and appending sources to AI response")
+                    doc_links = []
+                    
+                    for i, doc in enumerate(context_documents):
+                        try:
+                            # Extract docLink from location metadata
+                            location = doc.get('location', {})
+                            s3_location = location.get('s3Location', {})
+                            uri = s3_location.get('uri', '')
+                            
+                            # Extract docLink from metadata
+                            metadata = doc.get('metadata', {})
+                            doc_link = None
+                            
+                            # Try to find docLink in various metadata fields
+                            for key, value in metadata.items():
+                                if 'doclink' in key.lower() or 'doc_link' in key.lower():
+                                    doc_link = value
+                                    break
+                                elif 'uri' in key.lower() and value and 'http' in str(value):
+                                    doc_link = value
+                                    break
+                            
+                            # If no docLink found, try extracting from URI
+                            if not doc_link and uri:
+                                # Extract potential docLink patterns from URI
+                                if '/docLink=' in uri:
+                                    doc_link = uri.split('/docLink=')[1].split('/')[0]
+                                elif 'doclink' in uri.lower():
+                                    doc_link = uri
+                            
+                            if doc_link and doc_link != 'N/A':
+                                doc_links.append(doc_link)
+                                logger.debug(f"Extracted docLink {i+1}: {doc_link}")
+                            
+                        except Exception as e:
+                            logger.error(f"Error extracting docLink from document {i}: {e}")
+                    
+                    # Append sources to AI response if we have docLinks
+                    if doc_links:
+                        # Remove duplicates while preserving order
+                        unique_doc_links = list(dict.fromkeys(doc_links))
+                        source_links = ", ".join(unique_doc_links)
+                        sources_text = f"\n\n**Sources:** {source_links}"
+                        
+                        # Add sources to the end of the AI response
+                        ai_response = ai_response.rstrip() + sources_text
+                        logger.info(f"✅ Added {len(unique_doc_links)} docLinks to AI response")
+                        logger.info(f"📎 DocLinks: {unique_doc_links}")
+                    else:
+                        logger.warning("⚠️ No docLinks found in sources")
                 
                 logger.info("Successfully generated AI response")
                 
@@ -724,12 +794,22 @@ RESPONSE: I cannot find relevant information in the available documents for this
             # Execute the workflow
             final_state = self.workflow.invoke(initial_state)
             
+            # Count sources from the AI response
+            sources_count = 0
+            ai_response = final_state.get("ai_response", "")
+            if "**Sources:**" in ai_response:
+                # Extract sources from the response text
+                sources_section = ai_response.split("**Sources:**")[1].strip()
+                if sources_section:
+                    # Count comma-separated sources
+                    sources_count = len([s.strip() for s in sources_section.split(",") if s.strip()])
+            
             # Return structured response
             return {
                 "success": True,
                 "ai_response": final_state.get("ai_response", ""),
                 "context_used": final_state.get("has_context", False),
-                "sources_count": 0,
+                "sources_count": sources_count,
                 "conversation_id": final_state.get("conversation_id", ""),
                 "model_used": AZURE_OPENAI_MODEL,
                 "timestamp": datetime.now().isoformat()

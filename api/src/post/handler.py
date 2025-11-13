@@ -851,7 +851,11 @@ def create(event, context):
                     validation_schema['datas']['aiResponse'] = workflow_result.get('ai_response', '')
                     validation_schema['datas']['contextUsed'] = workflow_result.get('context_used', False)
                     validation_schema['datas']['sourcesCount'] = workflow_result.get('sources_count', 0)
-                    validation_schema['datas']['sourcesInfo'] = workflow_result.get('sources_info', [])
+                    
+                    # Convert complex sourcesInfo to JSON string for DynamoDB compatibility
+                    sources_info = workflow_result.get('sources_info', [])
+                    validation_schema['datas']['sourcesInfo'] = json.dumps(sources_info) if sources_info else '[]'
+                    
                     validation_schema['datas']['modelUsed'] = workflow_result.get('model_used', AZURE_OPENAI_MODEL)
                     validation_schema['datas']['conversationId'] = workflow_result.get('conversation_id', conversation_id)
                     
@@ -962,6 +966,10 @@ def create(event, context):
             }
 
         try:
+            # Debug: Log what we're trying to insert
+            logger.info(f"🔍 DynamoDB Debug - Item keys: {list(new_item.keys())}")
+            logger.info(f"🔍 DynamoDB Debug - Item types: {[(k, type(v)) for k, v in new_item.items()]}")
+            
             # Insert the new item into the DynamoDB table
             table.put_item(Item=new_item)
             # Iterate over each field in the new item and send a message for each field
@@ -990,6 +998,8 @@ def create(event, context):
         except Exception as dynamo_err:
             # Handle DynamoDB insertion errors
             logger.error(f"Error inserting item into DynamoDB: {str(dynamo_err)}")
+            logger.error(f"DynamoDB Error Type: {type(dynamo_err).__name__}")
+            logger.error(f"Item that failed to insert: {json.dumps(new_item, default=str, indent=2)}")
             response_result = Responses.result_response(STATUS_ERROR, False, 'Failed to insert item into DynamoDB.')
 
     except Exception as err:
@@ -1009,9 +1019,31 @@ def create(event, context):
         'body': json.dumps('Message processed')
     }
 
+def sanitize_for_dynamodb(obj):
+    """
+    Sanitize data for DynamoDB compatibility by converting unsupported types
+    """
+    if obj is None:
+        return None
+    elif isinstance(obj, (str, int, float, bool)):
+        return obj
+    elif isinstance(obj, dict):
+        return {k: sanitize_for_dynamodb(v) for k, v in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return [sanitize_for_dynamodb(item) for item in obj]
+    elif isinstance(obj, datetime):
+        return obj.isoformat()
+    else:
+        # Convert any other type to string
+        return str(obj)
+
 def construct_new_item(datas):
     datas['id'] = str(uuid.uuid4())  # Generate a unique ID for the new item
-    expression = generate_create_query(datas)  # Generate the item expression
+    
+    # Sanitize data for DynamoDB compatibility
+    sanitized_datas = sanitize_for_dynamodb(datas)
+    
+    expression = generate_create_query(sanitized_datas)  # Generate the item expression
     return expression
 
 def generate_create_query(fields):

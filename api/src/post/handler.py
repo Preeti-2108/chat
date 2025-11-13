@@ -570,6 +570,12 @@ Since no specific context is available from the vector database, please respond 
                 connection_id = connection_info.get("connectionId")
                 url = connection_info.get("url")
                 
+                # Debug logging for WebSocket connection troubleshooting
+                logger.info(f"🔍 WebSocket Debug - Connection Info: {connection_info}")
+                logger.info(f"🔍 WebSocket Debug - Connection ID: {connection_id}")
+                logger.info(f"🔍 WebSocket Debug - URL: {url}")
+                logger.info(f"🔍 WebSocket Debug - ENABLE_WEBSOCKET_STREAMING: {ENABLE_WEBSOCKET_STREAMING}")
+                
                 if connection_id and url and ENABLE_WEBSOCKET_STREAMING:
                     # Use WordLevelStreamingHandler for advanced streaming
                     streaming_handler = WordLevelStreamingHandler(
@@ -665,6 +671,10 @@ Since no specific context is available from the vector database, please respond 
                 "vector_db": vector_db or KNOWLEDGE_BASE_ID,
                 "websocket_connection": websocket_connection or {}
             }
+            
+            # Debug logging for workflow state initialization
+            logger.info(f"🔍 Workflow Debug - Initial websocket_connection: {websocket_connection}")
+            logger.info(f"🔍 Workflow Debug - Initial state websocket_connection: {initial_state['websocket_connection']}")
             
             # Execute the workflow
             final_state = self.workflow.invoke(initial_state)
@@ -800,6 +810,11 @@ def create(event, context):
                     "connectionId": connectionId,
                     "url": url
                 }
+                
+                # Debug logging for main function WebSocket values
+                logger.info(f"🔍 Main Function Debug - connectionId: {connectionId}")
+                logger.info(f"🔍 Main Function Debug - url: {url}")
+                logger.info(f"🔍 Main Function Debug - websocket_connection: {websocket_connection}")
                 
                 # Execute LangGraph workflow with vector DB filter and WebSocket streaming
                 workflow_result = bedrock_workflow.process_chat_query(user_query, conversation_id, vector_db, websocket_connection)

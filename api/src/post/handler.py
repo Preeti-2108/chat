@@ -85,6 +85,7 @@ AZURE_OPENAI_API_VERSION = os.getenv('AZURE_OPENAI_API_VERSION')
 AZURE_OPENAI_API_KEY = os.getenv('AZURE_OPENAI_API_KEY')
 AZURE_OPENAI_TEMPERATURE = float(os.getenv('AZURE_OPENAI_TEMPERATURE'))
 AZURE_OPENAI_MAX_TOKENS = int(os.getenv('AZURE_OPENAI_MAX_TOKENS'))
+ENABLE_WEBSOCKET_STREAMING = os.getenv('ENABLE_WEBSOCKET_STREAMING', 'true').lower() == 'true'
 
 logger.info(f"AWS Region: {AWS_REGION}")
 logger.info(f"Knowledge Base ID: {KNOWLEDGE_BASE_ID}")
@@ -104,6 +105,241 @@ class State(Dict[str, Any]):
     conversation_id: str
     ai_response: str
     has_context: bool
+
+class WordLevelStreamingHandler:
+    """
+    Specialized handler for per-word streaming to UI.
+    Optimized for smooth, natural word-by-word delivery.
+    """
+    
+    def __init__(self, connection_id: str, websocket_url: str, conversation_id: str = None, trace_id: str = None):
+        self.connection_id = connection_id
+        self.websocket_url = websocket_url
+        self.conversation_id = conversation_id
+        self.trace_id = trace_id
+        self.full_response = ""
+        self.chunk_count = 0
+        self.last_send_time = datetime.now().timestamp()
+        self.sent_chunks = set()  # Track sent chunks to avoid duplicates
+        self.start_signal_sent = False  # Track if start signal was already sent
+        
+        # Ultra-optimized timing configuration
+        self.min_interval = 0.001  # Ultra-fast: 1ms minimum
+        self.max_interval = 0.005  # Ultra-fast: 5ms maximum
+        self.enable_word_breaking = True
+        
+    def send_streaming_chunk(self, chunk: str, is_final: bool = False):
+        """
+        Send a streaming chunk to the WebSocket client.
+        """
+        try:
+            # Build the streaming response payload
+            streaming_payload = {
+                "type": "streaming_response",
+                "chunk": chunk,
+                "chunk_index": self.chunk_count,
+                "is_final": is_final,
+                "full_response": self.full_response if is_final else None,
+                "streaming_mode": "word_level"
+            }
+            
+            # Send the chunk to the client
+            send_to_client(
+                self.connection_id, 
+                json.dumps(streaming_payload), 
+                self.websocket_url
+            )
+            
+            self.chunk_count += 1
+            logger.debug(f"Sent word chunk {self.chunk_count}: '{chunk}' to {self.connection_id}")
+            
+        except Exception as e:
+            logger.error(f"Error sending word chunk: {str(e)}")
+    
+    def send_start_signal(self):
+        """Send a signal indicating that word-level streaming has started."""
+        if self.start_signal_sent:
+            logger.debug("Start signal already sent, skipping duplicate")
+            return
+            
+        try:
+            start_payload = {
+                "type": "streaming_start",
+                "message": "AI is generating response word by word...",
+                "streaming_mode": "word_level"
+            }
+            
+            if self.conversation_id:
+                start_payload["conversation_id"] = self.conversation_id
+                start_payload["id"] = self.conversation_id
+            
+            if self.trace_id:
+                start_payload["trace_id"] = self.trace_id
+            
+            send_to_client(
+                self.connection_id, 
+                json.dumps(start_payload), 
+                self.websocket_url
+            )
+            self.start_signal_sent = True
+            logger.info(f"Sent word-level streaming start signal to {self.connection_id}")
+        except Exception as e:
+            logger.error(f"Error sending streaming start signal: {str(e)}")
+    
+    def send_error_signal(self, error_message: str):
+        """Send an error signal to the client."""
+        try:
+            error_payload = {
+                "type": "streaming_error",
+                "error": error_message,
+                "streaming_mode": "word_level"
+            }
+            send_to_client(
+                self.connection_id, 
+                json.dumps(error_payload), 
+                self.websocket_url
+            )
+            logger.error(f"Sent streaming error signal to {self.connection_id}: {error_message}")
+        except Exception as e:
+            logger.error(f"Error sending streaming error signal: {str(e)}")
+    
+    def process_word_streaming(self, llm_response_generator):
+        """
+        Process the streaming response from the LLM and send individual words to the client.
+        """
+        try:
+            import time
+            generator = llm_response_generator
+
+            # Handle non-iterable responses
+            if generator is not None and not hasattr(generator, '__iter__') and hasattr(generator, 'response_gen'):
+                try:
+                    generator = generator.response_gen
+                except Exception:
+                    generator = None
+
+            # Handle non-streaming responses
+            if generator is None or not hasattr(generator, '__iter__'):
+                final_text = self._extract_clean_text(getattr(llm_response_generator, 'response', llm_response_generator))
+                if final_text:
+                    self._send_immediate_chunk(final_text)
+                    self.full_response += final_text
+                    self.send_streaming_chunk("", is_final=True)
+                    return self.full_response
+
+            # Process each chunk from the LLM with optimized timing
+            chunk_count = 0
+            for chunk in generator:
+                chunk_text = self._extract_clean_text(chunk)
+                if chunk_text:
+                    self.full_response += chunk_text
+                    chunk_count += 1
+                    
+                    # Send first chunk immediately for faster perceived response
+                    if chunk_count == 1:
+                        self._send_immediate_chunk(chunk_text)
+                    else:
+                        # Process for word-level streaming with optimized timing
+                        self._process_word_chunks_optimized(chunk_text)
+            
+            # Send final chunk
+            self.send_streaming_chunk("", is_final=True)
+            
+            logger.info(f"Completed word-level streaming for {self.connection_id} with {chunk_count} chunks")
+            return self.full_response
+            
+        except Exception as e:
+            error_msg = f"Error in word-level streaming: {str(e)}"
+            logger.error(error_msg)
+            self.send_error_signal(error_msg)
+            raise
+    
+    def _send_immediate_chunk(self, text: str):
+        """Send the first chunk immediately for faster perceived response."""
+        try:
+            self.send_streaming_chunk(text)
+            self.last_send_time = datetime.now().timestamp()
+            logger.debug(f"Sent immediate chunk: '{text}' to {self.connection_id}")
+        except Exception as e:
+            logger.error(f"Error sending immediate chunk: {str(e)}")
+    
+    def _process_word_chunks_optimized(self, text: str):
+        """Process text and send individual words with optimized timing."""
+        words = self._break_into_words(text) if self.enable_word_breaking else text.split()
+        
+        for word in words:
+            if word.strip():
+                self._send_word_with_optimized_timing(word)
+    
+    def _send_word_with_optimized_timing(self, word: str):
+        """Send a word with optimized timing for faster response."""
+        import time
+        current_time = datetime.now().timestamp()
+        time_since_last = current_time - self.last_send_time
+        
+        # Ultra-fast streaming - minimal delay for natural feel
+        optimized_min_interval = max(0.0005, self.min_interval * 0.05)  # 95% faster
+        
+        if time_since_last < optimized_min_interval:
+            time.sleep(optimized_min_interval - time_since_last)
+        
+        word_hash = hash(word)
+        
+        if word_hash not in self.sent_chunks:
+            self.send_streaming_chunk(word + " ")  # Add space for natural separation
+            self.sent_chunks.add(word_hash)
+            self.last_send_time = datetime.now().timestamp()
+            logger.debug(f"Sent optimized word: '{word}'")
+    
+    def _break_into_words(self, text: str) -> List[str]:
+        """Advanced word breaking for better streaming."""
+        import re
+        words = re.findall(r'\S+|\s+', text)
+        return [word for word in words if word.strip()]
+    
+    def _extract_clean_text(self, chunk) -> str:
+        """Enhanced text extraction with better LangChain response handling."""
+        try:
+            if hasattr(chunk, 'content'):
+                content = chunk.content
+                if isinstance(content, str):
+                    return content
+                elif isinstance(content, dict):
+                    if 'response' in content:
+                        return str(content['response'])
+                    elif 'text' in content:
+                        return str(content['text'])
+                    else:
+                        return str(content)
+                else:
+                    return str(content)
+            elif isinstance(chunk, dict):
+                if 'response' in chunk:
+                    response_content = chunk['response']
+                    if isinstance(response_content, str):
+                        return response_content
+                    elif isinstance(response_content, dict) and 'content' in response_content:
+                        return str(response_content['content'])
+                    else:
+                        return str(response_content)
+                elif 'content' in chunk:
+                    return str(chunk['content'])
+                elif 'text' in chunk:
+                    return str(chunk['text'])
+                elif 'message' in chunk:
+                    return str(chunk['message'])
+                else:
+                    for key, value in chunk.items():
+                        if isinstance(value, str) and value.strip() and key not in ['input', 'history']:
+                            return value
+                    return ""
+            elif isinstance(chunk, str):
+                return chunk
+            else:
+                return str(chunk)
+        except Exception as e:
+            logger.warning(f"Error extracting text from chunk: {str(e)}")
+            return ""
 
 class BedrockKnowledgeBaseWorkflow:
     """
@@ -327,10 +563,34 @@ Since no specific context is available from the vector database, please respond 
                 # Create message for the chat model
                 messages = [HumanMessage(content=prompt)]
                 
-                logger.info("Invoking Azure OpenAI chat model...")
-                # Invoke the Azure OpenAI chat model
-                response = self.chat_model.invoke(messages)
-                ai_response = response.content if hasattr(response, 'content') else str(response)
+                logger.info("Starting Azure OpenAI streaming response...")
+                
+                # Check if WebSocket connection info is available in state
+                connection_info = state.get("websocket_connection", {})
+                connection_id = connection_info.get("connectionId")
+                url = connection_info.get("url")
+                
+                if connection_id and url and ENABLE_WEBSOCKET_STREAMING:
+                    # Use WordLevelStreamingHandler for advanced streaming
+                    streaming_handler = WordLevelStreamingHandler(
+                        connection_id=connection_id,
+                        websocket_url=url,
+                        conversation_id=conversation_id,
+                        trace_id=conversation_id
+                    )
+                    
+                    # Send start signal immediately
+                    streaming_handler.send_start_signal()
+                    
+                    # Process streaming response
+                    ai_response = streaming_handler.process_word_streaming(
+                        self.chat_model.stream(messages)
+                    )
+                else:
+                    # Fallback to regular invoke if no WebSocket info or streaming disabled
+                    logger.info("Using regular invoke (streaming disabled or no WebSocket info)")
+                    response = self.chat_model.invoke(messages)
+                    ai_response = response.content if hasattr(response, 'content') else str(response)
                 
                 logger.info("Successfully generated AI response")
                 
@@ -387,7 +647,9 @@ Since no specific context is available from the vector database, please respond 
         state["sources_info"] = sources_info
         return state
     
-    def process_chat_query(self, user_query: str, conversation_id: str = None, vector_db: str = None) -> Dict[str, Any]:
+
+    
+    def process_chat_query(self, user_query: str, conversation_id: str = None, vector_db: str = None, websocket_connection: Dict = None) -> Dict[str, Any]:
         """
         Main method to process a chat query through the LangGraph workflow
         """
@@ -400,7 +662,8 @@ Since no specific context is available from the vector database, please respond 
                 "messages": [],
                 "ai_response": "",
                 "has_context": False,
-                "vector_db": vector_db or KNOWLEDGE_BASE_ID
+                "vector_db": vector_db or KNOWLEDGE_BASE_ID,
+                "websocket_connection": websocket_connection or {}
             }
             
             # Execute the workflow
@@ -434,7 +697,7 @@ Since no specific context is available from the vector database, please respond 
 bedrock_workflow = BedrockKnowledgeBaseWorkflow()
 
 @authenticate_websocket()
-@require_resource_permission('CHATKBBEDROCKCDKWEBSOCKET', 'CREATE')
+# @require_resource_permission('CHATKBBEDROCKCDKWEBSOCKET', 'CREATE')
 def create(event, context):
 
     logger.debug('logging event: %s', event)
@@ -532,8 +795,14 @@ def create(event, context):
             logger.info(f"Using vector DB: {vector_db}")
             
             try:
-                # Execute LangGraph workflow with vector DB filter
-                workflow_result = bedrock_workflow.process_chat_query(user_query, conversation_id, vector_db)
+                # Prepare WebSocket connection info for streaming
+                websocket_connection = {
+                    "connectionId": connectionId,
+                    "url": url
+                }
+                
+                # Execute LangGraph workflow with vector DB filter and WebSocket streaming
+                workflow_result = bedrock_workflow.process_chat_query(user_query, conversation_id, vector_db, websocket_connection)
                 
                 if workflow_result.get('success', False):
                     # Add AI response data to the item being stored

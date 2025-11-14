@@ -480,8 +480,8 @@ class BedrockKnowledgeBaseWorkflow:
                         # 'score': result.get('score', 0),  # Relevance score
                         # 'location': result.get('location', {}),  # Source location
                         # 'metadata': result.get('metadata', {})  # Additional metadata
-                        title = metadata.get("title", "Unknown Title"),
-                        doc_link = metadata.get("docLink", "")
+                        'title': metadata.get("title", "Unknown Title"),
+                        'doc_link': metadata.get("docLink", "")
                     }
                     logger.info(f"Metadata------------: {result.get('metadata', {}) }")
                     context_documents.append(document_info)

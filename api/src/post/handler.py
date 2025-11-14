@@ -569,27 +569,23 @@ Keep your responses clear, informative, and engaging, ensuring they are derived 
             selected_docs = self._select_optimal_documents(context_documents, user_query)
             context = "\n\n---DOCUMENT SEPARATOR---\n\n".join([doc['content'] for doc in selected_docs])
             
-            # Add source attribution in context
-            source_attribution = "\n\nSources used:\n"
-            for i, doc in enumerate(selected_docs, 1):
-                title = doc.get('metadata', {}).get('title', 'Unknown Document')
-                link = doc.get('metadata', {}).get('docLink', '')
-                
-                # Create clickable markdown link if docLink exists
-                if link:
-                    source_attribution += f"{i}. [{title}]({link})\n"
-                else:
-                    source_attribution += f"{i}. {title}\n"
+            # Build sources text for inclusion in the AI response
+            sources_text = self._build_sources_text(selected_docs)
             
             prompt = f"""{system_instructions}
 
 Context:
 {context}
-{source_attribution}
 
 User Question: {user_query}
 
-Please provide a well-formatted answer based on the context above following the guidelines specified. Reference the source numbers when citing information."""
+Please provide a well-formatted answer based on the context above following the guidelines specified. Reference the source numbers when citing information.
+
+IMPORTANT: After providing your main answer, you MUST include the following sources section exactly as shown:
+
+{sources_text}
+
+This sources section should be included as part of your response to help users access the original documents."""
         else:
             prompt = f"""{system_instructions}
 
@@ -739,6 +735,31 @@ Since no specific context is available from the vector database, please respond 
         
         logger.info(f"Selected {len(selected_docs)} documents for query complexity level")
         return selected_docs if selected_docs else sorted_docs[:2]  # Fallback to top 2
+    
+    def _build_sources_text(self, selected_docs: List[Dict]) -> str:
+        """
+        Build formatted sources text with clickable links for streaming inclusion
+        """
+        if not selected_docs:
+            return ""
+        
+        sources_lines = ["\n\n**Sources:**"]
+        
+        for i, doc in enumerate(selected_docs, 1):
+            metadata = doc.get('metadata', {})
+            title = metadata.get('title', f'Document {i}')
+            doc_link = metadata.get('docLink', '')
+            
+            if doc_link:
+                # Create markdown link format
+                source_line = f"{i}. [{title}]({doc_link})"
+            else:
+                # Just show the title if no link available
+                source_line = f"{i}. {title}"
+            
+            sources_lines.append(source_line)
+        
+        return "\n".join(sources_lines)
     
     def _assess_query_complexity(self, user_query: str) -> str:
         """

@@ -530,9 +530,9 @@ class BedrockKnowledgeBaseWorkflow:
 - Do not provide information not mentioned in the context. Do not add any additional information that is not present in the context.
 
 9. **Source References**:
-- Always include a "**Sources**" section at the end of your response with clickable links to the source documents.
-- Use the provided source links in markdown format for easy clicking.
-- Format as: "**Sources:** [Source 1 Title](link), [Source 2 Title](link)"
+- Always include a "**📚 Sources**" section at the end of your response.
+- Reference source numbers when citing information (e.g., "According to Source 1...")
+- Keep the sources section simple and clean without complex formatting.
 
 Keep your responses clear, informative, and engaging, ensuring they are derived exclusively from the provided context."""
 
@@ -541,22 +541,12 @@ Keep your responses clear, informative, and engaging, ensuring they are derived 
             selected_docs = self._select_optimal_documents(context_documents, user_query)
             context = "\n\n---DOCUMENT SEPARATOR---\n\n".join([doc['content'] for doc in selected_docs])
             
-            # Add source attribution with clickable links
-            source_attribution = "\n\nSources used (clickable links):\n"
+            # Add simple source attribution (without links in context to avoid formatting issues)
+            source_attribution = "\n\nAvailable Sources:\n"
             for i, doc in enumerate(selected_docs, 1):
                 title = doc.get('metadata', {}).get('title', 'Unknown Document')
                 category = doc.get('metadata', {}).get('category', 'General')
-                
-                # Generate clickable link for this document
-                uri = ''
-                location = doc.get('location', {})
-                if 's3Location' in location:
-                    uri = location.get('s3Location', {}).get('uri', '')
-                elif 'uri' in location:
-                    uri = location.get('uri', '')
-                
-                clickable_link = self._generate_source_link(uri, doc.get('metadata', {}))
-                source_attribution += f"{i}. {clickable_link} (Category: {category})\n"
+                source_attribution += f"{i}. {title} (Category: {category})\n"
             
             prompt = f"""{system_instructions}
 
@@ -649,14 +639,13 @@ Since no specific context is available from the vector database, please respond 
                 elif 'uri' in location:
                     uri = location.get('uri', '')
                 
-                # Generate clickable link for the source
-                clickable_link = self._generate_source_link(uri, doc.get('metadata', {}))
-                document_title = doc.get('metadata', {}).get('title', 'Document') or 'Document'
+                # Generate clean source information
+                source_details = self._generate_source_info(uri, doc.get('metadata', {}))
                 
                 source_info = {
                     'uri': uri,
-                    'clickable_link': clickable_link,
-                    'display_title': document_title,
+                    'title': source_details['title'],
+                    'category': source_details['category'],
                     'score': doc.get('score', 0),
                     'type': location.get('type', 'unknown'),
                     'metadata': doc.get('metadata', {}),
@@ -721,55 +710,84 @@ Since no specific context is available from the vector database, please respond 
         logger.info(f"Selected {len(selected_docs)} documents for query complexity level")
         return selected_docs if selected_docs else sorted_docs[:2]  # Fallback to top 2
     
-    def _generate_source_link(self, uri: str, metadata: dict) -> str:
+    def _format_sources_for_response(self, sources_info: List[Dict]) -> List[Dict]:
         """
-        Generate a clickable link for the source document
+        Format sources for the final response with clean clickable links
+        """
+        formatted_sources = []
+        for source in sources_info:
+            try:
+                uri = source.get('uri', '')
+                title = source.get('title', 'Document')
+                
+                # Generate presigned URL for S3 documents
+                clickable_url = ""
+                if uri and uri.startswith('s3://'):
+                    try:
+                        s3_client = boto3.client('s3', region_name=AWS_REGION)
+                        uri_parts = uri.replace('s3://', '').split('/')
+                        bucket_name = uri_parts[0]
+                        object_key = '/'.join(uri_parts[1:])
+                        
+                        clickable_url = s3_client.generate_presigned_url(
+                            'get_object',
+                            Params={'Bucket': bucket_name, 'Key': object_key},
+                            ExpiresIn=3600  # 1 hour
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to generate presigned URL: {str(e)}")
+                        clickable_url = uri
+                else:
+                    clickable_url = uri
+                
+                formatted_source = {
+                    'title': title,
+                    'url': clickable_url,
+                    'category': source.get('category', 'Documentation'),
+                    'score': source.get('score', 0)
+                }
+                formatted_sources.append(formatted_source)
+                
+            except Exception as e:
+                logger.error(f"Error formatting source: {str(e)}")
+                continue
+        
+        return formatted_sources
+    
+    def _generate_source_info(self, uri: str, metadata: dict) -> dict:
+        """
+        Generate clean source information with title and link
         """
         try:
-            if not uri:
-                return ""
-            
-            # Extract document title from metadata or URI
+            # Extract clean document title from metadata
             title = metadata.get('title', '') or metadata.get('name', '')
             if not title:
-                # Extract filename from URI
+                # Extract filename from URI and clean it up
                 if '/' in uri:
-                    title = uri.split('/')[-1]
+                    filename = uri.split('/')[-1]
+                    # Remove file extension and clean up name
+                    title = filename.split('.')[0].replace('_', ' ').replace('-', ' ').title()
                 else:
-                    title = 'Source Document'
+                    title = 'Knowledge Base Document'
             
-            # For S3 URIs, generate presigned URL or construct viewable link
-            if uri.startswith('s3://'):
-                try:
-                    # Generate presigned URL for direct access
-                    s3_client = boto3.client('s3', region_name=AWS_REGION)
-                    
-                    # Parse S3 URI
-                    uri_parts = uri.replace('s3://', '').split('/')
-                    bucket_name = uri_parts[0]
-                    object_key = '/'.join(uri_parts[1:])
-                    
-                    # Generate presigned URL (valid for 1 hour)
-                    presigned_url = s3_client.generate_presigned_url(
-                        'get_object',
-                        Params={'Bucket': bucket_name, 'Key': object_key},
-                        ExpiresIn=3600  # 1 hour
-                    )
-                    
-                    # Return as clickable markdown link
-                    return f"[{title}]({presigned_url})"
-                    
-                except Exception as e:
-                    logger.warning(f"Failed to generate presigned URL for {uri}: {str(e)}")
-                    # Fallback to display URI as text
-                    return f"{title}: {uri}"
-            else:
-                # For other URIs, return as clickable link
-                return f"[{title}]({uri})"
+            # Clean up title
+            title = title.strip()
+            if len(title) > 50:
+                title = title[:47] + "..."
+            
+            return {
+                'title': title,
+                'uri': uri,
+                'category': metadata.get('category', 'Documentation')
+            }
                 
         except Exception as e:
-            logger.error(f"Error generating source link: {str(e)}")
-            return uri or "Source unavailable"
+            logger.error(f"Error generating source info: {str(e)}")
+            return {
+                'title': 'Knowledge Base Document',
+                'uri': uri or '',
+                'category': 'Documentation'
+            }
     
     def _assess_query_complexity(self, user_query: str) -> str:
         """
@@ -1057,15 +1075,20 @@ def create(event, context):
                         "traceId": workflow_result.get('conversation_id', conversation_id)
                     }
                     
+                    # Format sources with clickable links
+                    formatted_sources = bedrock_workflow._format_sources_for_response(
+                        workflow_result.get('sources_info', [])
+                    )
+                    
                     # Create new response format (clean format without nested data)
                     new_format_response = {
                         "userId": user_email,
                         "conversationId": workflow_result.get('conversation_id', conversation_id),
                         "chatHistory": [chat_history_entry],
                         "trace_id": workflow_result.get('conversation_id', conversation_id),
-                        "sources": workflow_result.get('sources_info', []),
+                        "sources": formatted_sources,
                         "contextUsed": workflow_result.get('context_used', False),
-                        "sourcesCount": workflow_result.get('sources_count', 0)
+                        "sourcesCount": len(formatted_sources)
                     }
                     
                     # Final response with data and status at top level

@@ -474,15 +474,13 @@ class BedrockKnowledgeBaseWorkflow:
                 
                 # Extract retrieved content
                 for result in response.get('retrievalResults', []):
-                    print('___________________________________________________')
-                    print(result.get('location', {}))
-                    print('___________________________________________________')
                     document_info = {
                         'content': result.get('content', {}).get('text', ''),
                         'score': result.get('score', 0),  # Relevance score
                         'location': result.get('location', {}),  # Source location
                         'metadata': result.get('metadata', {})  # Additional metadata
                     }
+                    logger.info(f"Metadata------------: {result.get('metadata', {}) }")
                     context_documents.append(document_info)
                     logger.debug(f"Retrieved context snippet: {document_info['content'][:100]}...")
                         

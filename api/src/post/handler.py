@@ -477,7 +477,7 @@ class BedrockKnowledgeBaseWorkflow:
                     metadata = result.get('metadata', {})
                     document_info = {
                         'content': result.get('content', {}).get('text', ''),
-                        # 'score': result.get('score', 0),  # Relevance score
+                        'score': result.get('score', 0),  # Relevance score
                         # 'location': result.get('location', {}),  # Source location
                         # 'metadata': result.get('metadata', {})  # Additional metadata
                         'title': metadata.get("title", "Unknown Title"),

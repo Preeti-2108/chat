@@ -483,8 +483,8 @@ class BedrockKnowledgeBaseWorkflow:
                         'title': metadata.get("title", "Unknown Title"),
                         'doc_link': metadata.get("docLink", "")
                     }
-                    logger.info(f"Metadata------------: {result.get('metadata', {}) }")
                     context_documents.append(document_info)
+                    logger.info(f"context_documents: {context_documents}")
                     logger.debug(f"Retrieved context snippet: {document_info['content'][:100]}...")
                         
                 logger.info(f"Retrieved {len(context_documents)} documents from Knowledge Base")
@@ -561,7 +561,7 @@ Keep your responses clear, informative, and engaging, ensuring they are derived 
             source_attribution = "\n\nSources used:\n"
             for i, doc in enumerate(selected_docs, 1):
                 title = doc.get('metadata', {}).get('title', 'Unknown Document')
-                category = doc.get('metadata', {}).get('category', 'General')
+                category = doc.get('metadata', {}).get('docLink', 'Unknown Link')
                 source_attribution += f"{i}. {title} (Category: {category})\n"
             
             prompt = f"""{system_instructions}

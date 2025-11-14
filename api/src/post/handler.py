@@ -457,9 +457,6 @@ class BedrockKnowledgeBaseWorkflow:
                 
                 # Extract retrieved content
                 for result in response.get('retrievalResults', []):
-                    print('___________________________________________________')
-                    print(result.get('location', {}))
-                    print('___________________________________________________')
                     document_info = {
                         'content': result.get('content', {}).get('text', ''),
                         'score': result.get('score', 0),  # Relevance score
@@ -532,6 +529,11 @@ class BedrockKnowledgeBaseWorkflow:
 - Ensure responses are accurate and solely based on the data in the current context.
 - Do not provide information not mentioned in the context. Do not add any additional information that is not present in the context.
 
+9. **Source References**:
+- Always include a "**Sources**" section at the end of your response with clickable links to the source documents.
+- Use the provided source links in markdown format for easy clicking.
+- Format as: "**Sources:** [Source 1 Title](link), [Source 2 Title](link)"
+
 Keep your responses clear, informative, and engaging, ensuring they are derived exclusively from the provided context."""
 
         if context_documents:
@@ -539,12 +541,22 @@ Keep your responses clear, informative, and engaging, ensuring they are derived 
             selected_docs = self._select_optimal_documents(context_documents, user_query)
             context = "\n\n---DOCUMENT SEPARATOR---\n\n".join([doc['content'] for doc in selected_docs])
             
-            # Add source attribution in context
-            source_attribution = "\n\nSources used:\n"
+            # Add source attribution with clickable links
+            source_attribution = "\n\nSources used (clickable links):\n"
             for i, doc in enumerate(selected_docs, 1):
                 title = doc.get('metadata', {}).get('title', 'Unknown Document')
                 category = doc.get('metadata', {}).get('category', 'General')
-                source_attribution += f"{i}. {title} (Category: {category})\n"
+                
+                # Generate clickable link for this document
+                uri = ''
+                location = doc.get('location', {})
+                if 's3Location' in location:
+                    uri = location.get('s3Location', {}).get('uri', '')
+                elif 'uri' in location:
+                    uri = location.get('uri', '')
+                
+                clickable_link = self._generate_source_link(uri, doc.get('metadata', {}))
+                source_attribution += f"{i}. {clickable_link} (Category: {category})\n"
             
             prompt = f"""{system_instructions}
 
@@ -637,8 +649,14 @@ Since no specific context is available from the vector database, please respond 
                 elif 'uri' in location:
                     uri = location.get('uri', '')
                 
+                # Generate clickable link for the source
+                clickable_link = self._generate_source_link(uri, doc.get('metadata', {}))
+                document_title = doc.get('metadata', {}).get('title', 'Document') or 'Document'
+                
                 source_info = {
                     'uri': uri,
+                    'clickable_link': clickable_link,
+                    'display_title': document_title,
                     'score': doc.get('score', 0),
                     'type': location.get('type', 'unknown'),
                     'metadata': doc.get('metadata', {}),
@@ -702,6 +720,56 @@ Since no specific context is available from the vector database, please respond 
         
         logger.info(f"Selected {len(selected_docs)} documents for query complexity level")
         return selected_docs if selected_docs else sorted_docs[:2]  # Fallback to top 2
+    
+    def _generate_source_link(self, uri: str, metadata: dict) -> str:
+        """
+        Generate a clickable link for the source document
+        """
+        try:
+            if not uri:
+                return ""
+            
+            # Extract document title from metadata or URI
+            title = metadata.get('title', '') or metadata.get('name', '')
+            if not title:
+                # Extract filename from URI
+                if '/' in uri:
+                    title = uri.split('/')[-1]
+                else:
+                    title = 'Source Document'
+            
+            # For S3 URIs, generate presigned URL or construct viewable link
+            if uri.startswith('s3://'):
+                try:
+                    # Generate presigned URL for direct access
+                    s3_client = boto3.client('s3', region_name=AWS_REGION)
+                    
+                    # Parse S3 URI
+                    uri_parts = uri.replace('s3://', '').split('/')
+                    bucket_name = uri_parts[0]
+                    object_key = '/'.join(uri_parts[1:])
+                    
+                    # Generate presigned URL (valid for 1 hour)
+                    presigned_url = s3_client.generate_presigned_url(
+                        'get_object',
+                        Params={'Bucket': bucket_name, 'Key': object_key},
+                        ExpiresIn=3600  # 1 hour
+                    )
+                    
+                    # Return as clickable markdown link
+                    return f"[{title}]({presigned_url})"
+                    
+                except Exception as e:
+                    logger.warning(f"Failed to generate presigned URL for {uri}: {str(e)}")
+                    # Fallback to display URI as text
+                    return f"{title}: {uri}"
+            else:
+                # For other URIs, return as clickable link
+                return f"[{title}]({uri})"
+                
+        except Exception as e:
+            logger.error(f"Error generating source link: {str(e)}")
+            return uri or "Source unavailable"
     
     def _assess_query_complexity(self, user_query: str) -> str:
         """

@@ -474,11 +474,14 @@ class BedrockKnowledgeBaseWorkflow:
                 
                 # Extract retrieved content
                 for result in response.get('retrievalResults', []):
+                    'metadata': result.get('metadata', {})
                     document_info = {
-                        'content': result.get('content', {}).get('text', ''),
-                        'score': result.get('score', 0),  # Relevance score
-                        'location': result.get('location', {}),  # Source location
-                        'metadata': result.get('metadata', {})  # Additional metadata
+                        # 'content': result.get('content', {}).get('text', ''),
+                        # 'score': result.get('score', 0),  # Relevance score
+                        # 'location': result.get('location', {}),  # Source location
+                        # 'metadata': result.get('metadata', {})  # Additional metadata
+                        title = metadata.get("title", "Unknown Title"),
+                        doc_link = metadata.get("docLink", "")
                     }
                     logger.info(f"Metadata------------: {result.get('metadata', {}) }")
                     context_documents.append(document_info)
@@ -637,33 +640,33 @@ Since no specific context is available from the vector database, please respond 
         sources_info = []
         logger.info(f"Processing {len(context_documents)} context documents for source extraction")
         
-        for i, doc in enumerate(context_documents):
-            logger.info(f"Document {i+1} structure: {type(doc)}")
-            logger.info(f"Document {i+1} keys: {doc.keys() if isinstance(doc, dict) else 'Not a dict'}")
+        # for i, doc in enumerate(context_documents):
+        #     logger.info(f"Document {i+1} structure: {type(doc)}")
+        #     logger.info(f"Document {i+1} keys: {doc.keys() if isinstance(doc, dict) else 'Not a dict'}")
             
-            if isinstance(doc, dict):
-                location = doc.get('location', {})
-                logger.info(f"Document {i+1} location: {location}")
+        #     if isinstance(doc, dict):
+        #         location = doc.get('location', {})
+        #         logger.info(f"Document {i+1} location: {location}")
                 
-                # Handle different possible location structures
-                uri = ''
-                if 's3Location' in location:
-                    uri = location.get('s3Location', {}).get('uri', '')
-                elif 'uri' in location:
-                    uri = location.get('uri', '')
+        #         # Handle different possible location structures
+        #         uri = ''
+        #         if 's3Location' in location:
+        #             uri = location.get('s3Location', {}).get('uri', '')
+        #         elif 'uri' in location:
+        #             uri = location.get('uri', '')
                 
-                source_info = {
-                    'uri': uri,
-                    'score': doc.get('score', 0),
-                    'type': location.get('type', 'unknown'),
-                    'metadata': doc.get('metadata', {}),
-                    'location_raw': location  # Include raw location for debugging
-                }
-                sources_info.append(source_info)
-                logger.info(f"Added source info: {source_info}")
+        #         source_info = {
+        #             'uri': uri,
+        #             'score': doc.get('score', 0),
+        #             'type': location.get('type', 'unknown'),
+        #             'metadata': doc.get('metadata', {}),
+        #             'location_raw': location  # Include raw location for debugging
+        #         }
+        #         sources_info.append(source_info)
+        #         logger.info(f"Added source info: {source_info}")
         
-        logger.info(f"Final sources_info: {sources_info}")
-        state["sources_info"] = sources_info
+        # logger.info(f"Final sources_info: {sources_info}")
+        # state["sources_info"] = sources_info
         return state
     
     def _select_optimal_documents(self, context_documents: List[Dict], user_query: str) -> List[Dict]:

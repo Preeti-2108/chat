@@ -605,6 +605,8 @@ Since no specific context is available from the vector database, please respond 
                     streaming_handler.send_start_signal()
                     
                     # Process streaming response
+                    logger.info("Using word-level streaming handler for response")
+                    logger.info(f"Messages sent to model: {messages}")
                     ai_response = streaming_handler.process_word_streaming(
                         self.chat_model.stream(messages)
                     )

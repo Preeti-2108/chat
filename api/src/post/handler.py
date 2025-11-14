@@ -651,16 +651,6 @@ Since no specific context is available from the vector database, please respond 
         
         logger.info(f"Final sources_info: {sources_info}")
         state["sources_info"] = sources_info
-        
-        # Append sources to the AI response
-        current_response = state.get("ai_response", "")
-        if current_response and sources_info:
-            updated_response = self._append_sources_to_response(current_response, sources_info)
-            state["ai_response"] = updated_response
-            # Also update the messages list
-            if state.get("messages"):
-                state["messages"][-1] = AIMessage(content=updated_response)
-        
         return state
     
     def _select_optimal_documents(self, context_documents: List[Dict], user_query: str) -> List[Dict]:
@@ -758,19 +748,6 @@ Since no specific context is available from the vector database, please respond 
                 continue
         
         return formatted_sources
-    
-    def _append_sources_to_response(self, ai_response: str, sources_info: list) -> str:
-        """Append simple source list to the AI response"""
-        if not sources_info:
-            return ai_response
-        
-        # Add sources section to the response
-        sources_section = "\n\n**📚 Sources:**\n"
-        for i, source in enumerate(sources_info, 1):
-            title = source.get('title', 'Document')
-            sources_section += f"{i}. {title}\n"
-        
-        return ai_response + sources_section
     
     def _generate_source_info(self, uri: str, metadata: dict) -> dict:
         """

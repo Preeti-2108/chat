@@ -3,6 +3,7 @@ import json  # Provides methods to work with JSON data
 import uuid  # Provides immutable UUID objects (universally unique identifiers)
 import boto3  # AWS SDK for Python to interact with AWS services
 import logging  # Provides a way to configure and use loggers
+import time  # For timing operations
 import asyncio  # For async operations
 from datetime import datetime  # Provides classes for manipulating dates and times
 from typing import Dict, Any, List
@@ -122,8 +123,13 @@ class WordLevelStreamingHandler:
         self.trace_id = trace_id
         self.full_response = ""
         self.chunk_count = 0
+        self.last_send_time = datetime.now().timestamp()
         self.sent_chunks = set()  # Track sent chunks to avoid duplicates
         self.start_signal_sent = False  # Track if start signal was already sent
+        
+        # Ultra-optimized timing configuration
+        self.min_interval = 0.001  # Ultra-fast: 1ms minimum
+        self.max_interval = 0.005  # Ultra-fast: 5ms maximum
         self.enable_word_breaking = True
         
     def send_streaming_chunk(self, chunk: str, is_final: bool = False):
@@ -204,15 +210,6 @@ class WordLevelStreamingHandler:
         except Exception as e:
             logger.error(f"Error sending streaming error signal: {str(e)}")
     
-    def send_text(self, text: str):
-        """Send text content as a streaming chunk."""
-        try:
-            self.full_response += text
-            self.send_streaming_chunk(text)
-            logger.info(f"Sent additional text content to {self.connection_id}: {text[:50]}...")
-        except Exception as e:
-            logger.error(f"Error sending text content: {str(e)}")
-    
     def process_word_streaming(self, llm_response_generator):
         """
         Process the streaming response from the LLM and send individual words to the client.
@@ -249,8 +246,8 @@ class WordLevelStreamingHandler:
                     if chunk_count == 1:
                         self._send_immediate_chunk(chunk_text)
                     else:
-                        # Process for word-level streaming immediately
-                        self._process_word_chunks_immediately(chunk_text)
+                        # Process for word-level streaming with optimized timing
+                        self._process_word_chunks_optimized(chunk_text)
             
             # Send final chunk
             self.send_streaming_chunk("", is_final=True)
@@ -268,26 +265,37 @@ class WordLevelStreamingHandler:
         """Send the first chunk immediately for faster perceived response."""
         try:
             self.send_streaming_chunk(text)
+            self.last_send_time = datetime.now().timestamp()
             logger.debug(f"Sent immediate chunk: '{text}' to {self.connection_id}")
         except Exception as e:
             logger.error(f"Error sending immediate chunk: {str(e)}")
     
-    def _process_word_chunks_immediately(self, text: str):
-        """Process text and send individual words immediately without delay."""
+    def _process_word_chunks_optimized(self, text: str):
+        """Process text and send individual words with optimized timing."""
         words = self._break_into_words(text) if self.enable_word_breaking else text.split()
         
         for word in words:
             if word.strip():
-                self._send_word_immediately(word)
+                self._send_word_with_optimized_timing(word)
     
-    def _send_word_immediately(self, word: str):
-        """Send a word immediately without any delay for fastest streaming."""
+    def _send_word_with_optimized_timing(self, word: str):
+        """Send a word with optimized timing for faster response."""
+        current_time = datetime.now().timestamp()
+        time_since_last = current_time - self.last_send_time
+        
+        # Ultra-fast streaming - minimal delay for natural feel
+        optimized_min_interval = max(0.0005, self.min_interval * 0.05)  # 95% faster
+        
+        if time_since_last < optimized_min_interval:
+            time.sleep(optimized_min_interval - time_since_last)
+        
         word_hash = hash(word)
         
         if word_hash not in self.sent_chunks:
             self.send_streaming_chunk(word + " ")  # Add space for natural separation
             self.sent_chunks.add(word_hash)
-            logger.debug(f"Sent word immediately: '{word}'")
+            self.last_send_time = datetime.now().timestamp()
+            logger.debug(f"Sent optimized word: '{word}'")
     
     def _break_into_words(self, text: str) -> List[str]:
         """Advanced word breaking for better streaming."""
@@ -466,6 +474,9 @@ class BedrockKnowledgeBaseWorkflow:
                 
                 # Extract retrieved content
                 for result in response.get('retrievalResults', []):
+                    print('___________________________________________________')
+                    print(result.get('location', {}))
+                    print('___________________________________________________')
                     document_info = {
                         'content': result.get('content', {}).get('text', ''),
                         'score': result.get('score', 0),  # Relevance score
@@ -596,21 +607,11 @@ Since no specific context is available from the vector database, please respond 
                     ai_response = streaming_handler.process_word_streaming(
                         self.chat_model.stream(messages)
                     )
-                    
-                    # After streaming ends → send sources
-                    sources_text = self._build_sources_text(selected_docs)
-                    if sources_text:
-                        streaming_handler.send_text(sources_text)
                 else:
                     # Fallback to regular invoke if no WebSocket info or streaming disabled
                     logger.info("Using regular invoke (streaming disabled or no WebSocket info)")
                     response = self.chat_model.invoke(messages)
                     ai_response = response.content if hasattr(response, 'content') else str(response)
-                    
-                    # Add sources to non-streaming response
-                    sources_text = self._build_sources_text(selected_docs)
-                    if sources_text:
-                        ai_response += sources_text
                 
                 logger.info("Successfully generated AI response")
                 
@@ -718,31 +719,6 @@ Since no specific context is available from the vector database, please respond 
         
         logger.info(f"Selected {len(selected_docs)} documents for query complexity level")
         return selected_docs if selected_docs else sorted_docs[:2]  # Fallback to top 2
-    
-    def _build_sources_text(self, selected_docs):
-        """
-        Build formatted sources text with clickable links
-        """
-        if not selected_docs:
-            return ""
-
-        sources_text = "\n\n📚 **Sources Used:**\n\n"
-        
-        for i, doc in enumerate(selected_docs, 1):
-            title = doc.get("metadata", {}).get("title", f"Document {i}")
-            link = doc.get("location", {}).get("s3Location", {}).get("uri", "")
-
-            # fallback link
-            if not link:
-                link = doc.get("metadata", {}).get("source", "")
-
-            # Make clickable markdown link
-            if link:
-                sources_text += f"{i}. [{title}]({link})\n"
-            else:
-                sources_text += f"{i}. {title}\n"
-
-        return sources_text
     
     def _assess_query_complexity(self, user_query: str) -> str:
         """

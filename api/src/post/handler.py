@@ -210,6 +210,15 @@ class WordLevelStreamingHandler:
         except Exception as e:
             logger.error(f"Error sending streaming error signal: {str(e)}")
     
+    def send_text(self, text: str):
+        """Send text content as a streaming chunk."""
+        try:
+            self.full_response += text
+            self.send_streaming_chunk(text)
+            logger.info(f"Sent additional text content to {self.connection_id}: {text[:50]}...")
+        except Exception as e:
+            logger.error(f"Error sending text content: {str(e)}")
+    
     def process_word_streaming(self, llm_response_generator):
         """
         Process the streaming response from the LLM and send individual words to the client.
@@ -479,9 +488,9 @@ class BedrockKnowledgeBaseWorkflow:
                         'content': result.get('content', {}).get('text', ''),
                         'score': result.get('score', 0),  # Relevance score
                         # 'location': result.get('location', {}),  # Source location
-                        # 'metadata': result.get('metadata', {})  # Additional metadata
-                        'title': metadata.get("title", "Unknown Title"),
-                        'doc_link': metadata.get("docLink", "")
+                        'metadata': result.get('metadata', {})  # Additional metadata
+                        # 'title': metadata.get("title", "Unknown Title"),
+                        # 'doc_link': metadata.get("docLink", "")
                     }
                     context_documents.append(document_info)
                     logger.info(f"context_documents: {context_documents}")
@@ -552,6 +561,9 @@ class BedrockKnowledgeBaseWorkflow:
 
 Keep your responses clear, informative, and engaging, ensuring they are derived exclusively from the provided context."""
 
+        # Initialize selected_docs
+        selected_docs = []
+        
         if context_documents:
             # Enhanced context selection for complex queries
             selected_docs = self._select_optimal_documents(context_documents, user_query)
@@ -561,8 +573,13 @@ Keep your responses clear, informative, and engaging, ensuring they are derived 
             source_attribution = "\n\nSources used:\n"
             for i, doc in enumerate(selected_docs, 1):
                 title = doc.get('metadata', {}).get('title', 'Unknown Document')
-                category = doc.get('metadata', {}).get('docLink', 'Unknown Link')
-                source_attribution += f"{i}. {title} (Category: {category})\n"
+                link = doc.get('metadata', {}).get('docLink', '')
+                
+                # Create clickable markdown link if docLink exists
+                if link:
+                    source_attribution += f"{i}. [{title}]({link})\n"
+                else:
+                    source_attribution += f"{i}. {title}\n"
             
             prompt = f"""{system_instructions}
 

@@ -204,6 +204,15 @@ class WordLevelStreamingHandler:
         except Exception as e:
             logger.error(f"Error sending streaming error signal: {str(e)}")
     
+    def send_text(self, text: str):
+        """Send text content as a streaming chunk."""
+        try:
+            self.full_response += text
+            self.send_streaming_chunk(text)
+            logger.info(f"Sent additional text content to {self.connection_id}: {text[:50]}...")
+        except Exception as e:
+            logger.error(f"Error sending text content: {str(e)}")
+    
     def process_word_streaming(self, llm_response_generator):
         """
         Process the streaming response from the LLM and send individual words to the client.
@@ -587,11 +596,21 @@ Since no specific context is available from the vector database, please respond 
                     ai_response = streaming_handler.process_word_streaming(
                         self.chat_model.stream(messages)
                     )
+                    
+                    # After streaming ends → send sources
+                    sources_text = self._build_sources_text(selected_docs)
+                    if sources_text:
+                        streaming_handler.send_text(sources_text)
                 else:
                     # Fallback to regular invoke if no WebSocket info or streaming disabled
                     logger.info("Using regular invoke (streaming disabled or no WebSocket info)")
                     response = self.chat_model.invoke(messages)
                     ai_response = response.content if hasattr(response, 'content') else str(response)
+                    
+                    # Add sources to non-streaming response
+                    sources_text = self._build_sources_text(selected_docs)
+                    if sources_text:
+                        ai_response += sources_text
                 
                 logger.info("Successfully generated AI response")
                 
@@ -699,6 +718,31 @@ Since no specific context is available from the vector database, please respond 
         
         logger.info(f"Selected {len(selected_docs)} documents for query complexity level")
         return selected_docs if selected_docs else sorted_docs[:2]  # Fallback to top 2
+    
+    def _build_sources_text(self, selected_docs):
+        """
+        Build formatted sources text with clickable links
+        """
+        if not selected_docs:
+            return ""
+
+        sources_text = "\n\n📚 **Sources Used:**\n\n"
+        
+        for i, doc in enumerate(selected_docs, 1):
+            title = doc.get("metadata", {}).get("title", f"Document {i}")
+            link = doc.get("location", {}).get("s3Location", {}).get("uri", "")
+
+            # fallback link
+            if not link:
+                link = doc.get("metadata", {}).get("source", "")
+
+            # Make clickable markdown link
+            if link:
+                sources_text += f"{i}. [{title}]({link})\n"
+            else:
+                sources_text += f"{i}. {title}\n"
+
+        return sources_text
     
     def _assess_query_complexity(self, user_query: str) -> str:
         """

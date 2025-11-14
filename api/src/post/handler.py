@@ -482,19 +482,21 @@ class BedrockKnowledgeBaseWorkflow:
                 )
                 
                 # Extract retrieved content
-                for result in response.get('retrievalResults', []):
+                for i, result in enumerate(response.get('retrievalResults', []), 1):
                     metadata = result.get('metadata', {})
+                    content_text = result.get('content', {}).get('text', '')
+                    score = result.get('score', 0)
+                    
                     document_info = {
-                        'content': result.get('content', {}).get('text', ''),
-                        'score': result.get('score', 0),  # Relevance score
-                        # 'location': result.get('location', {}),  # Source location
+                        'content': content_text,
+                        'score': score,  # Relevance score
                         'metadata': result.get('metadata', {})  # Additional metadata
-                        # 'title': metadata.get("title", "Unknown Title"),
-                        # 'doc_link': metadata.get("docLink", "")
                     }
                     context_documents.append(document_info)
-                    logger.info(f"context_documents: {context_documents}")
-                    logger.debug(f"Retrieved context snippet: {document_info['content'][:100]}...")
+                    
+                    # Enhanced logging for debugging
+                    logger.info(f"Document {i}: Title='{metadata.get('title', 'N/A')}', Score={score:.3f}, Content_length={len(content_text)}")
+                    logger.debug(f"Document {i} content preview: {content_text[:200]}...")
                         
                 logger.info(f"Retrieved {len(context_documents)} documents from Knowledge Base")
                         
@@ -527,7 +529,8 @@ class BedrockKnowledgeBaseWorkflow:
 
 1. **Context-Based Information**:
 - Use only the data available in the current context from the vector database.
-- If the required information is not present in the context, respond with: "I am not able to obtain an answer for this particular query."
+- If you have context documents but they don't directly answer the specific question, try to provide related information from the context that might be helpful.
+- Only respond with "I am not able to obtain an answer for this particular query" if the context is completely unrelated to the question or if no context is provided.
 
 2. **Detailed Information**:
 - Provide thorough and well-organized responses using the context data.
@@ -569,10 +572,18 @@ Keep your responses clear, informative, and engaging, ensuring they are derived 
             selected_docs = self._select_optimal_documents(context_documents, user_query)
             context = "\n\n---DOCUMENT SEPARATOR---\n\n".join([doc['content'] for doc in selected_docs])
             
-            # Build sources text for inclusion in the AI response
-            sources_text = self._build_sources_text(selected_docs)
+            # Log the context for debugging
+            logger.info(f"Context documents found: {len(context_documents)}")
+            logger.info(f"Selected documents: {len(selected_docs)}")
+            logger.info(f"Context content length: {len(context)} characters")
+            logger.info(f"First 200 chars of context: {context[:200]}...")
             
-            prompt = f"""{system_instructions}
+            # Check if we have meaningful content
+            if context.strip() and len(context.strip()) > 10:
+                # Build sources text for inclusion in the AI response
+                sources_text = self._build_sources_text(selected_docs)
+                
+                prompt = f"""{system_instructions}
 
 Context:
 {context}
@@ -586,6 +597,14 @@ IMPORTANT: After providing your main answer, you MUST include the following sour
 {sources_text}
 
 This sources section should be included as part of your response to help users access the original documents."""
+            else:
+                # No meaningful content found in documents
+                logger.warning("Documents retrieved but no meaningful content found")
+                prompt = f"""{system_instructions}
+
+User Question: {user_query}
+
+Since the retrieved documents do not contain sufficient information to answer your query, please respond with: "I am not able to obtain an answer for this particular query." and suggest the user provide more specific information or try rephrasing their question."""
         else:
             prompt = f"""{system_instructions}
 
@@ -688,6 +707,9 @@ Since no specific context is available from the vector database, please respond 
         """
         Select optimal documents based on query complexity and token limits
         """
+        if not context_documents:
+            return []
+            
         # Simple query indicators (can be enhanced with NLP analysis)
         simple_indicators = ['what is', 'how to', 'define', 'explain']
         complex_indicators = ['troubleshoot', 'issue', 'problem', 'error', 'failure', 'multiple', 'compare', 'analyze']
@@ -704,37 +726,58 @@ Since no specific context is available from the vector database, please respond 
         # Sort documents by relevance score (highest first)
         sorted_docs = sorted(context_documents, key=lambda x: x.get('score', 0), reverse=True)
         
+        # Log the scores for debugging
+        logger.info("Document scores: " + ", ".join([f"{doc.get('score', 0):.3f}" for doc in sorted_docs[:5]]))
+        
         for doc in sorted_docs:
-            content = doc.get('content', '')
+            content = doc.get('content', '').strip()
+            doc_score = doc.get('score', 0)
+            
+            # Skip documents with no content
+            if not content or len(content) < 10:
+                logger.warning(f"Skipping document with insufficient content (length: {len(content)})")
+                continue
+            
             doc_tokens = len(content) / 4  # Rough token estimation
             
             # Decision logic based on query complexity
             if is_complex_query:
                 # For complex queries, prioritize more documents up to token limit
-                if current_tokens + doc_tokens <= max_context_tokens and len(selected_docs) < 4:
+                # Lower the score threshold for complex queries
+                if current_tokens + doc_tokens <= max_context_tokens and len(selected_docs) < 4 and doc_score > 0.3:
                     selected_docs.append(doc)
                     current_tokens += doc_tokens
-                    logger.info(f"Complex query: Added document with score {doc.get('score', 0):.3f}")
+                    logger.info(f"Complex query: Added document with score {doc_score:.3f}")
             elif is_simple_query:
                 # For simple queries, use fewer but highest-quality documents
-                if len(selected_docs) < 1 or (len(selected_docs) < 2 and doc.get('score', 0) > 0.7):
+                # Be more selective for simple queries
+                if len(selected_docs) < 1 or (len(selected_docs) < 2 and doc_score > 0.5):
                     selected_docs.append(doc)
                     current_tokens += doc_tokens
-                    logger.info(f"Simple query: Added high-score document {doc.get('score', 0):.3f}")
+                    logger.info(f"Simple query: Added high-score document {doc_score:.3f}")
             else:
                 # Default behavior for moderate complexity
-                if len(selected_docs) < 2:
+                # Use a moderate threshold
+                if len(selected_docs) < 3 and doc_score > 0.4:
                     selected_docs.append(doc)
                     current_tokens += doc_tokens
-                    logger.info(f"Default: Added document with score {doc.get('score', 0):.3f}")
+                    logger.info(f"Default: Added document with score {doc_score:.3f}")
             
             # Stop if we've reached reasonable limits
             if current_tokens >= max_context_tokens:
                 logger.info(f"Token limit reached. Using {len(selected_docs)} documents.")
                 break
         
-        logger.info(f"Selected {len(selected_docs)} documents for query complexity level")
-        return selected_docs if selected_docs else sorted_docs[:2]  # Fallback to top 2
+        # If no documents meet the score threshold, take the best one anyway
+        if not selected_docs and sorted_docs:
+            best_doc = sorted_docs[0]
+            if best_doc.get('content', '').strip():
+                selected_docs.append(best_doc)
+                logger.info(f"Fallback: Added best document with score {best_doc.get('score', 0):.3f}")
+        
+        scores_list = [f"{doc.get('score', 0):.3f}" for doc in selected_docs]
+        logger.info(f"Selected {len(selected_docs)} documents for query. Scores: {scores_list}")
+        return selected_docs
     
     def _build_sources_text(self, selected_docs: List[Dict]) -> str:
         """
@@ -743,7 +786,7 @@ Since no specific context is available from the vector database, please respond 
         if not selected_docs:
             return ""
         
-        sources_lines = ["\n\n**Sources:**"]
+        sources_lines = ["\n\n**Source[s]:**"]
         
         for i, doc in enumerate(selected_docs, 1):
             metadata = doc.get('metadata', {})

@@ -343,8 +343,10 @@ Since no specific context is available from the vector database, please respond 
                 messages = [HumanMessage(content=prompt)]
                 
                 logger.info("Invoking Azure OpenAI chat model...")
+                logger.info(f"Prompt sent to model: {messages}")
                 # Invoke the Azure OpenAI chat model
                 response = self.chat_model.invoke(messages)
+                logger.info(f"Model response received: {response}")
                 ai_response = response.content if hasattr(response, 'content') else str(response)
                 
                 logger.info("Successfully generated AI response")

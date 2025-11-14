@@ -524,17 +524,6 @@ class BedrockKnowledgeBaseWorkflow:
         context_documents = state.get("context_documents", [])
         conversation_id = state.get("conversation_id", "")
         
-        # Handle generic greetings and simple queries
-        generic_queries = ['hello', 'hi', 'hey', 'good morning', 'good afternoon', 'good evening', 'thank you', 'thanks']
-        if user_query.lower().strip() in generic_queries:
-            ai_response = f"Hello! 👋 I'm your AI assistant. I can help you with questions about your knowledge base. What would you like to know?"
-            state["ai_response"] = ai_response
-            state["messages"] = state.get("messages", []) + [
-                HumanMessage(content=user_query),
-                AIMessage(content=ai_response)
-            ]
-            return state
-        
         # Prepare context-aware prompt with detailed system instructions
         system_instructions = """You are an AI assistant designed to provide accurate and comprehensive answers based on information from the vector database. Follow these guidelines:
 
@@ -589,8 +578,8 @@ Keep your responses clear, informative, and engaging, ensuring they are derived 
             logger.info(f"Context content length: {len(context)} characters")
             logger.info(f"First 200 chars of context: {context[:200]}...")
             
-            # Check if we have meaningful content and it's not corrupted
-            if context.strip() and len(context.strip()) > 10 and self._is_content_valid(context):
+            # Check if we have meaningful content
+            if context.strip() and len(context.strip()) > 10:
                 # Build sources text for inclusion in the AI response
                 sources_text = self._build_sources_text(selected_docs)
                 
@@ -762,14 +751,14 @@ Since no specific context is available from the vector database, please respond 
             elif is_simple_query:
                 # For simple queries, use fewer but highest-quality documents
                 # Be more selective for simple queries
-                if len(selected_docs) < 1 or (len(selected_docs) < 2 and doc_score > 0.7):
+                if len(selected_docs) < 1 or (len(selected_docs) < 2 and doc_score > 0.5):
                     selected_docs.append(doc)
                     current_tokens += doc_tokens
                     logger.info(f"Simple query: Added high-score document {doc_score:.3f}")
             else:
                 # Default behavior for moderate complexity
                 # Use a moderate threshold
-                if len(selected_docs) < 3 and doc_score > 0.6:
+                if len(selected_docs) < 3 and doc_score > 0.4:
                     selected_docs.append(doc)
                     current_tokens += doc_tokens
                     logger.info(f"Default: Added document with score {doc_score:.3f}")
@@ -789,44 +778,6 @@ Since no specific context is available from the vector database, please respond 
         scores_list = [f"{doc.get('score', 0):.3f}" for doc in selected_docs]
         logger.info(f"Selected {len(selected_docs)} documents for query. Scores: {scores_list}")
         return selected_docs
-    
-    def _is_content_valid(self, content: str) -> bool:
-        """
-        Validate if content is meaningful and not corrupted
-        """
-        # Check for signs of corrupted content
-        corruption_indicators = [
-            'ey J 1', 'https ://', 'UZ s ZU', 'b 20 v',  # Base64-like patterns
-            'RF', 'VV', 'TW', 'JK', 'HD',  # Random uppercase pairs
-        ]
-        
-        # Check if content has corruption indicators
-        corruption_count = sum(1 for indicator in corruption_indicators if indicator in content)
-        
-        # Check ratios
-        if len(content) > 0:
-            uppercase_ratio = len([c for c in content if c.isupper()]) / len(content)
-            space_ratio = content.count(' ') / len(content) if len(content) > 0 else 0
-            
-            if uppercase_ratio > 0.3 or space_ratio > 0.8:
-                corruption_count += 1
-        
-        if corruption_count > 2:
-            logger.warning(f"Content appears corrupted. Indicators found: {corruption_count}")
-            return False
-        
-        # Check for reasonable text patterns
-        words = content.split()
-        if len(words) < 3:
-            return False
-            
-        # Check for reasonable word length distribution
-        avg_word_length = sum(len(word) for word in words) / len(words)
-        if avg_word_length > 15 or avg_word_length < 2:
-            logger.warning(f"Unusual word length distribution: {avg_word_length}")
-            return False
-            
-        return True
     
     def _build_sources_text(self, selected_docs: List[Dict]) -> str:
         """

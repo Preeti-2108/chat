@@ -529,11 +529,6 @@ class BedrockKnowledgeBaseWorkflow:
 - Ensure responses are accurate and solely based on the data in the current context.
 - Do not provide information not mentioned in the context. Do not add any additional information that is not present in the context.
 
-9. **Source References**:
-- Always include a "**📚 Sources**" section at the end of your response.
-- Reference source numbers when citing information (e.g., "According to Source 1...")
-- Keep the sources section simple and clean without complex formatting.
-
 Keep your responses clear, informative, and engaging, ensuring they are derived exclusively from the provided context."""
 
         if context_documents:
@@ -657,7 +652,7 @@ Since no specific context is available from the vector database, please respond 
         logger.info(f"Final sources_info: {sources_info}")
         state["sources_info"] = sources_info
         
-        # Append clickable sources to the AI response
+        # Append sources to the AI response
         current_response = state.get("ai_response", "")
         if current_response and sources_info:
             updated_response = self._append_sources_to_response(current_response, sources_info)
@@ -764,27 +759,8 @@ Since no specific context is available from the vector database, please respond 
         
         return formatted_sources
     
-    def _generate_clickable_url(self, uri: str) -> str:
-        """Generate clickable presigned URL for S3 documents"""
-        try:
-            if uri and uri.startswith('s3://'):
-                s3_client = boto3.client('s3', region_name=AWS_REGION)
-                uri_parts = uri.replace('s3://', '').split('/')
-                bucket_name = uri_parts[0]
-                object_key = '/'.join(uri_parts[1:])
-                
-                return s3_client.generate_presigned_url(
-                    'get_object',
-                    Params={'Bucket': bucket_name, 'Key': object_key},
-                    ExpiresIn=3600  # 1 hour
-                )
-            return uri
-        except Exception as e:
-            logger.warning(f"Failed to generate presigned URL: {str(e)}")
-            return uri
-    
     def _append_sources_to_response(self, ai_response: str, sources_info: list) -> str:
-        """Append clickable source links to the AI response"""
+        """Append simple source list to the AI response"""
         if not sources_info:
             return ai_response
         
@@ -792,13 +768,7 @@ Since no specific context is available from the vector database, please respond 
         sources_section = "\n\n**📚 Sources:**\n"
         for i, source in enumerate(sources_info, 1):
             title = source.get('title', 'Document')
-            uri = source.get('uri', '')
-            clickable_url = self._generate_clickable_url(uri)
-            
-            if clickable_url:
-                sources_section += f"{i}. [{title}]({clickable_url})\n"
-            else:
-                sources_section += f"{i}. {title}\n"
+            sources_section += f"{i}. {title}\n"
         
         return ai_response + sources_section
     

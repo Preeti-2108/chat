@@ -225,6 +225,32 @@ class WordLevelStreamingHandler:
         except Exception as e:
             logger.error(f"Error sending text content: {str(e)}")
     
+    def _stream_greeting_response(self, greeting_text: str):
+        """Stream greeting response word by word for consistent UX"""
+        try:
+            # Break greeting into words for streaming
+            words = greeting_text.split()
+            
+            for i, word in enumerate(words):
+                # Add space except for last word
+                word_with_space = word + " " if i < len(words) - 1 else word
+                
+                # Stream each word with slight delay for natural feel
+                self.send_streaming_chunk(word_with_space)
+                self.full_response += word_with_space
+                
+                # Small delay between words (faster than AI responses)
+                time.sleep(0.03)  # 30ms delay for greeting words
+            
+            # Send final signal
+            self.send_streaming_chunk("", is_final=True)
+            logger.info(f"Completed streaming greeting: {len(words)} words")
+            
+        except Exception as e:
+            logger.error(f"Error streaming greeting response: {e}")
+            # Fallback: send complete response at once
+            self.send_streaming_chunk(greeting_text, is_final=True)
+    
     def process_word_streaming(self, llm_response_generator):
         """
         Process the streaming response from the LLM and send individual words to the client.
@@ -678,9 +704,47 @@ class BedrockKnowledgeBaseWorkflow:
         context_documents = state.get("context_documents", [])
         conversation_id = state.get("conversation_id", "")
         
-        # Handle greetings without using Bedrock context (faster and cheaper)
+        # Handle greetings with streaming (faster and cheaper - no Bedrock context)
         if self._is_greeting_query(user_query):
             greeting_response = self._get_greeting_response(user_query)
+            
+            # Stream the greeting response if WebSocket available
+            connection_info = state.get("websocket_connection", {})
+            connection_id = connection_info.get("connectionId")
+            url = connection_info.get("url")
+            
+            if connection_id and url and ENABLE_WEBSOCKET_STREAMING:
+                try:
+                    # Use streaming for greeting responses too
+                    streaming_handler = WordLevelStreamingHandler(
+                        connection_id=connection_id,
+                        websocket_url=url,
+                        conversation_id=conversation_id,
+                        trace_id=conversation_id
+                    )
+                    
+                    # Send start signal
+                    streaming_handler.send_start_signal()
+                    
+                    # Stream the greeting response word by word (same as AI responses)
+                    logger.info("Streaming greeting response word-by-word")
+                    streaming_handler._stream_greeting_response(greeting_response)
+                    
+                except Exception as stream_error:
+                    logger.warning(f"Error streaming greeting: {stream_error}")
+                    # Fallback: send complete greeting response via WebSocket
+                    try:
+                        greeting_payload = {
+                            "type": "greeting_response",
+                            "message": greeting_response,
+                            "is_final": True,
+                            "conversation_id": conversation_id
+                        }
+                        send_to_client(connection_id, json.dumps(greeting_payload), url)
+                    except Exception as fallback_error:
+                        logger.error(f"Error sending fallback greeting: {fallback_error}")
+            else:
+                logger.info("No WebSocket streaming for greeting - will be handled by main response")
             
             # Use LangGraph's message handling for greetings
             new_messages = [

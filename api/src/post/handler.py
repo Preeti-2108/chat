@@ -2152,20 +2152,102 @@ def create(event, context):
                 else:
                     # Workflow failed, but continue with regular processing
                     logger.warning(f"LangGraph workflow failed: {workflow_result.get('error', 'Unknown error')}")
-                    validation_schema['datas']['aiResponse'] = 'AI processing temporarily unavailable'
+                    error_message = 'AI processing temporarily unavailable'
+                    validation_schema['datas']['aiResponse'] = error_message
                     validation_schema['datas']['contextUsed'] = False
                     validation_schema['datas']['sourcesCount'] = 0
                     validation_schema['datas']['modelUsed'] = 'AZURE_OPENAI_GPT_4O'
                     validation_schema['datas']['conversationId'] = conversation_id
                     
+                    # Stream the error message for consistent UX
+                    if connectionId and url and ENABLE_WEBSOCKET_STREAMING:
+                        try:
+                            error_handler = WordLevelStreamingHandler(
+                                connection_id=connectionId,
+                                websocket_url=url,
+                                conversation_id=conversation_id,
+                                trace_id=conversation_id
+                            )
+                            error_handler.send_start_signal()
+                            error_handler._stream_greeting_response(error_message)
+                            logger.info("✅ Streamed 'AI processing temporarily unavailable' error message")
+                        except Exception as stream_error:
+                            logger.error(f"Failed to stream workflow error message: {stream_error}")
+                    
+                    # Send error response via WebSocket
+                    error_response = {
+                        "data": {
+                            "userId": email,
+                            "conversationId": conversation_id,
+                            "chatHistory": [{
+                                "user": user_query,
+                                "aiAssistant": error_message,
+                                "traceId": conversation_id
+                            }],
+                            "sessionMessages": [],
+                            "trace_id": conversation_id,
+                            "sources": [],
+                            "contextUsed": False,
+                            "sourcesCount": 0
+                        },
+                        "status": 500
+                    }
+                    
+                    try:
+                        send_to_client(connectionId, json.dumps(error_response), url)
+                        logger.info("✅ Sent workflow error response via WebSocket")
+                    except Exception as ws_error:
+                        logger.error(f"Failed to send workflow error response: {ws_error}")
+                    
             except Exception as workflow_err:
                 logger.error(f"LangGraph workflow execution error: {workflow_err}")
                 # Continue with regular processing even if AI workflow fails
-                validation_schema['datas']['aiResponse'] = 'AI processing encountered an error'
+                error_message = 'AI processing encountered an error'
+                validation_schema['datas']['aiResponse'] = error_message
                 validation_schema['datas']['contextUsed'] = False
                 validation_schema['datas']['sourcesCount'] = 0
                 validation_schema['datas']['modelUsed'] = 'AZURE_OPENAI_GPT_4O'
                 validation_schema['datas']['conversationId'] = conversation_id
+                
+                # Stream the error message for consistent UX
+                if connectionId and url and ENABLE_WEBSOCKET_STREAMING:
+                    try:
+                        error_handler = WordLevelStreamingHandler(
+                            connection_id=connectionId,
+                            websocket_url=url,
+                            conversation_id=conversation_id,
+                            trace_id=conversation_id
+                        )
+                        error_handler.send_start_signal()
+                        error_handler._stream_greeting_response(error_message)
+                        logger.info("✅ Streamed 'AI processing encountered an error' message")
+                    except Exception as stream_error:
+                        logger.error(f"Failed to stream workflow exception message: {stream_error}")
+                
+                # Send error response via WebSocket
+                error_response = {
+                    "data": {
+                        "userId": email,
+                        "conversationId": conversation_id,
+                        "chatHistory": [{
+                            "user": user_query,
+                            "aiAssistant": error_message,
+                            "traceId": conversation_id
+                        }],
+                        "sessionMessages": [],
+                        "trace_id": conversation_id,
+                        "sources": [],
+                        "contextUsed": False,
+                        "sourcesCount": 0
+                    },
+                    "status": 500
+                }
+                
+                try:
+                    send_to_client(connectionId, json.dumps(error_response), url)
+                    logger.info("✅ Sent workflow exception response via WebSocket")
+                except Exception as ws_error:
+                    logger.error(f"Failed to send workflow exception response: {ws_error}")
         else:
             logger.warning("No query provided for AI processing")
             validation_schema['datas']['conversationId'] = conversation_id

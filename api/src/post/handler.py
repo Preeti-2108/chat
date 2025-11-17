@@ -890,6 +890,27 @@ User Question: {user_query}
 
 Since the retrieved documents do not contain sufficient information to answer your query, please respond with: "I am not able to obtain an answer for this particular query." and suggest the user provide more specific information or try rephrasing their question."""
         else:
+            # No context available - check if we should use direct streaming response
+            connection_info = state.get("websocket_connection", {})
+            connection_id = connection_info.get("connectionId")
+            url = connection_info.get("url")
+            
+            # Option 1: Direct streaming of no-answer response (faster)
+            if connection_id and url and ENABLE_WEBSOCKET_STREAMING and not self.chat_model:
+                logger.info("No context and no Azure OpenAI - streaming direct no-answer response")
+                ai_response = self._generate_and_stream_no_answer_response(
+                    connection_id, url, conversation_id, has_context=False
+                )
+                state["ai_response"] = ai_response
+                # Update LangGraph messages
+                new_messages = [
+                    HumanMessage(content=user_query),
+                    AIMessage(content=ai_response)
+                ]
+                state["messages"] = add_messages(state.get("messages", []), new_messages)
+                return state
+            
+            # Option 2: Use Azure OpenAI with system prompt (normal flow)
             prompt = f"""{system_instructions}
 
 User Question: {user_query}
@@ -1350,6 +1371,32 @@ Since no specific context is available from the vector database, please respond 
         
         # Default greeting response
         return "Hello! 👋 How can I help you today?"
+
+    def _generate_and_stream_no_answer_response(self, connection_id: str, url: str, conversation_id: str, has_context: bool = False) -> str:
+        """
+        Generate and stream a "no answer" response when the AI cannot find relevant information
+        """
+        if has_context:
+            no_answer_response = "I am not able to obtain an answer for this particular query based on the available documents. The information in our knowledge base doesn't seem to directly address your question. Could you please provide more specific details or try rephrasing your question?"
+        else:
+            no_answer_response = "I am not able to obtain an answer for this particular query as I don't have relevant information in our knowledge base. Could you please provide more specific details or try rephrasing your question to help me assist you better?"
+        
+        # Stream the no-answer response
+        if connection_id and url and ENABLE_WEBSOCKET_STREAMING:
+            try:
+                no_answer_handler = WordLevelStreamingHandler(
+                    connection_id=connection_id,
+                    websocket_url=url,
+                    conversation_id=conversation_id,
+                    trace_id=conversation_id
+                )
+                no_answer_handler.send_start_signal()
+                no_answer_handler._stream_greeting_response(no_answer_response)
+                logger.info("Successfully streamed no-answer response")
+            except Exception as stream_error:
+                logger.error(f"Failed to stream no-answer response: {stream_error}")
+        
+        return no_answer_response
     
     def _assess_query_complexity(self, user_query: str) -> str:
         """

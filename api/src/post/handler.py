@@ -685,9 +685,22 @@ Since no specific context is available from the vector database, please respond 
             AIMessage(content=ai_response)
         ]
         
-        # Extract source information from context documents
+        # Extract source information from context documents for response
         sources_info = []
-        logger.info(f"Processing {len(context_documents)} context documents for source extraction")
+        if selected_docs:
+            for i, doc in enumerate(selected_docs, 1):
+                metadata = doc.get('metadata', {})
+                source_info = {
+                    'source_number': i,
+                    'title': metadata.get('title', f'Document {i}'),
+                    'doc_link': metadata.get('docLink', ''),
+                    'relevance_score': doc.get('score', 0)
+                }
+                sources_info.append(source_info)
+        
+        # Add sources_info to state for later use
+        state["sources_info"] = sources_info
+        logger.info(f"Processed {len(sources_info)} source documents for response")
 
         return state
     

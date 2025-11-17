@@ -547,12 +547,12 @@ class BedrockKnowledgeBaseWorkflow:
         
         # Tool-based query patterns (no LLM needed) - Enterprise optimized
         tool_patterns = {
-            "greetings": ["hello", "hi", "hey", "good morning", "good afternoon", "good evening"],
+            "greetings": ["hello", "hi", "hey", "good morning", "good afternoon", "good evening", "my name is", "i am", "call me", "i'm"],
             "status": ["status", "health", "ping", "test", "working", "available"],
             "help": ["help", "what can you do", "how to use", "commands", "capabilities"],
             "thanks": ["thank you", "thanks", "appreciate", "grateful"],
             "goodbye": ["bye", "goodbye", "see you", "farewell", "exit"],
-            "identity": ["who are you", "what are you", "your name", "about you"],
+            "identity": ["who are you", "what are you", "your name", "about you", "what's my name", "what is my name", "my name", "who am i"],
             "quick_links": ["links", "resources", "bookmarks", "shortcuts"],
             "contact": ["contact", "support", "team", "escalate"],
             "policies": ["policy", "compliance", "security policy", "data policy"],
@@ -743,12 +743,16 @@ I'm designed specifically for your organization's needs and have access to your 
             except:
                 response = tool_responses["greetings"]
         
-        # Handle "what's my name" type queries
+        # Handle "what's my name" type queries - PRIORITIZE OVER GENERIC IDENTITY
         elif any(phrase in user_query.lower() for phrase in ["what's my name", "what is my name", "my name", "who am i"]):
             if user_name:
                 response = f"Your name is {user_name}, as you told me earlier in our conversation. How can I help you today, {user_name}?"
             else:
                 response = "I don't recall you mentioning your name in our conversation yet. Could you please tell me your name?"
+        
+        # Handle identity queries that are NOT about user's name
+        elif tool_category == "identity" and not any(phrase in user_query.lower() for phrase in ["what's my name", "what is my name", "my name", "who am i"]):
+            response = tool_responses["identity"]
         
         # Personalize other responses if we know the name
         elif user_name and tool_category in ["greetings", "help", "thanks"]:

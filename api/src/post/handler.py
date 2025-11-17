@@ -1007,6 +1007,11 @@ Since no specific context is available from the vector database, please respond 
                                 ai_response = streaming_handler.process_word_streaming(
                                     self.chat_model.stream(messages)
                                 )
+                                
+                                # Log if this is a no-answer response being streamed
+                                if ai_response and "not able to obtain" in ai_response.lower():
+                                    logger.info("Successfully streamed no-answer response from Azure OpenAI")
+                                
                                 break  # Success
                             except Exception as stream_error:
                                 logger.warning(f"Streaming attempt {attempt + 1} failed: {stream_error}")
@@ -1017,7 +1022,8 @@ Since no specific context is available from the vector database, please respond 
                                         response = self.chat_model.invoke(messages)
                                         ai_response = response.content if hasattr(response, 'content') else str(response)
                                         
-                                        # Stream the fallback response
+                                        # Stream the fallback response (including no-answer responses)
+                                        logger.info("Streaming fallback response from Azure OpenAI invoke")
                                         streaming_handler._stream_greeting_response(ai_response)
                                         
                                     except Exception as invoke_error:
@@ -1045,6 +1051,11 @@ Since no specific context is available from the vector database, please respond 
                             ai_response = response.content if hasattr(response, 'content') else str(response)
                             
                             fallback_handler.send_start_signal()
+                            
+                            # Log if this is a no-answer response
+                            if "not able to obtain" in ai_response.lower():
+                                logger.info("Streaming no-answer response from fallback handler")
+                            
                             fallback_handler._stream_greeting_response(ai_response)
                             
                         except Exception as final_error:
@@ -1072,6 +1083,24 @@ Since no specific context is available from the vector database, please respond 
                         try:
                             response = self.chat_model.invoke(messages)
                             ai_response = response.content if hasattr(response, 'content') else str(response)
+                            
+                            # If we got a "no answer" response and streaming is available, stream it anyway
+                            if ("not able to obtain" in ai_response.lower() or 
+                                "cannot answer" in ai_response.lower() or
+                                "don't have" in ai_response.lower()) and connection_id and url:
+                                try:
+                                    logger.info("Detected no-answer response from Azure OpenAI - streaming it")
+                                    no_answer_stream_handler = WordLevelStreamingHandler(
+                                        connection_id=connection_id,
+                                        websocket_url=url,
+                                        conversation_id=conversation_id,
+                                        trace_id=conversation_id
+                                    )
+                                    no_answer_stream_handler.send_start_signal()
+                                    no_answer_stream_handler._stream_greeting_response(ai_response)
+                                except Exception as stream_error:
+                                    logger.error(f"Failed to stream no-answer response: {stream_error}")
+                            
                             break
                         except Exception as invoke_error:
                             logger.warning(f"Invoke attempt {attempt + 1} failed: {invoke_error}")

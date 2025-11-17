@@ -85,18 +85,28 @@ BASE_URL = os.getenv('BASE_URL')  # Base URL for Azure OpenAI
 AZURE_OPENAI_API_ENDPOINT = os.getenv('AZURE_OPENAI_API_ENDPOINT')
 AZURE_OPENAI_API_VERSION = os.getenv('AZURE_OPENAI_API_VERSION')
 AZURE_OPENAI_API_KEY = os.getenv('AZURE_OPENAI_API_KEY')
-AZURE_OPENAI_TEMPERATURE = float(os.getenv('AZURE_OPENAI_TEMPERATURE'))
-AZURE_OPENAI_MAX_TOKENS = int(os.getenv('AZURE_OPENAI_MAX_TOKENS'))
+AZURE_OPENAI_TEMPERATURE = float(os.getenv('AZURE_OPENAI_TEMPERATURE', '0.7'))
+AZURE_OPENAI_MAX_TOKENS = int(os.getenv('AZURE_OPENAI_MAX_TOKENS', '4000'))
 ENABLE_WEBSOCKET_STREAMING = os.getenv('ENABLE_WEBSOCKET_STREAMING', 'true').lower() == 'true'
 
 logger.info(f"AWS Region: {AWS_REGION}")
 logger.info(f"Knowledge Base ID: {KNOWLEDGE_BASE_ID}")
 logger.info(f"Azure OpenAI Model: {AZURE_OPENAI_MODEL}")
 logger.info(f"Base URL for Azure OpenAI: {BASE_URL}")
-logger.info(f"Azure OpenAI Endpoint configured: {AZURE_OPENAI_API_ENDPOINT}")
-logger.info(f"Azure OpenAI API Key configured: {AZURE_OPENAI_API_KEY}")
+logger.info(f"Azure OpenAI Endpoint: {AZURE_OPENAI_API_ENDPOINT}")
+logger.info(f"Azure OpenAI API Version: {AZURE_OPENAI_API_VERSION}")
+logger.info(f"Azure OpenAI API Key configured: {bool(AZURE_OPENAI_API_KEY)}")
 logger.info(f"Azure OpenAI Temperature: {AZURE_OPENAI_TEMPERATURE}")
 logger.info(f"Azure OpenAI Max Tokens: {AZURE_OPENAI_MAX_TOKENS}")
+logger.info(f"WebSocket Streaming Enabled: {ENABLE_WEBSOCKET_STREAMING}")
+
+# Log environment variable status for debugging
+logger.info("=== Azure OpenAI Environment Variables Status ===")
+required_vars = ['AZURE_OPENAI_MODEL', 'AZURE_OPENAI_API_ENDPOINT', 'AZURE_OPENAI_API_KEY', 'BASE_URL']
+for var_name in required_vars:
+    var_value = os.getenv(var_name)
+    logger.info(f"{var_name}: {'✅ SET' if var_value else '❌ NOT SET'}")
+logger.info("===============================================")
 
 # State interface for LangGraph workflow
 class State(Dict[str, Any]):
@@ -416,37 +426,77 @@ class BedrockKnowledgeBaseWorkflow:
         """Setup Azure OpenAI chat model using LangChain"""
         try:
             # Validate required Azure OpenAI configuration
+            missing_vars = []
             if not AZURE_OPENAI_API_KEY:
-                logger.error("❌ AZURE_OPENAI_API_KEY not set, chat model will not be available")
-                return None
-            
+                missing_vars.append("AZURE_OPENAI_API_KEY")
             if not AZURE_OPENAI_API_ENDPOINT:
-                logger.error("❌ AZURE_OPENAI_API_ENDPOINT not set, chat model will not be available")
+                missing_vars.append("AZURE_OPENAI_API_ENDPOINT")
+            if not AZURE_OPENAI_MODEL:
+                missing_vars.append("AZURE_OPENAI_MODEL")
+            
+            if missing_vars:
+                logger.error(f"❌ Missing required Azure OpenAI environment variables: {', '.join(missing_vars)}")
+                logger.error("❌ Chat model will not be available - all AI queries will return error messages")
                 return None
                 
             logger.info(f"🔧 Setting up Azure OpenAI with deployment: {AZURE_OPENAI_MODEL}")
             logger.info(f"🔧 Azure OpenAI Endpoint: {AZURE_OPENAI_API_ENDPOINT}")
             logger.info(f"🔧 Azure OpenAI API Version: {AZURE_OPENAI_API_VERSION}")
-            logger.info(f"🔧 Azure OpenAI API Key (first 8 chars): {AZURE_OPENAI_API_KEY[:8]}...")
+            logger.info(f"🔧 Azure OpenAI Temperature: {AZURE_OPENAI_TEMPERATURE}")
+            logger.info(f"🔧 Azure OpenAI Max Tokens: {AZURE_OPENAI_MAX_TOKENS}")
+            logger.info(f"🔧 Azure OpenAI API Key configured: {bool(AZURE_OPENAI_API_KEY)}")
+            
+            # Build the full endpoint URL
+            full_endpoint = f"{BASE_URL}{AZURE_OPENAI_API_ENDPOINT}"
+            logger.info(f"🔧 Full Azure OpenAI Endpoint: {full_endpoint}")
             
             llm = AzureChatOpenAI(
                 deployment_name=AZURE_OPENAI_MODEL,
-                azure_endpoint=f"{BASE_URL}{AZURE_OPENAI_API_ENDPOINT}",
+                azure_endpoint=full_endpoint,
                 api_version=AZURE_OPENAI_API_VERSION,
                 api_key=AZURE_OPENAI_API_KEY,
                 temperature=AZURE_OPENAI_TEMPERATURE,
                 max_tokens=AZURE_OPENAI_MAX_TOKENS,
             )
             
+            # Note: We'll test the connection on first use instead of during setup
+            # to avoid blocking initialization if Azure OpenAI is temporarily unavailable
+            logger.info("✅ Azure OpenAI model created - connection will be tested on first use")
+            
             logger.info("✅ Azure OpenAI chat model setup successful")
             return llm
             
         except Exception as e:
             logger.error(f"❌ Failed to setup Azure OpenAI chat model: {e}")
+            logger.error(f"❌ Error type: {type(e).__name__}")
             logger.error(f"❌ Model: {AZURE_OPENAI_MODEL}")
             logger.error(f"❌ Endpoint: {AZURE_OPENAI_API_ENDPOINT}")
+            logger.error(f"❌ Full endpoint: {BASE_URL}{AZURE_OPENAI_API_ENDPOINT if AZURE_OPENAI_API_ENDPOINT else 'None'}")
+            if hasattr(e, 'status_code'):
+                logger.error(f"❌ HTTP Status Code: {e.status_code}")
             return None
     
+    def _test_azure_openai_connection(self):
+        """Test Azure OpenAI connection on first use"""
+        if not self.chat_model:
+            return False
+            
+        try:
+            logger.info("🔧 Testing Azure OpenAI connection on first use...")
+            from langchain_core.messages import HumanMessage
+            test_response = self.chat_model.invoke([HumanMessage(content="Hello")])
+            logger.info("✅ Azure OpenAI connection test successful")
+            logger.info(f"✅ Test response: {str(test_response.content)[:100]}...")
+            return True
+        except Exception as test_error:
+            logger.error(f"❌ Azure OpenAI connection test failed: {test_error}")
+            logger.error(f"❌ Error type: {type(test_error).__name__}")
+            if hasattr(test_error, 'status_code'):
+                logger.error(f"❌ HTTP Status Code: {test_error.status_code}")
+            if hasattr(test_error, 'response'):
+                logger.error(f"❌ Error Response: {test_error.response}")
+            return False
+
     def _create_workflow(self):
         """Create the LangGraph workflow with nodes and edges"""
         workflow = StateGraph(State)
@@ -848,8 +898,43 @@ Since no specific context is available from the vector database, please respond 
         
         try:
             if not self.chat_model:
-                logger.error("Chat model not initialized")
-                ai_response = "I apologize, but the AI service is currently unavailable. Please try again later."
+                logger.error("Chat model not initialized - missing Azure OpenAI configuration")
+                ai_response = "I apologize, but the AI service is currently unavailable. Please check the Azure OpenAI configuration and try again later."
+                
+                # Stream error message
+                try:
+                    error_handler = WordLevelStreamingHandler(
+                        connection_id=connection_id,
+                        websocket_url=url,
+                        conversation_id=conversation_id,
+                        trace_id=conversation_id
+                    )
+                    error_handler.send_start_signal()
+                    error_handler._stream_greeting_response(ai_response)
+                except Exception as stream_error:
+                    logger.error(f"Failed to stream error message: {stream_error}")
+                
+                state["ai_response"] = ai_response
+                return state
+                
+            # Test Azure OpenAI connection on first use
+            if not self._test_azure_openai_connection():
+                logger.error("Azure OpenAI connection test failed")
+                ai_response = "I apologize, but the AI service is currently unavailable due to connection issues. Please try again later."
+                
+                # Stream error message
+                try:
+                    error_handler = WordLevelStreamingHandler(
+                        connection_id=connection_id,
+                        websocket_url=url,
+                        conversation_id=conversation_id,
+                        trace_id=conversation_id
+                    )
+                    error_handler.send_start_signal()
+                    error_handler._stream_greeting_response(ai_response)
+                except Exception as stream_error:
+                    logger.error(f"Failed to stream connection test error message: {stream_error}")
+                
                 state["ai_response"] = ai_response
                 return state
                 
@@ -905,18 +990,59 @@ Since no specific context is available from the vector database, please respond 
                             except Exception as stream_error:
                                 logger.warning(f"Streaming attempt {attempt + 1} failed: {stream_error}")
                                 if attempt == max_retries:
-                                    # Fallback to regular invoke
+                                    # Fallback to regular invoke but still stream the result
                                     logger.info("Falling back to regular invoke after streaming failures")
-                                    response = self.chat_model.invoke(messages)
-                                    ai_response = response.content if hasattr(response, 'content') else str(response)
+                                    try:
+                                        response = self.chat_model.invoke(messages)
+                                        ai_response = response.content if hasattr(response, 'content') else str(response)
+                                        
+                                        # Stream the fallback response
+                                        streaming_handler._stream_greeting_response(ai_response)
+                                        
+                                    except Exception as invoke_error:
+                                        logger.error(f"Regular invoke also failed: {invoke_error}")
+                                        # Stream error message
+                                        error_message = "I encountered an error while processing your request. Please try again."
+                                        streaming_handler._stream_greeting_response(error_message)
+                                        ai_response = error_message
                                 else:
                                     time.sleep(0.5)  # Brief delay before retry
                                     
                     except Exception as handler_error:
                         logger.error(f"Streaming handler error: {handler_error}")
-                        # Fallback to regular invoke
-                        response = self.chat_model.invoke(messages)
-                        ai_response = response.content if hasattr(response, 'content') else str(response)
+                        # Create new streaming handler for fallback
+                        try:
+                            fallback_handler = WordLevelStreamingHandler(
+                                connection_id=connection_id,
+                                websocket_url=url,
+                                conversation_id=conversation_id,
+                                trace_id=conversation_id
+                            )
+                            
+                            # Try regular invoke and stream the result
+                            response = self.chat_model.invoke(messages)
+                            ai_response = response.content if hasattr(response, 'content') else str(response)
+                            
+                            fallback_handler.send_start_signal()
+                            fallback_handler._stream_greeting_response(ai_response)
+                            
+                        except Exception as final_error:
+                            logger.error(f"All streaming methods failed: {final_error}")
+                            # Last resort: stream error message
+                            error_message = "I apologize, but I encountered an error processing your request."
+                            ai_response = error_message
+                            
+                            try:
+                                error_handler = WordLevelStreamingHandler(
+                                    connection_id=connection_id,
+                                    websocket_url=url,
+                                    conversation_id=conversation_id,
+                                    trace_id=conversation_id
+                                )
+                                error_handler.send_start_signal()
+                                error_handler._stream_greeting_response(error_message)
+                            except:
+                                logger.error("Even error streaming failed - will rely on main response")
                 else:
                     # Fallback to regular invoke if no WebSocket info or streaming disabled
                     logger.info("Using regular invoke (streaming disabled or no WebSocket info)")
@@ -937,6 +1063,19 @@ Since no specific context is available from the vector database, please respond 
             else:
                 ai_response = "I apologize, but the AI service is currently unavailable. Please try again later."
                 logger.error("Chat model not available")
+                
+                # Stream error message even when chat model is not available
+                try:
+                    error_handler = WordLevelStreamingHandler(
+                        connection_id=connection_id,
+                        websocket_url=url,
+                        conversation_id=conversation_id,
+                        trace_id=conversation_id
+                    )
+                    error_handler.send_start_signal()
+                    error_handler._stream_greeting_response(ai_response)
+                except Exception as stream_error:
+                    logger.error(f"Failed to stream error message: {stream_error}")
                 
         except Exception as e:
             logger.error(f"Error generating AI response: {e}")
@@ -962,6 +1101,20 @@ Since no specific context is available from the vector database, please respond 
                 ai_response = "Your conversation is too long. Please start a new conversation."
             else:
                 ai_response = "I encountered an error while processing your request. Please try again."
+                
+            # Stream the error message if WebSocket info is available
+            if connection_id and url and conversation_id:
+                try:
+                    final_error_handler = WordLevelStreamingHandler(
+                        connection_id=connection_id,
+                        websocket_url=url,
+                        conversation_id=conversation_id,
+                        trace_id=conversation_id
+                    )
+                    final_error_handler.send_start_signal()
+                    final_error_handler._stream_greeting_response(ai_response)
+                except Exception as final_stream_error:
+                    logger.error(f"Failed to stream final error message: {final_stream_error}")
         
         # Update state with response using LangGraph's add_messages pattern
         state["ai_response"] = ai_response
@@ -1140,9 +1293,21 @@ Since no specific context is available from the vector database, please respond 
             'what is your name', 'are you ai', 'are you a bot', 'are you human'
         ]
         
+        # Introduction patterns
+        introduction_patterns = [
+            'my name is', 'i am', 'im', 'i\'m', 'call me', 'this is',
+            'nice to meet you', 'pleased to meet you'
+        ]
+        
         # Check exact matches first
         if query_clean in simple_greetings + polite_expressions + simple_assistant_queries:
             return True
+            
+        # Check for introduction patterns
+        if any(pattern in query_clean for pattern in introduction_patterns):
+            # Only if the query is short (likely just an introduction)
+            if len(query_clean.split()) <= 6:
+                return True
             
         # Check if query starts with greeting words (for variations like "Hi there!")
         greeting_starts = ['hello', 'hi', 'hey', 'good morning', 'good afternoon', 'good evening']
@@ -1169,18 +1334,22 @@ Since no specific context is available from the vector database, please respond 
         
         # Time-specific greetings
         if 'good morning' in query_lower:
-            return "Good morning! ☀️ I'm your AI assistant, ready to help you with any questions about your knowledge base. What would you like to know?"
+            return "Good morning! ☀️ How can I help you today?"
         elif 'good afternoon' in query_lower:
-            return "Good afternoon! 🌤️ I'm here to assist you with information from your knowledge base. How can I help you today?"
+            return "Good afternoon! 🌤️ How can I help you today?"
         elif 'good evening' in query_lower:
-            return "Good evening! 🌙 I'm your AI assistant. I can help you find information from your knowledge base. What questions do you have?"
+            return "Good evening! 🌙 How can I help you today?"
         
         # Questions about the assistant
         if any(phrase in query_lower for phrase in ['who are you', 'what are you', 'what can you do', 'how can you help']):
             return "I'm your AI assistant! 🤖 I can help you find information from your knowledge base, answer questions about your documents, and provide detailed explanations. Just ask me anything you'd like to know!"
         
+        # Introduction responses
+        if any(pattern in query_lower for pattern in ['my name is', 'i am', 'im', 'i\'m', 'call me']):
+            return "Nice to meet you! 😊 I'm happy to help you with any questions you might have. What can I assist you with today?"
+        
         # Default greeting response
-        return "Hello! 👋 I'm your AI assistant, ready to help you with questions about your knowledge base. What would you like to know today?"
+        return "Hello! 👋 How can I help you today?"
     
     def _assess_query_complexity(self, user_query: str) -> str:
         """

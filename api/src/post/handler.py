@@ -15,11 +15,6 @@ from langchain_core.messages import HumanMessage, AIMessage
 from langchain_openai import AzureChatOpenAI
 from botocore.config import Config
 
-# Modern LangChain Memory imports (recommended approach)
-from langchain_core.runnables.history import RunnableWithMessageHistory
-from langchain_core.chat_history import BaseChatMessageHistory, InMemoryChatMessageHistory
-from langchain_community.chat_message_histories import ChatMessageHistory
-
 from src.helpers.api_responses import Responses  # Custom helper for API responses
 from src.helpers.construct_response import construct_response  # Custom helper to construct responses
 from src.helpers.schema_validation import validate_request_datas_schema_pydantic  # Custom helper to validate request data schema
@@ -371,20 +366,6 @@ class BedrockKnowledgeBaseWorkflow:
         self.bedrock_agent_client = self._setup_bedrock_agent()
         self.chat_model = self._setup_chat_model()
         self.workflow = self._create_workflow()
-        
-        # Initialize session-based chat history storage
-        # Key: conversation_id, Value: ChatMessageHistory
-        self.chat_histories = {}
-        
-        # Create runnable with message history for automatic memory management
-        self.chat_with_memory = None
-        if self.chat_model:
-            self.chat_with_memory = RunnableWithMessageHistory(
-                self.chat_model,
-                self._get_session_history,
-                input_messages_key="messages",
-                history_messages_key="history",
-            )
     
     def _setup_bedrock_agent(self):
         """Setup AWS Bedrock Agent Runtime client for Knowledge Base queries"""
@@ -448,40 +429,6 @@ class BedrockKnowledgeBaseWorkflow:
         workflow.add_edge("generate_response", END)
         
         return workflow.compile()
-    
-    def _get_session_history(self, session_id: str) -> BaseChatMessageHistory:
-        """
-        Get or create chat message history for the given session_id
-        This is the modern LangChain approach for conversation memory
-        """
-        if session_id not in self.chat_histories:
-            # Create new in-memory chat history for this session
-            self.chat_histories[session_id] = ChatMessageHistory()
-            logger.info(f"💭 Created new chat history for session: {session_id}")
-        else:
-            logger.info(f"💭 Retrieved existing chat history for session: {session_id} ({len(self.chat_histories[session_id].messages)} messages)")
-        
-        return self.chat_histories[session_id]
-    
-    def _get_conversation_memory(self, conversation_id: str) -> ConversationBufferMemory:
-        """
-        Get or create ConversationBufferMemory for the given conversation_id
-        This automatically handles storing and retrieving conversation history
-        """
-        if conversation_id not in self.conversation_memories:
-            # Create new memory for this conversation
-            memory = ConversationBufferMemory(
-                memory_key="chat_history",
-                return_messages=True,  # Return as Message objects
-                input_key="input",
-                output_key="output"
-            )
-            self.conversation_memories[conversation_id] = memory
-            logger.info(f"💭 Created new conversation memory for {conversation_id}")
-        else:
-            logger.info(f"💭 Retrieved existing conversation memory for {conversation_id}")
-        
-        return self.conversation_memories[conversation_id]
     
     def retrieve_from_knowledge_base(self, state: State) -> State:
         """
@@ -666,12 +613,11 @@ User Question: {user_query}
 Since no specific context is available from the vector database, please respond with: "I am not able to obtain an answer for this particular query." and suggest the user provide more specific information or try rephrasing their question."""
         
         try:
-            if self.chat_model and self.chat_with_memory:
-                # Get chat history for context
-                session_history = self._get_session_history(conversation_id)
+            if self.chat_model:
+                # Create message for the chat model
+                messages = [HumanMessage(content=prompt)]
                 
-                logger.info(f"Starting Azure OpenAI with memory - {len(session_history.messages)} previous messages...")
-                logger.info(f"Chat history: {[f'{type(msg).__name__}' for msg in session_history.messages]}")
+                logger.info("Starting Azure OpenAI streaming response...")
                 
                 # Check if WebSocket connection info is available in state
                 connection_info = state.get("websocket_connection", {})
@@ -690,21 +636,16 @@ Since no specific context is available from the vector database, please respond 
                     # Send start signal immediately
                     streaming_handler.send_start_signal()
                     
-                    # Process streaming response with automatic memory
-                    logger.info("Using word-level streaming with automatic memory")
+                    # Process streaming response
+                    logger.info("Using word-level streaming handler for response")
+                    logger.info(f"Messages sent to model: {messages}")
                     ai_response = streaming_handler.process_word_streaming(
-                        self.chat_with_memory.stream(
-                            {"messages": [HumanMessage(content=user_query)]},
-                            config={"configurable": {"session_id": conversation_id}}
-                        )
+                        self.chat_model.stream(messages)
                     )
                 else:
-                    # Fallback to regular invoke with automatic memory
-                    logger.info("Using regular invoke with automatic memory")
-                    response = self.chat_with_memory.invoke(
-                        {"messages": [HumanMessage(content=user_query)]},
-                        config={"configurable": {"session_id": conversation_id}}
-                    )
+                    # Fallback to regular invoke if no WebSocket info or streaming disabled
+                    logger.info("Using regular invoke (streaming disabled or no WebSocket info)")
+                    response = self.chat_model.invoke(messages)
                     ai_response = response.content if hasattr(response, 'content') else str(response)
                 
                 logger.info("Successfully generated AI response")
@@ -722,16 +663,12 @@ Since no specific context is available from the vector database, please respond 
                 logger.error(f"Response: {e.response}")
             ai_response = "I encountered an error while processing your request. Please try again."
         
-        # Memory is automatically handled by RunnableWithMessageHistory
-        # No manual saving needed!
-        logger.info(f"💾 Memory automatically saved for conversation: {conversation_id}")
-        
         # Update state with response
         state["ai_response"] = ai_response
-        
-        # Get updated messages from session history
-        session_history = self._get_session_history(conversation_id)
-        state["messages"] = session_history.messages
+        state["messages"] = state.get("messages", []) + [
+            HumanMessage(content=user_query),
+            AIMessage(content=ai_response)
+        ]
         
         # Extract source information from context documents
         sources_info = []

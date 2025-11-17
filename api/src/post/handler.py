@@ -1323,6 +1323,12 @@ Since no specific context is available from the vector database, please respond 
         query_lower = user_query.lower().strip()
         query_clean = re.sub(r'[^\w\s]', '', query_lower)
         
+        # Debug logging for "my name is" queries
+        if "my name is" in query_lower:
+            logger.info(f"🔍 DEBUG: Processing introduction query: '{user_query}'")
+            logger.info(f"🔍 DEBUG: query_clean: '{query_clean}'")
+            logger.info(f"🔍 DEBUG: Word count: {len(query_clean.split())}")
+        
         # Greetings and social interactions
         greetings = [
             'hello', 'hi', 'hey', 'hola', 'bonjour', 'namaste',
@@ -1344,7 +1350,7 @@ Since no specific context is available from the vector database, please respond 
             'help', 'hello', 'test', 'testing'
         ]
         
-        # Introduction patterns
+        # Introduction patterns - enhanced to handle more variations
         introductions = [
             'my name is', 'i am', 'im', 'i\'m', 'call me', 'this is',
             'nice to meet you', 'pleased to meet you'
@@ -1355,12 +1361,18 @@ Since no specific context is available from the vector database, please respond 
         
         # Check exact matches
         if query_clean in greetings + polite + simple_assistant + test_patterns:
+            logger.info(f"🔍 DEBUG: Found exact match for basic query: '{query_clean}'")
             return True
             
-        # Check introduction patterns (short queries only)
-        if any(pattern in query_clean for pattern in introductions):
-            if len(query_clean.split()) <= 6:
-                return True
+        # Check introduction patterns (enhanced word limit)
+        for pattern in introductions:
+            if pattern in query_clean:
+                word_count = len(query_clean.split())
+                if word_count <= 8:  # Increased from 6 to 8 to be more inclusive
+                    logger.info(f"🔍 DEBUG: Found introduction pattern '{pattern}' in '{query_clean}' (words: {word_count})")
+                    return True
+                else:
+                    logger.info(f"🔍 DEBUG: Introduction pattern '{pattern}' found but too long ({word_count} words)")
                 
         # Check greeting starters (short queries only)
         greeting_starts = ['hello', 'hi', 'hey', 'good morning', 'good afternoon', 'good evening']
@@ -1405,8 +1417,37 @@ Since no specific context is available from the vector database, please respond 
         if any(phrase in query_lower for phrase in ['who are you', 'what are you', 'what can you do', 'how can you help']):
             return "I'm your AI assistant! 🤖 I can help you find information from your knowledge base, answer questions about your documents, and provide detailed explanations. Just ask me anything you'd like to know!"
         
-        # Introduction responses
+        # Introduction responses - extract name if possible
         if any(pattern in query_lower for pattern in ['my name is', 'i am', 'im', 'i\'m', 'call me']):
+            # Try to extract the name for a more personal response
+            name = ""
+            try:
+                if 'my name is' in query_lower:
+                    name = query_lower.split('my name is')[1].strip()
+                elif 'call me' in query_lower:
+                    name = query_lower.split('call me')[1].strip()
+                elif 'i am' in query_lower or 'im' in query_lower or "i'm" in query_lower:
+                    # Handle "I am John" or "I'm John" 
+                    if 'i am' in query_lower:
+                        name = query_lower.split('i am')[1].strip()
+                    elif "i'm" in query_lower:
+                        name = query_lower.split("i'm")[1].strip()
+                    elif 'im' in query_lower:
+                        # Be more careful with 'im' to avoid false matches
+                        words = query_lower.split()
+                        if 'im' in words:
+                            idx = words.index('im')
+                            if idx < len(words) - 1:
+                                name = ' '.join(words[idx+1:])
+                
+                # Clean up the name (remove punctuation, capitalize)
+                if name:
+                    name = re.sub(r'[^\w\s]', '', name).strip().title()
+                    if name and len(name.split()) <= 2:  # Reasonable name length
+                        return f"Nice to meet you, {name}! 😊 I'm happy to help you with any questions you might have. What can I assist you with today?"
+            except:
+                pass  # Fallback to generic response if name extraction fails
+                
             return "Nice to meet you! 😊 I'm happy to help you with any questions you might have. What can I assist you with today?"
         
         # Help requests

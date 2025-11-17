@@ -724,19 +724,41 @@ I'm designed specifically for your organization's needs and have access to your 
         # Get appropriate response
         response = tool_responses.get(tool_category, tool_responses["help"])
         
-        # Handle introduction queries with name extraction
+        # Enhanced handling with conversation memory
+        previous_messages = state.get("messages", [])
+        
+        # Check for name-related queries in conversation history
+        user_name = self._extract_user_name_from_conversation(previous_messages)
+        
+        # Handle name introduction
         if "my name is" in user_query.lower() or "i am" in user_query.lower():
             try:
-                # Extract name for personalization
                 import re
                 name_match = re.search(r'(?:my name is|i am|i\'m)\s+([a-zA-Z\s]+)', user_query, re.IGNORECASE)
                 if name_match:
                     name = name_match.group(1).strip().title()
-                    response = f"Nice to meet you, {name}! I'm your organization's AI assistant. I can help you with documentation, technical questions, and guidance on our systems. What would you like to know?"
+                    response = f"Nice to meet you, {name}! I'll remember that. I'm your organization's AI assistant and I can help you with documentation, technical questions, and guidance on our systems. What would you like to know?"
                 else:
                     response = "Nice to meet you! I'm your organization's AI assistant, here to help with documentation and technical questions. What can I assist you with today?"
             except:
                 response = tool_responses["greetings"]
+        
+        # Handle "what's my name" type queries
+        elif any(phrase in user_query.lower() for phrase in ["what's my name", "what is my name", "my name", "who am i"]):
+            if user_name:
+                response = f"Your name is {user_name}, as you told me earlier in our conversation. How can I help you today, {user_name}?"
+            else:
+                response = "I don't recall you mentioning your name in our conversation yet. Could you please tell me your name?"
+        
+        # Personalize other responses if we know the name
+        elif user_name and tool_category in ["greetings", "help", "thanks"]:
+            # Personalize the response with the user's name
+            if tool_category == "greetings":
+                response = f"Hello {user_name}! Great to chat with you again. I can help you with documentation, guides, troubleshooting, and general questions about our systems. What would you like to know?"
+            elif tool_category == "help":
+                response = response.replace("What would you like to know?", f"What would you like to know, {user_name}?")
+            elif tool_category == "thanks":
+                response = f"You're very welcome, {user_name}! I'm here 24/7 to assist with documentation, technical questions, or organizational guidance. Feel free to ask me anything else!"
         
         # Update state using LangGraph patterns
         from langchain_core.messages import HumanMessage, AIMessage
@@ -771,27 +793,55 @@ I'm designed specifically for your organization's needs and have access to your 
     
     def manage_conversation_memory(self, state: State) -> State:
         """
-        LangGraph Memory Management Node - handles conversation memory efficiently
+        LangGraph Memory Management Node - Enhanced conversational memory
+        Ensures AI remembers previous context like names, preferences, etc.
         """
         try:
-            logger.info("Managing conversation memory")
+            logger.info("🧠 Managing conversational memory for context awareness")
             
             conversation_id = state.get("conversation_id", "")
             messages = state.get("messages", [])
-            memory_mode = state.get("memory_mode", "sliding_window")
-            max_turns = state.get("max_memory_turns", 10)
+            memory_mode = state.get("memory_mode", "conversational")  # Changed default
+            max_turns = state.get("max_memory_turns", 15)  # Increased for better memory
+            
+            logger.info(f"🧠 Current conversation has {len(messages)} messages")
+            
+            # Log conversation content for debugging
+            for i, msg in enumerate(messages[-4:]):  # Show last 4 messages
+                if hasattr(msg, 'content'):
+                    content_preview = msg.content[:100] + "..." if len(msg.content) > 100 else msg.content
+                    role = 'User' if msg.__class__.__name__ == 'HumanMessage' else 'Assistant'
+                    logger.info(f"🧠 Message {i}: {role}: {content_preview}")
+                    
         except Exception as e:
             logger.error(f"Error in memory management initialization: {e}")
-            # Return state with minimal changes on error
             return state
         
         try:
-            # Apply memory management strategy
-            if memory_mode == "sliding_window":
-                # Keep only the most recent N turns (2 messages per turn)
+            # Enhanced conversational memory management
+            if memory_mode == "conversational":
+                # Keep conversation context with smart truncation
+                if len(messages) > max_turns * 2:
+                    # Extract important context from older messages
+                    important_context = self._extract_conversation_context(messages)
+                    
+                    # Keep recent messages + important context
+                    recent_messages = messages[-(max_turns * 2):]
+                    
+                    # Create context summary message if we have important info
+                    if important_context:
+                        from langchain_core.messages import SystemMessage
+                        context_msg = SystemMessage(content=f"Previous conversation context: {important_context}")
+                        managed_messages = [context_msg] + recent_messages
+                    else:
+                        managed_messages = recent_messages
+                else:
+                    managed_messages = messages
+                    
+            elif memory_mode == "sliding_window":
+                # Original sliding window approach
                 max_messages = max_turns * 2
                 if len(messages) > max_messages:
-                    # Keep system message (if any) + recent messages
                     system_messages = [msg for msg in messages if getattr(msg, 'type', None) == 'system']
                     recent_messages = messages[-max_messages:]
                     managed_messages = system_messages + recent_messages
@@ -799,7 +849,6 @@ I'm designed specifically for your organization's needs and have access to your 
                     managed_messages = messages
                     
             elif memory_mode == "summary":
-                # Summarize older conversations (implement if needed)
                 managed_messages = self._summarize_old_messages(messages, max_turns)
                 
             else:  # "full" - keep all messages
@@ -808,13 +857,25 @@ I'm designed specifically for your organization's needs and have access to your 
             # Update state with managed memory
             state["messages"] = managed_messages
             
-            logger.info(f"Memory management: {len(messages)} -> {len(managed_messages)} messages (mode: {memory_mode})")
+            logger.info(f"🧠 Memory optimized: {len(messages)} -> {len(managed_messages)} messages")
+            logger.info(f"🧠 Memory mode: {memory_mode}, Conversation ID: {conversation_id}")
+            
+            # Log extracted context for debugging
+            if managed_messages:
+                user_name = self._extract_user_name_from_conversation(managed_messages)
+                if user_name:
+                    logger.info(f"🧠 Remembered user name: {user_name}")
+                
+                # Log conversation summary
+                conv_summary = self._build_conversation_summary(managed_messages)
+                if conv_summary:
+                    logger.info(f"🧠 Conversation context: {conv_summary[:200]}...")
+            
             return state
             
         except Exception as e:
-            logger.error(f"Error in memory management processing: {e}")
+            logger.error(f"Error in conversational memory processing: {e}")
             logger.error(f"Memory mode: {memory_mode}, Messages count: {len(messages) if messages else 0}")
-            # Return original state on error
             return state
     
     def _summarize_old_messages(self, messages: List, max_turns: int) -> List:
@@ -842,6 +903,61 @@ I'm designed specifically for your organization's needs and have access to your 
         summary_message = AIMessage(content=f"[SUMMARY] {summary_content}")
         
         return [summary_message] + recent_messages
+    
+    def _extract_conversation_context(self, messages: List) -> str:
+        """
+        Extract important context from conversation history
+        Things like names, preferences, previously mentioned facts
+        """
+        try:
+            context_items = []
+            
+            # Look through messages to find important context
+            for msg in messages:
+                if not hasattr(msg, 'content'):
+                    continue
+                    
+                content = msg.content.lower()
+                role = 'user' if msg.__class__.__name__ == 'HumanMessage' else 'assistant'
+                
+                # Extract names
+                if role == 'user':
+                    # Look for name introductions
+                    import re
+                    name_patterns = [
+                        r'my name is ([a-zA-Z\s]+)',
+                        r'i am ([a-zA-Z\s]+)',
+                        r'call me ([a-zA-Z\s]+)',
+                        r"i'm ([a-zA-Z\s]+)"
+                    ]
+                    
+                    for pattern in name_patterns:
+                        match = re.search(pattern, content, re.IGNORECASE)
+                        if match:
+                            name = match.group(1).strip().title()
+                            context_items.append(f"User's name: {name}")
+                            break
+                    
+                    # Look for other important user information
+                    if 'i work at' in content or 'i am from' in content:
+                        # Extract work/location info
+                        work_match = re.search(r'i work at ([^.]+)', content, re.IGNORECASE)
+                        if work_match:
+                            context_items.append(f"User works at: {work_match.group(1).strip()}")
+                    
+                    # Look for preferences or important facts
+                    if 'i prefer' in content or 'i like' in content or 'i need' in content:
+                        pref_sentence = re.search(r'(i prefer[^.]+|i like[^.]+|i need[^.]+)', content, re.IGNORECASE)
+                        if pref_sentence:
+                            context_items.append(f"User preference: {pref_sentence.group(1).strip()}")
+            
+            # Remove duplicates and return
+            unique_context = list(set(context_items))
+            return " | ".join(unique_context[:5])  # Limit to 5 most important items
+            
+        except Exception as e:
+            logger.warning(f"Error extracting conversation context: {e}")
+            return ""
     
     def retrieve_from_knowledge_base(self, state: State) -> State:
         """
@@ -964,43 +1080,42 @@ I'm designed specifically for your organization's needs and have access to your 
         
         # All queries now go through the full AI processing workflow
         
-        # Prepare context-aware prompt with detailed system instructions
-        system_instructions = """You are an AI assistant designed to provide accurate and comprehensive answers based on information from the vector database. Follow these guidelines:
+        # Prepare conversational prompt with memory awareness
+        system_instructions = """You are an AI assistant with excellent conversational memory. You remember previous interactions within the same conversation and can refer back to them naturally. Follow these guidelines:
 
-1. **Context-Based Information**:
-- Use only the data available in the current context from the vector database.
-- If you have context documents but they don't directly answer the specific question, try to provide related information from the context that might be helpful.
-- Only respond with "I am not able to obtain an answer for this particular query" if the context is completely unrelated to the question or if no context is provided.
+1. **Conversational Memory**:
+- ALWAYS review the conversation history before responding
+- Remember names, preferences, and facts mentioned earlier in the conversation
+- If someone told you their name earlier, remember it and use it naturally
+- Reference previous parts of the conversation when relevant
+- Build on previous context rather than treating each message in isolation
 
-2. **Detailed Information**:
-- Provide thorough and well-organized responses using the context data.
-- Use headings, bullet points, or numbered lists to structure information clearly.
-- Apply bold or italic formatting for emphasis where needed.
+2. **Context Integration**:
+- Use information from both the conversation history AND knowledge base documents
+- If documents provide relevant info, combine it with conversational context
+- Prefer conversational memory over documents for personal information
 
-3. **Emotes**:
-- Incorporate appropriate emotes based on the content and tone of the query.
-- Use positive emotes for encouraging responses and neutral or informative emotes for factual information.
+3. **Natural Conversation Flow**:
+- Respond naturally as if continuing an ongoing conversation
+- Ask follow-up questions based on previous context
+- Reference earlier topics when appropriate
+- Maintain personality and context established earlier
 
-4. **Table Generation**:
-- If the query requests data in a table format, generate and present the information using the context data.
-- Ensure the table is well-organized with headers and properly aligned columns.
-- Use Markdown or other formatting tools to enhance readability.
+4. **Knowledge Base Usage**:
+- Use knowledge base documents for factual, technical information
+- If no relevant documents but conversation history exists, use the conversation context
+- Only say "I don't have information" if BOTH conversation history AND documents lack relevant info
 
-5. **Chat Format**:
-- For chat or conversation-related queries, structure your response in a conversational format.
-- Use formatting to differentiate between user inputs and responses.
+5. **Personal Information Handling**:
+- Remember personal details shared in conversation (names, roles, preferences)
+- Use this information to personalize responses
+- Ask clarifying questions based on previous conversation context
 
-6. **Specific Formats**:
-- If the user requests information in a specific format (e.g., JSON, XML, Markdown), provide the response using the context data.
-- Ensure the format is applied correctly and the data is structured appropriately.
-
-7. **Non-Professional Topics**:
-- If the query concerns non-professional subjects (e.g., politics, sports), politely redirect the user to relevant professional topics.
-- Suggest related professional queries and provide a concise explanation.
-
-8. **Accuracy and Citations**:
-- Ensure responses are accurate and solely based on the data in the current context.
-- Do not provide information not mentioned in the context. Do not add any additional information that is not present in the context.
+6. **Response Quality**:
+- Provide detailed, well-organized responses
+- Use formatting for clarity (bullets, headings, etc.)
+- Include relevant emojis for engagement
+- Structure responses clearly and professionally
 
 Keep your responses clear, informative, and engaging, ensuring they are derived exclusively from the provided context."""
 
@@ -1023,42 +1138,64 @@ Keep your responses clear, informative, and engaging, ensuring they are derived 
                 # Build sources text for inclusion in the AI response
                 sources_text = self._build_sources_text(selected_docs)
                 
+                # Get conversation context for memory
+                previous_messages = state.get("messages", [])
+                conversation_context = self._build_conversation_summary(previous_messages)
+                
                 prompt = f"""{system_instructions}
 
-Context:
+CONVERSATION HISTORY SUMMARY:
+{conversation_context if conversation_context else "This is the start of our conversation."}
+
+KNOWLEDGE BASE CONTEXT:
 {context}
 
-User Question: {user_query}
+CURRENT USER QUESTION: {user_query}
 
-Please provide a well-formatted answer based on the context above following the guidelines specified. Reference the source numbers when citing information.
+Instructions:
+1. First, check the conversation history for relevant context about the user or previous topics
+2. Use knowledge base documents for factual/technical information
+3. Combine both sources to provide a comprehensive, personalized response
+4. Reference previous conversation naturally when relevant
 
-IMPORTANT: After providing your main answer, you MUST include the following sources section exactly as shown:
-
-{sources_text}
-
-This sources section should be included as part of your response to help users access the original documents."""
+IMPORTANT: Include sources section at the end:
+{sources_text}"""
             else:
-                # No meaningful content found in documents
-                logger.warning("Documents retrieved but no meaningful content found")
+                # No meaningful content found in documents - use conversation memory
+                logger.warning("Documents retrieved but no meaningful content found - using conversation memory")
+                previous_messages = state.get("messages", [])
+                conversation_context = self._build_conversation_summary(previous_messages)
+                
                 prompt = f"""{system_instructions}
 
-User Question: {user_query}
+CONVERSATION HISTORY SUMMARY:
+{conversation_context if conversation_context else "This is the start of our conversation."}
 
-Since the retrieved documents do not contain sufficient information to answer your query, please respond with: "I am not able to obtain an answer for this particular query." and suggest the user provide more specific information or try rephrasing their question."""
+CURRENT USER QUESTION: {user_query}
+
+Instructions:
+1. Check if you can answer based on our conversation history
+2. If the conversation contains relevant information (like previously mentioned names, facts, etc.), use it
+3. If neither conversation history nor knowledge base can help, politely say you need more information
+4. Always maintain conversational context and refer to previous exchanges when appropriate"""
         else:
-            # No context available - check if we should use direct streaming response
+            # No context documents - but use conversation memory
+            logger.info("No knowledge base context - relying on conversation memory")
+            previous_messages = state.get("messages", [])
+            conversation_context = self._build_conversation_summary(previous_messages)
+            
             connection_info = state.get("websocket_connection", {})
             connection_id = connection_info.get("connectionId")
             url = connection_info.get("url")
             
-            # Option 1: Direct streaming of no-answer response (faster)
-            if connection_id and url and ENABLE_WEBSOCKET_STREAMING and not self.chat_model:
-                logger.info("No context and no Azure OpenAI - streaming direct no-answer response")
+            # If no AI model available, stream basic response
+            if not self.chat_model and connection_id and url and ENABLE_WEBSOCKET_STREAMING:
+                logger.info("No AI model - streaming conversational fallback")
+                ai_response = self._generate_conversational_fallback(user_query, conversation_context)
                 ai_response = self._generate_and_stream_no_answer_response(
                     connection_id, url, conversation_id, has_context=False
                 )
                 state["ai_response"] = ai_response
-                # Update LangGraph messages
                 new_messages = [
                     HumanMessage(content=user_query),
                     AIMessage(content=ai_response)
@@ -1066,12 +1203,19 @@ Since the retrieved documents do not contain sufficient information to answer yo
                 state["messages"] = add_messages(state.get("messages", []), new_messages)
                 return state
             
-            # Option 2: Use Azure OpenAI with system prompt (normal flow)
+            # Use conversation memory with Azure OpenAI
             prompt = f"""{system_instructions}
 
-User Question: {user_query}
+CONVERSATION HISTORY SUMMARY:
+{conversation_context if conversation_context else "This is the start of our conversation."}
 
-Since no specific context is available from the vector database, please respond with: "I am not able to obtain an answer for this particular query." and suggest the user provide more specific information or try rephrasing their question."""
+CURRENT USER QUESTION: {user_query}
+
+Instructions:
+1. Rely primarily on our conversation history to answer
+2. If you remember relevant information from our conversation, use it
+3. Maintain natural conversational flow and personality
+4. If you truly cannot help based on conversation history, politely explain and ask for more context"""
         
         try:
             if not self.chat_model:
@@ -1482,6 +1626,127 @@ Since no specific context is available from the vector database, please respond 
         
         return "\n".join(sources_lines)
     
+    def _build_conversation_summary(self, messages: List) -> str:
+        """
+        Build a summary of the conversation history for AI context
+        Emphasizes important personal information and recent context
+        """
+        if not messages or len(messages) == 0:
+            return ""
+            
+        try:
+            summary_parts = []
+            
+            # Extract key information from conversation
+            user_info = {}
+            recent_context = []
+            
+            for msg in messages:
+                if not hasattr(msg, 'content'):
+                    continue
+                    
+                role = 'User' if msg.__class__.__name__ == 'HumanMessage' else 'Assistant'
+                content = msg.content
+                
+                # Extract user information
+                if role == 'User':
+                    import re
+                    
+                    # Name extraction
+                    name_patterns = [
+                        r'my name is ([a-zA-Z\s]+)',
+                        r'i am ([a-zA-Z\s]+)',
+                        r'call me ([a-zA-Z\s]+)',
+                        r"i'm ([a-zA-Z\s]+)"
+                    ]
+                    
+                    for pattern in name_patterns:
+                        match = re.search(pattern, content.lower(), re.IGNORECASE)
+                        if match:
+                            user_info['name'] = match.group(1).strip().title()
+                    
+                    # Other personal info
+                    if 'i work' in content.lower():
+                        work_match = re.search(r'i work (at|for|in) ([^.!?]+)', content, re.IGNORECASE)
+                        if work_match:
+                            user_info['work'] = work_match.group(2).strip()
+                    
+                    if 'i live' in content.lower() or 'i am from' in content.lower():
+                        location_match = re.search(r'i (live in|am from) ([^.!?]+)', content, re.IGNORECASE)
+                        if location_match:
+                            user_info['location'] = location_match.group(2).strip()
+                
+                # Keep recent context (last few exchanges)
+                recent_context.append(f"{role}: {content[:150]}{'...' if len(content) > 150 else ''}")
+            
+            # Build summary
+            if user_info:
+                info_parts = []
+                if 'name' in user_info:
+                    info_parts.append(f"User's name: {user_info['name']}")
+                if 'work' in user_info:
+                    info_parts.append(f"Works: {user_info['work']}")
+                if 'location' in user_info:
+                    info_parts.append(f"Location: {user_info['location']}")
+                
+                summary_parts.append("USER INFO: " + " | ".join(info_parts))
+            
+            # Add recent conversation context (last 4 exchanges)
+            if recent_context:
+                summary_parts.append("RECENT CONVERSATION:")
+                summary_parts.extend(recent_context[-6:])  # Last 6 messages
+            
+            return "\n".join(summary_parts)
+            
+        except Exception as e:
+            logger.warning(f"Error building conversation summary: {e}")
+            # Fallback: simple recent messages
+            try:
+                simple_summary = []
+                for msg in messages[-4:]:
+                    if hasattr(msg, 'content'):
+                        role = 'User' if msg.__class__.__name__ == 'HumanMessage' else 'Assistant'
+                        simple_summary.append(f"{role}: {msg.content[:100]}...")
+                return "\n".join(simple_summary)
+            except:
+                return ""
+    
+    def _extract_user_name_from_conversation(self, messages: List) -> str:
+        """
+        Extract user's name from conversation history
+        """
+        try:
+            for msg in messages:
+                if not hasattr(msg, 'content'):
+                    continue
+                
+                # Only look at user messages for name introductions
+                if msg.__class__.__name__ == 'HumanMessage':
+                    content = msg.content.lower()
+                    
+                    import re
+                    name_patterns = [
+                        r'my name is ([a-zA-Z\s]+)',
+                        r'i am ([a-zA-Z\s]+)',
+                        r'call me ([a-zA-Z\s]+)',
+                        r"i'm ([a-zA-Z\s]+)"
+                    ]
+                    
+                    for pattern in name_patterns:
+                        match = re.search(pattern, content, re.IGNORECASE)
+                        if match:
+                            name = match.group(1).strip().title()
+                            # Filter out common non-names
+                            non_names = ['fine', 'good', 'okay', 'here', 'working', 'trying', 'looking', 'asking']
+                            if name.lower() not in non_names and len(name.split()) <= 3:
+                                return name
+            
+            return ""
+            
+        except Exception as e:
+            logger.warning(f"Error extracting user name: {e}")
+            return ""
+    
 
 
     def _generate_and_stream_no_answer_response(self, connection_id: str, url: str, conversation_id: str, has_context: bool = False) -> str:
@@ -1565,9 +1830,9 @@ Since no specific context is available from the vector database, please respond 
                 "has_context": False,
                 "vector_db": vector_db or KNOWLEDGE_BASE_ID,
                 "websocket_connection": websocket_connection or {},
-                # Enhanced memory settings
-                "memory_mode": "sliding_window",  # Options: 'full', 'sliding_window', 'summary'
-                "max_memory_turns": 8,  # Keep last 8 conversation turns
+                # Enhanced conversational memory settings
+                "memory_mode": "conversational",  # Use conversational memory for name/context retention
+                "max_memory_turns": 15,  # Keep more messages for better memory
                 "conversation_summary": "",
                 # Tool-first routing
                 "query_type": "unknown",

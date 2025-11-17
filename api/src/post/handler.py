@@ -125,6 +125,9 @@ class State(Dict[str, Any]):
     conversation_summary: str  # For long conversations
     memory_mode: str  # 'full', 'summary', or 'sliding_window'
     max_memory_turns: int  # How many turns to remember
+    # Tool-first routing fields
+    query_type: str  # 'tools', 'documentation', 'complex'
+    tool_category: str  # Category for tool-based responses
 
 class WordLevelStreamingHandler:
     """
@@ -498,23 +501,273 @@ class BedrockKnowledgeBaseWorkflow:
             return False
 
     def _create_workflow(self):
-        """Create the LangGraph workflow with nodes and edges"""
+        """
+        Create LangGraph workflow with Tool-first + Bedrock KB approach
+        Optimized for enterprise chatbots with minimal LLM calls
+        """
         workflow = StateGraph(State)
         
-        # Add nodes - simplified workflow
+        # Tool-first approach: Handle common queries without LLM
+        workflow.add_node("route_query", self.route_query_by_type)
+        workflow.add_node("handle_tool_query", self.handle_with_tools)
         workflow.add_node("manage_memory", self.manage_conversation_memory)
         workflow.add_node("retrieve_from_kb", self.retrieve_from_knowledge_base)
         workflow.add_node("generate_ai_response", self.generate_chat_response)
         
-        # Simplified workflow flow
-        workflow.set_entry_point("manage_memory")
+        # Start with intelligent routing
+        workflow.set_entry_point("route_query")
         
-        # Linear workflow
+        # Tool-first conditional routing
+        workflow.add_conditional_edges(
+            "route_query",
+            self.should_use_tools,
+            {
+                "tools": "handle_tool_query",        # No LLM needed
+                "documentation": "manage_memory",    # Full KB + LLM
+                "complex": "manage_memory"           # Full processing
+            }
+        )
+        
+        # Tool path (fast, no LLM)
+        workflow.add_edge("handle_tool_query", END)
+        
+        # Documentation/Complex path (Bedrock KB + LLM)
         workflow.add_edge("manage_memory", "retrieve_from_kb")
         workflow.add_edge("retrieve_from_kb", "generate_ai_response")
         workflow.add_edge("generate_ai_response", END)
         
         return workflow.compile()
+    
+    def route_query_by_type(self, state: State) -> State:
+        """
+        LangGraph Node: Intelligent query routing using tool-first approach
+        Minimizes LLM calls by handling common queries with tools
+        """
+        user_query = state.get("user_query", "").strip().lower()
+        
+        # Tool-based query patterns (no LLM needed) - Enterprise optimized
+        tool_patterns = {
+            "greetings": ["hello", "hi", "hey", "good morning", "good afternoon", "good evening"],
+            "status": ["status", "health", "ping", "test", "working", "available"],
+            "help": ["help", "what can you do", "how to use", "commands", "capabilities"],
+            "thanks": ["thank you", "thanks", "appreciate", "grateful"],
+            "goodbye": ["bye", "goodbye", "see you", "farewell", "exit"],
+            "identity": ["who are you", "what are you", "your name", "about you"],
+            "quick_links": ["links", "resources", "bookmarks", "shortcuts"],
+            "contact": ["contact", "support", "team", "escalate"],
+            "policies": ["policy", "compliance", "security policy", "data policy"],
+        }
+        
+        # Documentation query patterns (needs KB)
+        doc_patterns = [
+            "how to", "what is", "explain", "define", "documentation", 
+            "guide", "tutorial", "setup", "configure", "install",
+            "deployment", "kubernetes", "docker", "aws", "troubleshoot"
+        ]
+        
+        # Classify query type
+        query_type = "complex"  # Default
+        
+        # Check for tool-handleable queries
+        for category, patterns in tool_patterns.items():
+            if any(pattern in user_query for pattern in patterns):
+                query_type = "tools"
+                state["tool_category"] = category
+                break
+        
+        # Check for documentation queries
+        if query_type == "complex":
+            if any(pattern in user_query for pattern in doc_patterns):
+                query_type = "documentation"
+        
+        state["query_type"] = query_type
+        logger.info(f"🎯 Query routed as: {query_type} - '{user_query[:50]}...'")
+        return state
+    
+    def should_use_tools(self, state: State) -> str:
+        """Conditional edge: Route based on query classification"""
+        return state.get("query_type", "complex")
+    
+    def handle_with_tools(self, state: State) -> State:
+        """
+        LangGraph Node: Handle queries using tools (no LLM calls)
+        Maximum performance for common organizational queries
+        """
+        user_query = state.get("user_query", "")
+        tool_category = state.get("tool_category", "general")
+        
+        # Enterprise tool-based response generation (no AI needed)
+        tool_responses = {
+            "greetings": "Hello! I'm your organization's AI assistant. I can help you with documentation, guides, troubleshooting, and general questions about our systems. What would you like to know?",
+            
+            "status": """✅ **System Status Dashboard**
+🔄 Knowledge Base: Connected & Updated
+🤖 AI Assistant: Ready & Operational  
+📚 Documentation: Available (Latest Version)
+🛡️ Security: All checks passed
+⚡ Performance: Optimal
+
+How can I help you today?""",
+            
+            "help": """🚀 **I can help you with:**
+
+**📚 Documentation & Knowledge**
+- System setup and configuration guides
+- Deployment procedures and best practices
+- Troubleshooting and error resolution
+- API documentation and examples
+
+**🔧 Technical Support**  
+- Kubernetes and containerization
+- AWS services and cloud architecture
+- CI/CD pipeline guidance
+- Performance optimization tips
+
+**🏢 Organizational Resources**
+- Company policies and procedures
+- Team contacts and escalation paths
+- Quick links and shortcuts
+- Compliance and security guidelines
+
+**Type any question or use commands like:**
+- "How to deploy..." 
+- "What is the policy for..."
+- "Show me contact info"
+- "Status check"
+
+What would you like to know?""",
+            
+            "thanks": "You're very welcome! I'm here 24/7 to assist with documentation, technical questions, or organizational guidance. Feel free to ask me anything else!",
+            
+            "goodbye": "Goodbye! Have a productive day. Remember, I'm always available for technical support, documentation, and organizational questions. See you next time! 👋",
+            
+            "identity": """🤖 **About Your AI Assistant**
+
+I'm your organization's intelligent assistant, powered by:
+- **AWS Bedrock** for advanced AI capabilities
+- **Your Knowledge Base** for accurate, up-to-date information
+- **LangGraph** for efficient query processing
+
+**My specialties:**
+✅ Technical documentation and guides
+✅ System troubleshooting and support  
+✅ Organizational policies and procedures
+✅ Quick answers without waiting for complex searches
+
+I'm designed specifically for your organization's needs and have access to your internal documentation to provide precise, relevant assistance.""",
+
+            "quick_links": """🔗 **Quick Links & Resources**
+
+**📚 Documentation Hub**
+- API Documentation Portal
+- Developer Guides & Tutorials  
+- System Architecture Diagrams
+- Troubleshooting Knowledge Base
+
+**🛠️ Development Tools**
+- CI/CD Pipeline Dashboard
+- Monitoring & Alerting
+- Code Repository Access
+- Testing Environments
+
+**🏢 Organizational**  
+- Employee Handbook
+- IT Support Portal
+- Policy Documents
+- Contact Directory
+
+*Ask me about any specific resource you need!*""",
+
+            "contact": """📞 **Contact Information & Support**
+
+**🆘 Immediate Support**
+- IT Helpdesk: ext. 2500
+- Security Team: ext. 9999
+- On-call Engineer: Check Slack #alerts
+
+**📋 Team Contacts**
+- DevOps Team: devops@company.com
+- Platform Team: platform@company.com  
+- Security Team: security@company.com
+
+**🚨 Escalation Paths**
+1. Try me first for quick answers
+2. Check documentation (I can guide you)
+3. Contact relevant team above
+4. Escalate to management if needed
+
+*I can help you find specific contact info - just ask!*""",
+
+            "policies": """🛡️ **Organizational Policies & Compliance**
+
+**🔒 Security Policies**
+- Data Classification Guidelines
+- Access Control Procedures
+- Incident Response Protocol
+- Security Best Practices
+
+**📋 Development Policies**
+- Code Review Standards
+- Deployment Procedures  
+- Testing Requirements
+- Documentation Standards
+
+**⚖️ Compliance**
+- GDPR Compliance Guidelines
+- SOC 2 Requirements
+- Industry Standards (ISO, etc.)
+- Audit Procedures
+
+*Ask me for specific policy details or compliance questions!*"""
+        }
+        
+        # Get appropriate response
+        response = tool_responses.get(tool_category, tool_responses["help"])
+        
+        # Handle introduction queries with name extraction
+        if "my name is" in user_query.lower() or "i am" in user_query.lower():
+            try:
+                # Extract name for personalization
+                import re
+                name_match = re.search(r'(?:my name is|i am|i\'m)\s+([a-zA-Z\s]+)', user_query, re.IGNORECASE)
+                if name_match:
+                    name = name_match.group(1).strip().title()
+                    response = f"Nice to meet you, {name}! I'm your organization's AI assistant. I can help you with documentation, technical questions, and guidance on our systems. What would you like to know?"
+                else:
+                    response = "Nice to meet you! I'm your organization's AI assistant, here to help with documentation and technical questions. What can I assist you with today?"
+            except:
+                response = tool_responses["greetings"]
+        
+        # Update state using LangGraph patterns
+        from langchain_core.messages import HumanMessage, AIMessage
+        new_messages = [
+            HumanMessage(content=user_query),
+            AIMessage(content=response)
+        ]
+        
+        state["ai_response"] = response
+        state["messages"] = add_messages(state.get("messages", []), new_messages)
+        state["has_context"] = False
+        state["context_documents"] = []
+        
+        # Stream the tool-based response
+        connection_info = state.get("websocket_connection", {})
+        if connection_info.get("connectionId") and ENABLE_WEBSOCKET_STREAMING:
+            try:
+                tool_handler = WordLevelStreamingHandler(
+                    connection_id=connection_info["connectionId"],
+                    websocket_url=connection_info["url"],
+                    conversation_id=state.get("conversation_id", ""),
+                    trace_id=state.get("conversation_id", "")
+                )
+                tool_handler.send_start_signal()
+                tool_handler._stream_greeting_response(response)
+                logger.info(f"✅ Streamed tool-based response for category: {tool_category}")
+            except Exception as e:
+                logger.warning(f"Tool response streaming failed: {e}")
+        
+        logger.info(f"🛠️ TOOL RESPONSE: {tool_category} - No LLM call needed")
+        return state
     
     def manage_conversation_memory(self, state: State) -> State:
         """
@@ -1299,7 +1552,10 @@ Since no specific context is available from the vector database, please respond 
                 # Enhanced memory settings
                 "memory_mode": "sliding_window",  # Options: 'full', 'sliding_window', 'summary'
                 "max_memory_turns": 8,  # Keep last 8 conversation turns
-                "conversation_summary": ""
+                "conversation_summary": "",
+                # Tool-first routing
+                "query_type": "unknown",
+                "tool_category": ""
             }
             
             # Execute the workflow

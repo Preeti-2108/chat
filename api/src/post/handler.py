@@ -113,6 +113,8 @@ class State(Dict[str, Any]):
     conversation_summary: str  # For long conversations
     memory_mode: str  # 'full', 'summary', or 'sliding_window'
     max_memory_turns: int  # How many turns to remember
+    # Greeting detection
+    is_greeting: bool  # Flag to indicate if query is a greeting
 
 class WordLevelStreamingHandler:
     """
@@ -425,12 +427,24 @@ class BedrockKnowledgeBaseWorkflow:
         
         # Add nodes
         workflow.add_node("manage_memory", self.manage_conversation_memory)
+        workflow.add_node("check_greeting", self.check_greeting_query)
         workflow.add_node("retrieve_from_kb", self.retrieve_from_knowledge_base)
         workflow.add_node("generate_response", self.generate_chat_response)
         
-        # Add edges - workflow flow with memory management
+        # Add edges - workflow flow with greeting check
         workflow.set_entry_point("manage_memory")
-        workflow.add_edge("manage_memory", "retrieve_from_kb")
+        workflow.add_edge("manage_memory", "check_greeting")
+        
+        # Conditional routing: if greeting, skip KB retrieval
+        workflow.add_conditional_edges(
+            "check_greeting",
+            self.route_after_greeting_check,
+            {
+                "greeting": "generate_response",  # Skip KB for greetings
+                "normal_query": "retrieve_from_kb"  # Normal flow through KB
+            }
+        )
+        
         workflow.add_edge("retrieve_from_kb", "generate_response")
         workflow.add_edge("generate_response", END)
         
@@ -509,6 +523,41 @@ class BedrockKnowledgeBaseWorkflow:
         summary_message = AIMessage(content=f"[SUMMARY] {summary_content}")
         
         return [summary_message] + recent_messages
+    
+    def check_greeting_query(self, state: State) -> State:
+        """
+        Check if the query is a greeting and mark it for routing
+        """
+        try:
+            user_query = state.get("user_query", "")
+            
+            if self._is_greeting_query(user_query):
+                state["is_greeting"] = True
+                logger.info(f"Detected greeting query: '{user_query}' - will skip Bedrock retrieval")
+            else:
+                state["is_greeting"] = False
+                logger.info(f"Normal query detected: '{user_query[:50]}...' - will use Bedrock retrieval")
+                
+            return state
+            
+        except Exception as e:
+            logger.error(f"Error in greeting check: {e}")
+            # Default to normal query on error
+            state["is_greeting"] = False
+            return state
+    
+    def route_after_greeting_check(self, state: State) -> str:
+        """
+        Route the workflow based on whether the query is a greeting
+        """
+        is_greeting = state.get("is_greeting", False)
+        
+        if is_greeting:
+            logger.info("Routing to direct response generation (skipping Bedrock)")
+            return "greeting"
+        else:
+            logger.info("Routing to Bedrock knowledge base retrieval")
+            return "normal_query"
     
     def retrieve_from_knowledge_base(self, state: State) -> State:
         """
@@ -628,6 +677,22 @@ class BedrockKnowledgeBaseWorkflow:
         user_query = state.get("user_query", "")
         context_documents = state.get("context_documents", [])
         conversation_id = state.get("conversation_id", "")
+        
+        # Handle greetings without using Bedrock context (faster and cheaper)
+        if self._is_greeting_query(user_query):
+            greeting_response = self._get_greeting_response(user_query)
+            
+            # Use LangGraph's message handling for greetings
+            new_messages = [
+                HumanMessage(content=user_query),
+                AIMessage(content=greeting_response)
+            ]
+            state["ai_response"] = greeting_response
+            state["messages"] = add_messages(state.get("messages", []), new_messages)
+            state["has_context"] = False  # No Bedrock context used
+            
+            logger.info(f"Handled greeting without Bedrock: '{user_query}' -> '{greeting_response}'")
+            return state
         
         # Prepare context-aware prompt with detailed system instructions
         system_instructions = """You are an AI assistant designed to provide accurate and comprehensive answers based on information from the vector database. Follow these guidelines:
@@ -978,6 +1043,81 @@ Since no specific context is available from the vector database, please respond 
         
         return "\n".join(sources_lines)
     
+    def _is_greeting_query(self, user_query: str) -> bool:
+        """
+        Detect if the query is a simple greeting that doesn't need Bedrock
+        """
+        if not user_query or len(user_query.strip()) == 0:
+            return False
+            
+        query_lower = user_query.lower().strip()
+        
+        # Remove punctuation for better matching
+        import re
+        query_clean = re.sub(r'[^\w\s]', '', query_lower)
+        
+        # Simple greetings - exact matches
+        simple_greetings = [
+            'hello', 'hi', 'hey', 'hola', 'bonjour',
+            'good morning', 'good afternoon', 'good evening', 'good day',
+            'greetings', 'salutations', 'howdy'
+        ]
+        
+        # Polite expressions
+        polite_expressions = [
+            'thank you', 'thanks', 'thank you very much', 'thanks a lot',
+            'please', 'excuse me', 'pardon me',
+            'goodbye', 'bye', 'see you', 'farewell', 'take care'
+        ]
+        
+        # Simple questions about the assistant
+        simple_assistant_queries = [
+            'who are you', 'what are you', 'what can you do', 'how can you help',
+            'what is your name', 'are you ai', 'are you a bot', 'are you human'
+        ]
+        
+        # Check exact matches first
+        if query_clean in simple_greetings + polite_expressions + simple_assistant_queries:
+            return True
+            
+        # Check if query starts with greeting words (for variations like "Hi there!")
+        greeting_starts = ['hello', 'hi', 'hey', 'good morning', 'good afternoon', 'good evening']
+        if any(query_clean.startswith(greeting) for greeting in greeting_starts):
+            # Only if the query is short (likely just a greeting with maybe a name)
+            if len(query_clean.split()) <= 4:
+                return True
+        
+        return False
+    
+    def _get_greeting_response(self, user_query: str) -> str:
+        """
+        Generate appropriate greeting response without using Bedrock
+        """
+        query_lower = user_query.lower().strip()
+        
+        # Thank you responses
+        if 'thank' in query_lower:
+            return "You're very welcome! 😊 I'm here to help whenever you need assistance with your questions."
+        
+        # Goodbye responses  
+        if any(word in query_lower for word in ['bye', 'goodbye', 'see you', 'farewell', 'take care']):
+            return "Goodbye! 👋 Feel free to come back anytime if you have more questions. Have a great day!"
+        
+        # Time-specific greetings
+        if 'good morning' in query_lower:
+            return "Good morning! ☀️ I'm your AI assistant, ready to help you with any questions about your knowledge base. What would you like to know?"
+        elif 'good afternoon' in query_lower:
+            return "Good afternoon! 🌤️ I'm here to assist you with information from your knowledge base. How can I help you today?"
+        elif 'good evening' in query_lower:
+            return "Good evening! 🌙 I'm your AI assistant. I can help you find information from your knowledge base. What questions do you have?"
+        
+        # Questions about the assistant
+        if any(phrase in query_lower for phrase in ['who are you', 'what are you', 'what can you do', 'how can you help']):
+            return "I'm your AI assistant! 🤖 I can help you find information from your knowledge base, answer questions about your documents, and provide detailed explanations. Just ask me anything you'd like to know!"
+        
+        # Default greeting response
+        return "Hello! 👋 I'm your AI assistant, ready to help you with questions about your knowledge base. What would you like to know today?"
+    
     def _assess_query_complexity(self, user_query: str) -> str:
         """
         Assess query complexity to determine retrieval strategy
@@ -1036,7 +1176,9 @@ Since no specific context is available from the vector database, please respond 
                 # Enhanced memory settings
                 "memory_mode": "sliding_window",  # Options: 'full', 'sliding_window', 'summary'
                 "max_memory_turns": 8,  # Keep last 8 conversation turns
-                "conversation_summary": ""
+                "conversation_summary": "",
+                # Greeting detection
+                "is_greeting": False
             }
             
             # Execute the workflow

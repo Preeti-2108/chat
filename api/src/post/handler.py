@@ -125,7 +125,6 @@ class State(Dict[str, Any]):
     conversation_summary: str  # For long conversations
     memory_mode: str  # 'full', 'summary', or 'sliding_window'
     max_memory_turns: int  # How many turns to remember
-    # Basic query detection now handled by filter_basic_queries node
 
 class WordLevelStreamingHandler:
     """
@@ -502,117 +501,21 @@ class BedrockKnowledgeBaseWorkflow:
         """Create the LangGraph workflow with nodes and edges"""
         workflow = StateGraph(State)
         
-        # Add nodes - optimized flow with early basic query handling
-        workflow.add_node("filter_basic_queries", self.filter_basic_queries)  # NEW: Early filter
-        workflow.add_node("handle_basic_response", self.handle_basic_response)  # NEW: Direct basic responses
+        # Add nodes - simplified workflow
         workflow.add_node("manage_memory", self.manage_conversation_memory)
         workflow.add_node("retrieve_from_kb", self.retrieve_from_knowledge_base)
         workflow.add_node("generate_ai_response", self.generate_chat_response)
         
-        # Optimized workflow flow - basic queries handled first
-        workflow.set_entry_point("filter_basic_queries")
+        # Simplified workflow flow
+        workflow.set_entry_point("manage_memory")
         
-        # Route based on query type
-        workflow.add_conditional_edges(
-            "filter_basic_queries",
-            self.route_query_type,
-            {
-                "basic": "handle_basic_response",      # Direct response for greetings/basic queries
-                "complex": "manage_memory"             # Full workflow for complex queries
-            }
-        )
-        
-        # Complex query flow (unchanged)
+        # Linear workflow
         workflow.add_edge("manage_memory", "retrieve_from_kb")
         workflow.add_edge("retrieve_from_kb", "generate_ai_response")
-        
-        # Both paths end at the same point
-        workflow.add_edge("handle_basic_response", END)
         workflow.add_edge("generate_ai_response", END)
         
         return workflow.compile()
     
-    def filter_basic_queries(self, state: State) -> State:
-        """
-        LangGraph Node: Early filter for basic queries (greetings, simple questions)
-        This runs before any expensive operations like memory management or KB retrieval
-        """
-        try:
-            user_query = state.get("user_query", "").strip()
-            
-            if not user_query:
-                state["query_type"] = "basic"
-                state["basic_response"] = "Please provide a question or message for me to help you with."
-                return state
-            
-            # Enhanced basic query detection
-            if self._is_basic_query(user_query):
-                state["query_type"] = "basic"
-                state["basic_response"] = self._get_basic_response(user_query)
-                logger.info(f"🚀 FAST PATH: Basic query detected: '{user_query}' - skipping KB/AI")
-            else:
-                state["query_type"] = "complex"
-                logger.info(f"📚 FULL PATH: Complex query detected: '{user_query[:50]}...' - using full workflow")
-                
-            return state
-            
-        except Exception as e:
-            logger.error(f"Error in basic query filter: {e}")
-            # Default to complex workflow on error
-            state["query_type"] = "complex"
-            return state
-
-    def route_query_type(self, state: State) -> str:
-        """Route based on query complexity"""
-        query_type = state.get("query_type", "complex")
-        return query_type
-
-    def handle_basic_response(self, state: State) -> State:
-        """
-        LangGraph Node: Handle basic queries with direct responses (no AI/KB needed)
-        """
-        try:
-            user_query = state.get("user_query", "")
-            basic_response = state.get("basic_response", "Hello! How can I help you?")
-            conversation_id = state.get("conversation_id", "")
-            
-            # Stream the basic response
-            connection_info = state.get("websocket_connection", {})
-            connection_id = connection_info.get("connectionId")
-            url = connection_info.get("url")
-            
-            if connection_id and url and ENABLE_WEBSOCKET_STREAMING:
-                try:
-                    basic_handler = WordLevelStreamingHandler(
-                        connection_id=connection_id,
-                        websocket_url=url,
-                        conversation_id=conversation_id,
-                        trace_id=conversation_id
-                    )
-                    basic_handler.send_start_signal()
-                    basic_handler._stream_greeting_response(basic_response)
-                    logger.info("✅ Streamed basic response via fast path")
-                    
-                except Exception as stream_error:
-                    logger.warning(f"Basic response streaming failed: {stream_error}")
-            
-            # Update state with LangGraph message handling
-            new_messages = [
-                HumanMessage(content=user_query),
-                AIMessage(content=basic_response)
-            ]
-            state["ai_response"] = basic_response
-            state["messages"] = add_messages(state.get("messages", []), new_messages)
-            state["has_context"] = False
-            state["context_documents"] = []
-            
-            return state
-            
-        except Exception as e:
-            logger.error(f"Error handling basic response: {e}")
-            state["ai_response"] = "Hello! How can I help you today?"
-            return state
-
     def manage_conversation_memory(self, state: State) -> State:
         """
         LangGraph Memory Management Node - handles conversation memory efficiently
@@ -686,8 +589,6 @@ class BedrockKnowledgeBaseWorkflow:
         summary_message = AIMessage(content=f"[SUMMARY] {summary_content}")
         
         return [summary_message] + recent_messages
-    
-    # Note: Old greeting check methods removed - now using filter_basic_queries for better performance
     
     def retrieve_from_knowledge_base(self, state: State) -> State:
         """
@@ -808,8 +709,7 @@ class BedrockKnowledgeBaseWorkflow:
         context_documents = state.get("context_documents", [])
         conversation_id = state.get("conversation_id", "")
         
-        # Note: Basic queries (greetings, simple questions) are now handled by filter_basic_queries node
-        # This method only handles complex queries that need AI processing
+        # All queries now go through the full AI processing workflow
         
         # Prepare context-aware prompt with detailed system instructions
         system_instructions = """You are an AI assistant designed to provide accurate and comprehensive answers based on information from the vector database. Follow these guidelines:
@@ -1313,152 +1213,7 @@ Since no specific context is available from the vector database, please respond 
         
         return "\n".join(sources_lines)
     
-    def _is_basic_query(self, user_query: str) -> bool:
-        """
-        Enhanced detection for basic queries that don't need AI/KB processing
-        """
-        if not user_query or len(user_query.strip()) == 0:
-            return True
-            
-        query_lower = user_query.lower().strip()
-        query_clean = re.sub(r'[^\w\s]', '', query_lower)
-        
-        # Debug logging for "my name is" queries
-        if "my name is" in query_lower:
-            logger.info(f"🔍 DEBUG: Processing introduction query: '{user_query}'")
-            logger.info(f"🔍 DEBUG: query_clean: '{query_clean}'")
-            logger.info(f"🔍 DEBUG: Word count: {len(query_clean.split())}")
-        
-        # Greetings and social interactions
-        greetings = [
-            'hello', 'hi', 'hey', 'hola', 'bonjour', 'namaste',
-            'good morning', 'good afternoon', 'good evening', 'good day',
-            'greetings', 'salutations', 'howdy'
-        ]
-        
-        # Polite expressions
-        polite = [
-            'thank you', 'thanks', 'thank you very much', 'thanks a lot',
-            'please', 'excuse me', 'pardon me', 'sorry',
-            'goodbye', 'bye', 'see you', 'farewell', 'take care'
-        ]
-        
-        # Simple assistant queries
-        simple_assistant = [
-            'who are you', 'what are you', 'what can you do', 'how can you help',
-            'what is your name', 'are you ai', 'are you a bot', 'are you human',
-            'help', 'hello', 'test', 'testing'
-        ]
-        
-        # Introduction patterns - enhanced to handle more variations
-        introductions = [
-            'my name is', 'i am', 'im', 'i\'m', 'call me', 'this is',
-            'nice to meet you', 'pleased to meet you'
-        ]
-        
-        # Test patterns
-        test_patterns = ['test', 'testing', 'hello world', 'ping']
-        
-        # Check exact matches
-        if query_clean in greetings + polite + simple_assistant + test_patterns:
-            logger.info(f"🔍 DEBUG: Found exact match for basic query: '{query_clean}'")
-            return True
-            
-        # Check introduction patterns (enhanced word limit)
-        for pattern in introductions:
-            if pattern in query_clean:
-                word_count = len(query_clean.split())
-                if word_count <= 8:  # Increased from 6 to 8 to be more inclusive
-                    logger.info(f"🔍 DEBUG: Found introduction pattern '{pattern}' in '{query_clean}' (words: {word_count})")
-                    return True
-                else:
-                    logger.info(f"🔍 DEBUG: Introduction pattern '{pattern}' found but too long ({word_count} words)")
-                
-        # Check greeting starters (short queries only)
-        greeting_starts = ['hello', 'hi', 'hey', 'good morning', 'good afternoon', 'good evening']
-        if any(query_clean.startswith(start) for start in greeting_starts):
-            if len(query_clean.split()) <= 4:
-                return True
-                
-        # Single word queries that are likely basic
-        single_word_basic = ['help', 'hello', 'hi', 'test', 'ping', 'thanks', 'bye']
-        if len(query_clean.split()) == 1 and query_clean in single_word_basic:
-            return True
-            
-        return False
 
-    def _get_basic_response(self, user_query: str) -> str:
-        """
-        Generate appropriate basic response without AI processing
-        """
-        query_lower = user_query.lower().strip()
-        
-        # Test/ping responses
-        if any(word in query_lower for word in ['test', 'testing', 'ping']):
-            return "✅ System is working perfectly! How can I help you today?"
-        
-        # Thank you responses
-        if 'thank' in query_lower:
-            return "You're very welcome! 😊 I'm here to help whenever you need assistance with your questions."
-        
-        # Goodbye responses  
-        if any(word in query_lower for word in ['bye', 'goodbye', 'see you', 'farewell', 'take care']):
-            return "Goodbye! 👋 Feel free to come back anytime if you have more questions. Have a great day!"
-        
-        # Time-specific greetings
-        if 'good morning' in query_lower:
-            return "Good morning! ☀️ How can I help you today?"
-        elif 'good afternoon' in query_lower:
-            return "Good afternoon! 🌤️ How can I help you today?"
-        elif 'good evening' in query_lower:
-            return "Good evening! 🌙 How can I help you today?"
-        
-        # Assistant capability questions
-        if any(phrase in query_lower for phrase in ['who are you', 'what are you', 'what can you do', 'how can you help']):
-            return "I'm your AI assistant! 🤖 I can help you find information from your knowledge base, answer questions about your documents, and provide detailed explanations. Just ask me anything you'd like to know!"
-        
-        # Introduction responses - extract name if possible
-        if any(pattern in query_lower for pattern in ['my name is', 'i am', 'im', 'i\'m', 'call me']):
-            # Try to extract the name for a more personal response
-            name = ""
-            try:
-                if 'my name is' in query_lower:
-                    name = query_lower.split('my name is')[1].strip()
-                elif 'call me' in query_lower:
-                    name = query_lower.split('call me')[1].strip()
-                elif 'i am' in query_lower or 'im' in query_lower or "i'm" in query_lower:
-                    # Handle "I am John" or "I'm John" 
-                    if 'i am' in query_lower:
-                        name = query_lower.split('i am')[1].strip()
-                    elif "i'm" in query_lower:
-                        name = query_lower.split("i'm")[1].strip()
-                    elif 'im' in query_lower:
-                        # Be more careful with 'im' to avoid false matches
-                        words = query_lower.split()
-                        if 'im' in words:
-                            idx = words.index('im')
-                            if idx < len(words) - 1:
-                                name = ' '.join(words[idx+1:])
-                
-                # Clean up the name (remove punctuation, capitalize)
-                if name:
-                    name = re.sub(r'[^\w\s]', '', name).strip().title()
-                    if name and len(name.split()) <= 2:  # Reasonable name length
-                        return f"Nice to meet you, {name}! 😊 I'm happy to help you with any questions you might have. What can I assist you with today?"
-            except:
-                pass  # Fallback to generic response if name extraction fails
-                
-            return "Nice to meet you! 😊 I'm happy to help you with any questions you might have. What can I assist you with today?"
-        
-        # Help requests
-        if query_lower in ['help']:
-            return "I'm here to help! 🚀 You can ask me questions about your documents, search for information in the knowledge base, or just have a conversation. What would you like to know?"
-        
-        # Default greeting response
-        return "Hello! 👋 How can I help you today?"
-
-    # DEPRECATED: Old greeting methods - replaced by enhanced _is_basic_query() and _get_basic_response()
-    # These are kept for backward compatibility but are no longer used in the optimized workflow
 
     def _generate_and_stream_no_answer_response(self, connection_id: str, url: str, conversation_id: str, has_context: bool = False) -> str:
         """
@@ -1545,7 +1300,6 @@ Since no specific context is available from the vector database, please respond 
                 "memory_mode": "sliding_window",  # Options: 'full', 'sliding_window', 'summary'
                 "max_memory_turns": 8,  # Keep last 8 conversation turns
                 "conversation_summary": ""
-                # Note: Basic query detection now handled by filter_basic_queries node
             }
             
             # Execute the workflow

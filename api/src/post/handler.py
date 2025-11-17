@@ -15,6 +15,10 @@ from langchain_core.messages import HumanMessage, AIMessage
 from langchain_openai import AzureChatOpenAI
 from botocore.config import Config
 
+# LangChain Memory imports
+from langchain.memory import ConversationBufferMemory, ConversationBufferWindowMemory, ConversationSummaryMemory
+from langchain_core.chat_history import BaseChatMessageHistory, InMemoryChatMessageHistory
+
 from src.helpers.api_responses import Responses  # Custom helper for API responses
 from src.helpers.construct_response import construct_response  # Custom helper to construct responses
 from src.helpers.schema_validation import validate_request_datas_schema_pydantic  # Custom helper to validate request data schema
@@ -366,6 +370,10 @@ class BedrockKnowledgeBaseWorkflow:
         self.bedrock_agent_client = self._setup_bedrock_agent()
         self.chat_model = self._setup_chat_model()
         self.workflow = self._create_workflow()
+        
+        # Initialize conversation memory storage
+        # Key: conversation_id, Value: ConversationBufferMemory
+        self.conversation_memories = {}
     
     def _setup_bedrock_agent(self):
         """Setup AWS Bedrock Agent Runtime client for Knowledge Base queries"""
@@ -429,6 +437,26 @@ class BedrockKnowledgeBaseWorkflow:
         workflow.add_edge("generate_response", END)
         
         return workflow.compile()
+    
+    def _get_conversation_memory(self, conversation_id: str) -> ConversationBufferMemory:
+        """
+        Get or create ConversationBufferMemory for the given conversation_id
+        This automatically handles storing and retrieving conversation history
+        """
+        if conversation_id not in self.conversation_memories:
+            # Create new memory for this conversation
+            memory = ConversationBufferMemory(
+                memory_key="chat_history",
+                return_messages=True,  # Return as Message objects
+                input_key="input",
+                output_key="output"
+            )
+            self.conversation_memories[conversation_id] = memory
+            logger.info(f"💭 Created new conversation memory for {conversation_id}")
+        else:
+            logger.info(f"💭 Retrieved existing conversation memory for {conversation_id}")
+        
+        return self.conversation_memories[conversation_id]
     
     def retrieve_from_knowledge_base(self, state: State) -> State:
         """
@@ -614,10 +642,17 @@ Since no specific context is available from the vector database, please respond 
         
         try:
             if self.chat_model:
-                # Create message for the chat model
-                messages = [HumanMessage(content=prompt)]
+                # Get conversation memory for this conversation
+                memory = self._get_conversation_memory(conversation_id)
                 
-                logger.info("Starting Azure OpenAI streaming response...")
+                # Get conversation history from memory
+                chat_history = memory.chat_memory.messages
+                
+                # Create messages: conversation history + current user query
+                messages = chat_history + [HumanMessage(content=user_query)]
+                
+                logger.info(f"Starting Azure OpenAI streaming response with {len(chat_history)} previous messages...")
+                logger.info(f"Memory contains: {[type(msg).__name__ for msg in chat_history]}")
                 
                 # Check if WebSocket connection info is available in state
                 connection_info = state.get("websocket_connection", {})
@@ -663,44 +698,22 @@ Since no specific context is available from the vector database, please respond 
                 logger.error(f"Response: {e.response}")
             ai_response = "I encountered an error while processing your request. Please try again."
         
+        # Save conversation to memory for future reference
+        memory = self._get_conversation_memory(conversation_id)
+        memory.save_context(
+            {"input": user_query}, 
+            {"output": ai_response}
+        )
+        logger.info(f"💾 Saved conversation exchange to memory for {conversation_id}")
+        
         # Update state with response
         state["ai_response"] = ai_response
-        state["messages"] = state.get("messages", []) + [
-            HumanMessage(content=user_query),
-            AIMessage(content=ai_response)
-        ]
+        state["messages"] = memory.chat_memory.messages  # Use memory messages
         
         # Extract source information from context documents
         sources_info = []
         logger.info(f"Processing {len(context_documents)} context documents for source extraction")
-        
-        # for i, doc in enumerate(context_documents):
-        #     logger.info(f"Document {i+1} structure: {type(doc)}")
-        #     logger.info(f"Document {i+1} keys: {doc.keys() if isinstance(doc, dict) else 'Not a dict'}")
-            
-        #     if isinstance(doc, dict):
-        #         location = doc.get('location', {})
-        #         logger.info(f"Document {i+1} location: {location}")
-                
-        #         # Handle different possible location structures
-        #         uri = ''
-        #         if 's3Location' in location:
-        #             uri = location.get('s3Location', {}).get('uri', '')
-        #         elif 'uri' in location:
-        #             uri = location.get('uri', '')
-                
-        #         source_info = {
-        #             'uri': uri,
-        #             'score': doc.get('score', 0),
-        #             'type': location.get('type', 'unknown'),
-        #             'metadata': doc.get('metadata', {}),
-        #             'location_raw': location  # Include raw location for debugging
-        #         }
-        #         sources_info.append(source_info)
-        #         logger.info(f"Added source info: {source_info}")
-        
-        # logger.info(f"Final sources_info: {sources_info}")
-        # state["sources_info"] = sources_info
+
         return state
     
     def _select_optimal_documents(self, context_documents: List[Dict], user_query: str) -> List[Dict]:

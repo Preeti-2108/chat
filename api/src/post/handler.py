@@ -11,6 +11,7 @@ from typing import Dict, Any, List
 # LangGraph and LangChain imports for workflow orchestration
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
+from langgraph.checkpoint.memory import MemorySaver  # For thread-based memory
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_openai import AzureChatOpenAI
 from botocore.config import Config
@@ -428,7 +429,9 @@ class BedrockKnowledgeBaseWorkflow:
         workflow.add_edge("retrieve_from_kb", "generate_response")
         workflow.add_edge("generate_response", END)
         
-        return workflow.compile()
+        # Compile with automatic memory - this enables thread-based memory like OpenAI chat
+        memory = MemorySaver()
+        return workflow.compile(checkpointer=memory)
     
     def retrieve_from_knowledge_base(self, state: State) -> State:
         """
@@ -834,8 +837,11 @@ Since no specific context is available from the vector database, please respond 
                 "websocket_connection": websocket_connection or {}
             }
             
-            # Execute the workflow
-            final_state = self.workflow.invoke(initial_state)
+            # Execute the workflow with thread-based memory (like OpenAI chat completions)
+            thread_id = f"user_{conversation_id}"  # Each conversation gets its own memory thread
+            config = {"configurable": {"thread_id": thread_id}}
+            
+            final_state = self.workflow.invoke(initial_state, config=config)
             
             # Return structured response
             return {

@@ -440,37 +440,49 @@ class BedrockKnowledgeBaseWorkflow:
         """
         LangGraph Memory Management Node - handles conversation memory efficiently
         """
-        logger.info("Managing conversation memory")
-        
-        conversation_id = state.get("conversation_id", "")
-        messages = state.get("messages", [])
-        memory_mode = state.get("memory_mode", "sliding_window")
-        max_turns = state.get("max_memory_turns", 10)
-        
-        # Apply memory management strategy
-        if memory_mode == "sliding_window":
-            # Keep only the most recent N turns (2 messages per turn)
-            max_messages = max_turns * 2
-            if len(messages) > max_messages:
-                # Keep system message (if any) + recent messages
-                system_messages = [msg for msg in messages if getattr(msg, 'type', None) == 'system']
-                recent_messages = messages[-max_messages:]
-                managed_messages = system_messages + recent_messages
-            else:
-                managed_messages = messages
-                
-        elif memory_mode == "summary":
-            # Summarize older conversations (implement if needed)
-            managed_messages = self._summarize_old_messages(messages, max_turns)
+        try:
+            logger.info("Managing conversation memory")
             
-        else:  # "full" - keep all messages
-            managed_messages = messages
+            conversation_id = state.get("conversation_id", "")
+            messages = state.get("messages", [])
+            memory_mode = state.get("memory_mode", "sliding_window")
+            max_turns = state.get("max_memory_turns", 10)
+        except Exception as e:
+            logger.error(f"Error in memory management initialization: {e}")
+            # Return state with minimal changes on error
+            return state
         
-        # Update state with managed memory
-        state["messages"] = managed_messages
-        
-        logger.info(f"Memory management: {len(messages)} -> {len(managed_messages)} messages (mode: {memory_mode})")
-        return state
+        try:
+            # Apply memory management strategy
+            if memory_mode == "sliding_window":
+                # Keep only the most recent N turns (2 messages per turn)
+                max_messages = max_turns * 2
+                if len(messages) > max_messages:
+                    # Keep system message (if any) + recent messages
+                    system_messages = [msg for msg in messages if getattr(msg, 'type', None) == 'system']
+                    recent_messages = messages[-max_messages:]
+                    managed_messages = system_messages + recent_messages
+                else:
+                    managed_messages = messages
+                    
+            elif memory_mode == "summary":
+                # Summarize older conversations (implement if needed)
+                managed_messages = self._summarize_old_messages(messages, max_turns)
+                
+            else:  # "full" - keep all messages
+                managed_messages = messages
+            
+            # Update state with managed memory
+            state["messages"] = managed_messages
+            
+            logger.info(f"Memory management: {len(messages)} -> {len(managed_messages)} messages (mode: {memory_mode})")
+            return state
+            
+        except Exception as e:
+            logger.error(f"Error in memory management processing: {e}")
+            logger.error(f"Memory mode: {memory_mode}, Messages count: {len(messages) if messages else 0}")
+            # Return original state on error
+            return state
     
     def _summarize_old_messages(self, messages: List, max_turns: int) -> List:
         """
@@ -502,10 +514,23 @@ class BedrockKnowledgeBaseWorkflow:
         """
         Node 1: Retrieve relevant context from Bedrock Knowledge Base
         """
-        logger.info("Retrieving context from Bedrock Knowledge Base")
-        
-        user_query = state.get("user_query", "")
-        context_documents = []
+        try:
+            logger.info("Retrieving context from Bedrock Knowledge Base")
+            
+            user_query = state.get("user_query", "")
+            context_documents = []
+            
+            if not user_query or not user_query.strip():
+                logger.warning("Empty user query provided to knowledge base retrieval")
+                state["context_documents"] = []
+                state["has_context"] = False
+                return state
+                
+        except Exception as e:
+            logger.error(f"Error initializing knowledge base retrieval: {e}")
+            state["context_documents"] = []
+            state["has_context"] = False
+            return state
         
         if self.bedrock_agent_client and user_query and KNOWLEDGE_BASE_ID:
             
@@ -543,11 +568,23 @@ class BedrockKnowledgeBaseWorkflow:
                 logger.info(f"🔍 Using filters - Environment: {env}, Vector DB: {vector_db}")
                 logger.info(f"🔍 S3 path filter: s3://docops-kb-{env}/{vector_db}/")
                 
-                response = self.bedrock_agent_client.retrieve(
-                    knowledgeBaseId=KNOWLEDGE_BASE_ID,
-                    retrievalQuery={'text': user_query},
-                    retrievalConfiguration=retrieval_config
-                )
+                # Add timeout and retry logic for Bedrock calls
+                max_retries = 2
+                for attempt in range(max_retries + 1):
+                    try:
+                        response = self.bedrock_agent_client.retrieve(
+                            knowledgeBaseId=KNOWLEDGE_BASE_ID,
+                            retrievalQuery={'text': user_query},
+                            retrievalConfiguration=retrieval_config
+                        )
+                        break  # Success, exit retry loop
+                        
+                    except Exception as bedrock_error:
+                        logger.warning(f"Bedrock retrieval attempt {attempt + 1} failed: {bedrock_error}")
+                        if attempt == max_retries:
+                            logger.error(f"All Bedrock retrieval attempts failed: {bedrock_error}")
+                            raise bedrock_error
+                        time.sleep(1)  # Brief delay before retry
                 
                 # Extract retrieved content
                 for i, result in enumerate(response.get('retrievalResults', []), 1):
@@ -681,12 +718,27 @@ User Question: {user_query}
 Since no specific context is available from the vector database, please respond with: "I am not able to obtain an answer for this particular query." and suggest the user provide more specific information or try rephrasing their question."""
         
         try:
-            if self.chat_model:
-                # Use LangGraph-managed conversation history
-                previous_messages = state.get("messages", [])
+            if not self.chat_model:
+                logger.error("Chat model not initialized")
+                ai_response = "I apologize, but the AI service is currently unavailable. Please try again later."
+                state["ai_response"] = ai_response
+                return state
                 
-                # Create messages including conversation history
+            # Use LangGraph-managed conversation history
+            previous_messages = state.get("messages", [])
+            
+            # Validate messages format
+            if previous_messages and not isinstance(previous_messages, list):
+                logger.warning("Invalid previous messages format, resetting to empty list")
+                previous_messages = []
+            
+            # Create messages including conversation history
+            try:
                 messages = previous_messages + [HumanMessage(content=prompt)]
+            except Exception as msg_error:
+                logger.error(f"Error creating message list: {msg_error}")
+                # Fallback: just use current prompt
+                messages = [HumanMessage(content=prompt)]
                 
                 # Log conversation context
                 logger.info(f"Using {len(previous_messages)} previous messages from current session")
@@ -699,27 +751,57 @@ Since no specific context is available from the vector database, please respond 
                 
                 if connection_id and url and ENABLE_WEBSOCKET_STREAMING:
                     # Use WordLevelStreamingHandler for advanced streaming
-                    streaming_handler = WordLevelStreamingHandler(
-                        connection_id=connection_id,
-                        websocket_url=url,
-                        conversation_id=conversation_id,
-                        trace_id=conversation_id
-                    )
-                    
-                    # Send start signal immediately
-                    streaming_handler.send_start_signal()
-                    
-                    # Process streaming response
-                    logger.info("Using word-level streaming handler for response")
-                    logger.info(f"Messages sent to model: {messages}")
-                    ai_response = streaming_handler.process_word_streaming(
-                        self.chat_model.stream(messages)
-                    )
+                    try:
+                        streaming_handler = WordLevelStreamingHandler(
+                            connection_id=connection_id,
+                            websocket_url=url,
+                            conversation_id=conversation_id,
+                            trace_id=conversation_id
+                        )
+                        
+                        # Send start signal immediately
+                        streaming_handler.send_start_signal()
+                        
+                        # Process streaming response with retry logic
+                        logger.info("Using word-level streaming handler for response")
+                        logger.info(f"Messages count: {len(messages)}")
+                        
+                        max_retries = 2
+                        for attempt in range(max_retries + 1):
+                            try:
+                                ai_response = streaming_handler.process_word_streaming(
+                                    self.chat_model.stream(messages)
+                                )
+                                break  # Success
+                            except Exception as stream_error:
+                                logger.warning(f"Streaming attempt {attempt + 1} failed: {stream_error}")
+                                if attempt == max_retries:
+                                    # Fallback to regular invoke
+                                    logger.info("Falling back to regular invoke after streaming failures")
+                                    response = self.chat_model.invoke(messages)
+                                    ai_response = response.content if hasattr(response, 'content') else str(response)
+                                else:
+                                    time.sleep(0.5)  # Brief delay before retry
+                                    
+                    except Exception as handler_error:
+                        logger.error(f"Streaming handler error: {handler_error}")
+                        # Fallback to regular invoke
+                        response = self.chat_model.invoke(messages)
+                        ai_response = response.content if hasattr(response, 'content') else str(response)
                 else:
                     # Fallback to regular invoke if no WebSocket info or streaming disabled
                     logger.info("Using regular invoke (streaming disabled or no WebSocket info)")
-                    response = self.chat_model.invoke(messages)
-                    ai_response = response.content if hasattr(response, 'content') else str(response)
+                    max_retries = 2
+                    for attempt in range(max_retries + 1):
+                        try:
+                            response = self.chat_model.invoke(messages)
+                            ai_response = response.content if hasattr(response, 'content') else str(response)
+                            break
+                        except Exception as invoke_error:
+                            logger.warning(f"Invoke attempt {attempt + 1} failed: {invoke_error}")
+                            if attempt == max_retries:
+                                raise invoke_error
+                            time.sleep(1)  # Brief delay before retry
                 
                 logger.info("Successfully generated AI response")
                 
@@ -730,11 +812,27 @@ Since no specific context is available from the vector database, please respond 
         except Exception as e:
             logger.error(f"Error generating AI response: {e}")
             logger.error(f"Error type: {type(e).__name__}")
+            logger.error(f"User query: {user_query[:100]}...")
+            logger.error(f"Messages count: {len(state.get('messages', []))}")
+            
+            # Log specific error details
             if hasattr(e, 'status_code'):
                 logger.error(f"HTTP Status Code: {e.status_code}")
             if hasattr(e, 'response'):
-                logger.error(f"Response: {e.response}")
-            ai_response = "I encountered an error while processing your request. Please try again."
+                logger.error(f"Error Response: {e.response}")
+            if hasattr(e, 'message'):
+                logger.error(f"Error Message: {e.message}")
+                
+            # Determine appropriate error message based on error type
+            error_type = type(e).__name__
+            if 'timeout' in str(e).lower() or 'TimeoutError' in error_type:
+                ai_response = "The request timed out. Please try again with a simpler question."
+            elif 'rate' in str(e).lower() or 'RateLimitError' in error_type:
+                ai_response = "Too many requests. Please wait a moment and try again."
+            elif 'token' in str(e).lower() or 'context' in str(e).lower():
+                ai_response = "Your conversation is too long. Please start a new conversation."
+            else:
+                ai_response = "I encountered an error while processing your request. Please try again."
         
         # Update state with response using LangGraph's add_messages pattern
         state["ai_response"] = ai_response
@@ -959,14 +1057,34 @@ Since no specific context is available from the vector database, please respond 
             
         except Exception as e:
             logger.error(f"LangGraph workflow execution failed: {e}")
+            logger.error(f"Error type: {type(e).__name__}")
+            logger.error(f"User query: {user_query[:100]}...")
+            logger.error(f"Conversation ID: {conversation_id}")
+            
+            # Log stack trace for debugging
+            import traceback
+            logger.error(f"Stack trace: {traceback.format_exc()}")
+            
+            # Determine error response based on error type
+            error_type = type(e).__name__
+            if 'ValidationError' in error_type:
+                error_message = "Invalid input provided. Please check your request."
+            elif 'ConnectionError' in error_type or 'NetworkError' in error_type:
+                error_message = "Connection error. Please try again."
+            elif 'TimeoutError' in error_type:
+                error_message = "Request timed out. Please try again."
+            else:
+                error_message = "I apologize, but I encountered an error processing your request."
+            
             return {
                 "success": False,
-                "error": "Failed to process chat query",
-                "ai_response": "I apologize, but I encountered an error processing your request.",
+                "error": f"Workflow failed: {str(e)[:100]}",
+                "ai_response": error_message,
                 "context_used": False,
                 "sources_count": 0,
                 "conversation_id": conversation_id or str(uuid.uuid4()),
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
+                "error_type": error_type
             }
 
 # Initialize global workflow instance
@@ -1116,6 +1234,13 @@ def create(event, context):
             logger.info(f"Using vector DB: {vector_db}")
             
             try:
+                # Validate inputs before processing
+                if not user_query or len(user_query.strip()) == 0:
+                    raise ValueError("Empty user query provided")
+                    
+                if len(user_query) > 10000:  # Prevent extremely long queries
+                    raise ValueError("Query too long. Please use shorter questions.")
+                
                 # Prepare WebSocket connection info for streaming
                 websocket_connection = {
                     "connectionId": connectionId,
@@ -1123,7 +1248,11 @@ def create(event, context):
                 }
                 
                 # Execute LangGraph workflow with vector DB filter and WebSocket streaming
+                logger.info(f"Starting LangGraph workflow for conversation: {conversation_id}")
                 workflow_result = bedrock_workflow.process_chat_query(user_query, conversation_id, vector_db, websocket_connection, previous_messages)
+                
+                if not workflow_result:
+                    raise RuntimeError("Workflow returned empty result")
                 
                 if workflow_result.get('success', False):
                     # Add AI response data to the item being stored

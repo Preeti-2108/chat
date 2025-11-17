@@ -1078,18 +1078,25 @@ Since no specific context is available from the vector database, please respond 
                 logger.error("Chat model not initialized - missing Azure OpenAI configuration")
                 ai_response = "I apologize, but the AI service is currently unavailable. Please check the Azure OpenAI configuration and try again later."
                 
+                # Get WebSocket connection info for streaming
+                connection_info = state.get("websocket_connection", {})
+                connection_id = connection_info.get("connectionId")
+                url = connection_info.get("url")
+                
                 # Stream error message
-                try:
-                    error_handler = WordLevelStreamingHandler(
-                        connection_id=connection_id,
-                        websocket_url=url,
-                        conversation_id=conversation_id,
-                        trace_id=conversation_id
-                    )
-                    error_handler.send_start_signal()
-                    error_handler._stream_greeting_response(ai_response)
-                except Exception as stream_error:
-                    logger.error(f"Failed to stream error message: {stream_error}")
+                if connection_id and url and ENABLE_WEBSOCKET_STREAMING:
+                    try:
+                        error_handler = WordLevelStreamingHandler(
+                            connection_id=connection_id,
+                            websocket_url=url,
+                            conversation_id=conversation_id,
+                            trace_id=conversation_id
+                        )
+                        error_handler.send_start_signal()
+                        error_handler._stream_greeting_response(ai_response)
+                        logger.info("✅ Streamed 'AI service unavailable' error message")
+                    except Exception as stream_error:
+                        logger.error(f"Failed to stream error message: {stream_error}")
                 
                 state["ai_response"] = ai_response
                 return state
@@ -1099,18 +1106,25 @@ Since no specific context is available from the vector database, please respond 
                 logger.error("Azure OpenAI connection test failed")
                 ai_response = "I apologize, but the AI service is currently unavailable due to connection issues. Please try again later."
                 
+                # Get WebSocket connection info for streaming
+                connection_info = state.get("websocket_connection", {})
+                connection_id = connection_info.get("connectionId")
+                url = connection_info.get("url")
+                
                 # Stream error message
-                try:
-                    error_handler = WordLevelStreamingHandler(
-                        connection_id=connection_id,
-                        websocket_url=url,
-                        conversation_id=conversation_id,
-                        trace_id=conversation_id
-                    )
-                    error_handler.send_start_signal()
-                    error_handler._stream_greeting_response(ai_response)
-                except Exception as stream_error:
-                    logger.error(f"Failed to stream connection test error message: {stream_error}")
+                if connection_id and url and ENABLE_WEBSOCKET_STREAMING:
+                    try:
+                        error_handler = WordLevelStreamingHandler(
+                            connection_id=connection_id,
+                            websocket_url=url,
+                            conversation_id=conversation_id,
+                            trace_id=conversation_id
+                        )
+                        error_handler.send_start_signal()
+                        error_handler._stream_greeting_response(ai_response)
+                        logger.info("✅ Streamed 'connection failed' error message")
+                    except Exception as stream_error:
+                        logger.error(f"Failed to stream connection test error message: {stream_error}")
                 
                 state["ai_response"] = ai_response
                 return state
@@ -1271,17 +1285,19 @@ Since no specific context is available from the vector database, please respond 
                 logger.error("Chat model not available")
                 
                 # Stream error message even when chat model is not available
-                try:
-                    error_handler = WordLevelStreamingHandler(
-                        connection_id=connection_id,
-                        websocket_url=url,
-                        conversation_id=conversation_id,
-                        trace_id=conversation_id
-                    )
-                    error_handler.send_start_signal()
-                    error_handler._stream_greeting_response(ai_response)
-                except Exception as stream_error:
-                    logger.error(f"Failed to stream error message: {stream_error}")
+                if connection_id and url and ENABLE_WEBSOCKET_STREAMING:
+                    try:
+                        error_handler = WordLevelStreamingHandler(
+                            connection_id=connection_id,
+                            websocket_url=url,
+                            conversation_id=conversation_id,
+                            trace_id=conversation_id
+                        )
+                        error_handler.send_start_signal()
+                        error_handler._stream_greeting_response(ai_response)
+                        logger.info("✅ Streamed 'chat model unavailable' error message")
+                    except Exception as stream_error:
+                        logger.error(f"Failed to stream error message: {stream_error}")
                 
         except Exception as e:
             logger.error(f"Error generating AI response: {e}")

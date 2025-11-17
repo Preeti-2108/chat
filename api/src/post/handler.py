@@ -100,8 +100,8 @@ logger.info(f"Azure OpenAI Max Tokens: {AZURE_OPENAI_MAX_TOKENS}")
 
 # State interface for LangGraph workflow
 class State(Dict[str, Any]):
-    """State object for LangGraph workflow"""
-    messages: List[Any]
+    """State object for LangGraph workflow with enhanced memory"""
+    messages: List[Any]  # LangGraph manages this automatically with add_messages
     user_query: str
     context_documents: List[str]
     conversation_id: str
@@ -109,6 +109,10 @@ class State(Dict[str, Any]):
     has_context: bool
     websocket_connection: Dict[str, Any]
     vector_db: str
+    # Enhanced memory fields
+    conversation_summary: str  # For long conversations
+    memory_mode: str  # 'full', 'summary', or 'sliding_window'
+    max_memory_turns: int  # How many turns to remember
 
 class WordLevelStreamingHandler:
     """
@@ -420,15 +424,79 @@ class BedrockKnowledgeBaseWorkflow:
         workflow = StateGraph(State)
         
         # Add nodes
+        workflow.add_node("manage_memory", self.manage_conversation_memory)
         workflow.add_node("retrieve_from_kb", self.retrieve_from_knowledge_base)
         workflow.add_node("generate_response", self.generate_chat_response)
         
-        # Add edges - workflow flow
-        workflow.set_entry_point("retrieve_from_kb")
+        # Add edges - workflow flow with memory management
+        workflow.set_entry_point("manage_memory")
+        workflow.add_edge("manage_memory", "retrieve_from_kb")
         workflow.add_edge("retrieve_from_kb", "generate_response")
         workflow.add_edge("generate_response", END)
         
         return workflow.compile()
+    
+    def manage_conversation_memory(self, state: State) -> State:
+        """
+        LangGraph Memory Management Node - handles conversation memory efficiently
+        """
+        logger.info("Managing conversation memory")
+        
+        conversation_id = state.get("conversation_id", "")
+        messages = state.get("messages", [])
+        memory_mode = state.get("memory_mode", "sliding_window")
+        max_turns = state.get("max_memory_turns", 10)
+        
+        # Apply memory management strategy
+        if memory_mode == "sliding_window":
+            # Keep only the most recent N turns (2 messages per turn)
+            max_messages = max_turns * 2
+            if len(messages) > max_messages:
+                # Keep system message (if any) + recent messages
+                system_messages = [msg for msg in messages if getattr(msg, 'type', None) == 'system']
+                recent_messages = messages[-max_messages:]
+                managed_messages = system_messages + recent_messages
+            else:
+                managed_messages = messages
+                
+        elif memory_mode == "summary":
+            # Summarize older conversations (implement if needed)
+            managed_messages = self._summarize_old_messages(messages, max_turns)
+            
+        else:  # "full" - keep all messages
+            managed_messages = messages
+        
+        # Update state with managed memory
+        state["messages"] = managed_messages
+        
+        logger.info(f"Memory management: {len(messages)} -> {len(managed_messages)} messages (mode: {memory_mode})")
+        return state
+    
+    def _summarize_old_messages(self, messages: List, max_turns: int) -> List:
+        """
+        Summarize older messages to save tokens while preserving context
+        """
+        max_recent_messages = max_turns * 2
+        
+        if len(messages) <= max_recent_messages:
+            return messages
+        
+        # Keep recent messages as-is
+        recent_messages = messages[-max_recent_messages:]
+        old_messages = messages[:-max_recent_messages]
+        
+        # Create summary of old messages
+        old_content = "\n".join([
+            f"User: {msg.content}" if hasattr(msg, 'content') and msg.__class__.__name__ == 'HumanMessage' 
+            else f"Assistant: {msg.content}" if hasattr(msg, 'content') 
+            else str(msg)
+            for msg in old_messages
+        ])
+        
+        summary_content = f"Previous conversation summary: {old_content[:500]}..."
+        summary_message = AIMessage(content=f"[SUMMARY] {summary_content}")
+        
+        return [summary_message] + recent_messages
     
     def retrieve_from_knowledge_base(self, state: State) -> State:
         """
@@ -614,9 +682,14 @@ Since no specific context is available from the vector database, please respond 
         
         try:
             if self.chat_model:
-                # Create message for the chat model
-                messages = [HumanMessage(content=prompt)]
+                # Use LangGraph-managed conversation history
+                previous_messages = state.get("messages", [])
                 
+                # Create messages including conversation history
+                messages = previous_messages + [HumanMessage(content=prompt)]
+                
+                # Log conversation context
+                logger.info(f"Using {len(previous_messages)} previous messages from current session")
                 logger.info("Starting Azure OpenAI streaming response...")
                 
                 # Check if WebSocket connection info is available in state
@@ -663,12 +736,15 @@ Since no specific context is available from the vector database, please respond 
                 logger.error(f"Response: {e.response}")
             ai_response = "I encountered an error while processing your request. Please try again."
         
-        # Update state with response
+        # Update state with response using LangGraph's add_messages pattern
         state["ai_response"] = ai_response
-        state["messages"] = state.get("messages", []) + [
+        
+        # Use LangGraph's recommended message handling
+        new_messages = [
             HumanMessage(content=user_query),
             AIMessage(content=ai_response)
         ]
+        state["messages"] = add_messages(state.get("messages", []), new_messages)
         
         # Extract source information from context documents
         sources_info = []
@@ -844,27 +920,31 @@ Since no specific context is available from the vector database, please respond 
         else:
             return 'moderate'
     
-    def process_chat_query(self, user_query: str, conversation_id: str = None, vector_db: str = None, websocket_connection: Dict = None) -> Dict[str, Any]:
+    def process_chat_query(self, user_query: str, conversation_id: str = None, vector_db: str = None, websocket_connection: Dict = None, previous_messages: List = None) -> Dict[str, Any]:
         """
         Main method to process a chat query through the LangGraph workflow
         """
         try:
-            # Initialize state
+            # Initialize state with enhanced memory configuration
             initial_state = {
                 "user_query": user_query,
                 "conversation_id": conversation_id or str(uuid.uuid4()),
                 "context_documents": [],
-                "messages": [],
+                "messages": previous_messages or [],  # Include previous messages from this session
                 "ai_response": "",
                 "has_context": False,
                 "vector_db": vector_db or KNOWLEDGE_BASE_ID,
-                "websocket_connection": websocket_connection or {}
+                "websocket_connection": websocket_connection or {},
+                # Enhanced memory settings
+                "memory_mode": "sliding_window",  # Options: 'full', 'sliding_window', 'summary'
+                "max_memory_turns": 8,  # Keep last 8 conversation turns
+                "conversation_summary": ""
             }
             
             # Execute the workflow
             final_state = self.workflow.invoke(initial_state)
             
-            # Return structured response
+            # Return structured response with LangGraph state
             return {
                 "success": True,
                 "ai_response": final_state.get("ai_response", ""),
@@ -873,7 +953,8 @@ Since no specific context is available from the vector database, please respond 
                 "sources_info": final_state.get("sources_info", []),
                 "conversation_id": final_state.get("conversation_id", ""),
                 "model_used": AZURE_OPENAI_MODEL,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
+                "final_state": final_state  # Include full state for memory extraction
             }
             
         except Exception as e:
@@ -1019,6 +1100,17 @@ def create(event, context):
         conversation_id = validation_schema['datas'].get('conversationId', str(uuid.uuid4()))
         vector_db = validation_schema['datas'].get('vectorDb', KNOWLEDGE_BASE_ID)  # Get vector DB parameter
         
+        # Get previous messages from request (LangGraph will manage these)
+        previous_messages_data = validation_schema['datas'].get('previousMessages', [])
+        
+        # Convert to LangChain format for LangGraph state
+        previous_messages = []
+        for msg in previous_messages_data:
+            if msg.get('role') == 'user':
+                previous_messages.append(HumanMessage(content=msg.get('content', '')))
+            elif msg.get('role') == 'assistant':
+                previous_messages.append(AIMessage(content=msg.get('content', '')))
+        
         if user_query:
             logger.info(f"Processing chat query with LangGraph workflow: {user_query[:100]}...")
             logger.info(f"Using vector DB: {vector_db}")
@@ -1031,7 +1123,7 @@ def create(event, context):
                 }
                 
                 # Execute LangGraph workflow with vector DB filter and WebSocket streaming
-                workflow_result = bedrock_workflow.process_chat_query(user_query, conversation_id, vector_db, websocket_connection)
+                workflow_result = bedrock_workflow.process_chat_query(user_query, conversation_id, vector_db, websocket_connection, previous_messages)
                 
                 if workflow_result.get('success', False):
                     # Add AI response data to the item being stored
@@ -1090,11 +1182,30 @@ def create(event, context):
                         "traceId": workflow_result.get('conversation_id', conversation_id)
                     }
                     
-                    # Create new response format (clean format without nested data)
+                    # Build current session messages managed by LangGraph
+                    final_state_messages = workflow_result.get('final_state', {}).get('messages', [])
+                    
+                    # Convert LangGraph messages back to frontend format
+                    session_messages = []
+                    for msg in final_state_messages:
+                        if hasattr(msg, 'content'):
+                            role = 'user' if msg.__class__.__name__ == 'HumanMessage' else 'assistant'
+                            session_messages.append({
+                                "role": role,
+                                "content": msg.content
+                            })
+                    
+                    # Create new response format with LangGraph-managed memory
                     new_format_response = {
                         "userId": user_email,
                         "conversationId": workflow_result.get('conversation_id', conversation_id),
                         "chatHistory": [chat_history_entry],
+                        "sessionMessages": session_messages,  # LangGraph-managed memory
+                        "memoryInfo": {
+                            "memoryMode": "sliding_window",
+                            "managedMessages": len(session_messages),
+                            "maxTurns": 8
+                        },
                         "trace_id": workflow_result.get('conversation_id', conversation_id),
                         "sources": workflow_result.get('sources_info', []),
                         "contextUsed": workflow_result.get('context_used', False),

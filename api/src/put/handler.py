@@ -2,6 +2,7 @@
 import os
 import json
 import boto3
+import boto3.dynamodb.conditions
 import logging
 import uuid
 from datetime import datetime
@@ -321,10 +322,19 @@ def continue_chat(event, context):
                 workflow_result = bedrock_workflow.process_chat_query(user_query, conversation_id, vector_db)
                 
                 if workflow_result.get('success', False):
-                    # Retrieve existing conversation from DynamoDB
-                    existing_conversation = table.get_item(Key={'id': conversation_id})
+                    # Retrieve existing conversation from DynamoDB using conversationId field
+                    # Note: We need to scan/query by conversationId, not id (which is a UUID)
+                    try:
+                        response = table.scan(
+                            FilterExpression=boto3.dynamodb.conditions.Attr('conversationId').eq(conversation_id)
+                        )
+                        existing_conversations = response.get('Items', [])
+                        existing_conversation = existing_conversations[0] if existing_conversations else None
+                    except Exception as scan_err:
+                        logger.error(f"Error scanning for conversation: {scan_err}")
+                        existing_conversation = None
                     
-                    if 'Item' not in existing_conversation:
+                    if not existing_conversation:
                         logger.warning(f"Conversation {conversation_id} not found, creating new entry")
                         # Create new conversation entry using helper
                         chat_entry = conversation_builder.build_chat_history_entry(
@@ -345,8 +355,7 @@ def continue_chat(event, context):
                         updated_chat_history = new_conversation['chatHistory']
                     else:
                         # Update existing conversation
-                        existing_item = existing_conversation['Item']
-                        existing_chat_history = existing_item.get('chatHistory', [])
+                        existing_chat_history = existing_conversation.get('chatHistory', [])
                         
                         # Add new chat entry using helper
                         new_chat_entry = conversation_builder.build_chat_history_entry(
@@ -355,9 +364,9 @@ def continue_chat(event, context):
                         
                         updated_chat_history = existing_chat_history + [new_chat_entry]
                         
-                        # Update the conversation in DynamoDB
+                        # Update the conversation in DynamoDB using the correct primary key (id field)
                         table.update_item(
-                            Key={'id': conversation_id},
+                            Key={'id': existing_conversation['id']},
                             UpdateExpression='SET chatHistory = :history, updatedBy = :updatedBy, updatedAt = :updatedAt',
                             ExpressionAttributeValues={
                                 ':history': updated_chat_history,

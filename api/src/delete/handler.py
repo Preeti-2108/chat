@@ -14,42 +14,19 @@ from src.helpers.scope_manager import require_resource_permission  # Scope valid
 from src.helpers.queue_helper import send_message_to_queue
 
 """
-/**
- * @asyncapi
- * channels:
- *   delete:
- *     description: Channel for deleting a specific template by ID.
- *     publish:
- *       operationId: delete
- *       summary: Delete a specific template.
- *       message:
- *         messageId: delete
- *         contentType: application/json
- *         payload:
- *           type: object
- *           required:
- *             - action
- *             - datas
- *           properties:
- *             action:
- *               type: string
- *               description: The action to perform.
- *               example: delete
- *             datas:
- *               type: object
- *               required:
- *                 - id
- *               properties:
- *                 id:
- *                   type: string
- *                   description: The unique identifier of the template to delete.
- *                   example: 123e4567-e89b-12d3-a456-426614174000
- *     subscribe:
- *       operationId: deleteResponse
- *       summary: Receive response for the deleted template.
- *       message:
- *         $ref: '#/components/messages/DeleteResponse'
- */
+DELETE Handler for Chat Conversations
+
+This module handles deletion of chat conversations by ID.
+It provides secure WebSocket-based deletion with proper
+authentication and permission validation.
+
+Key functionality:
+- Deletes individual chat conversations by ID
+- Validates user permissions and authentication
+- Soft delete with audit trail support
+- Returns confirmation via WebSocket
+- Handles error cases and validation
+- Maintains data integrity and audit logs
 """
 
 # Configure logger for the module

@@ -3,8 +3,6 @@ import json  # Provides methods to work with JSON data
 import uuid  # Provides immutable UUID objects (universally unique identifiers)
 import boto3  # AWS SDK for Python to interact with AWS services
 import logging  # Provides a way to configure and use loggers
-import time  # For timing operations
-import asyncio  # For async operations
 from datetime import datetime  # Provides classes for manipulating dates and times
 from typing import Dict, Any, List
 
@@ -23,6 +21,12 @@ from src.helpers.event_utils import extract_event_info  # Custom helper to extra
 from src.helpers.auth_middleware import authenticate_websocket  # Cognito authentication
 from src.helpers.scope_manager import require_resource_permission  # Scope validation
 from src.helpers.queue_helper import send_message_to_queue  # Helper function to send messages to an SQS queue
+
+# New organized helpers to reduce redundancy
+from src.helpers.streaming_handler import WordLevelStreamingHandler, send_immediate_streaming_signals
+from src.helpers.conversation_builder import conversation_builder, extract_user_email_from_event
+from src.helpers.document_analyzer import document_analyzer, build_context_aware_prompt
+from src.helpers.system_instructions import get_default_system_instructions, get_error_response_templates
 
 """
 /**
@@ -110,251 +114,7 @@ class State(Dict[str, Any]):
     websocket_connection: Dict[str, Any]
     vector_db: str
 
-class WordLevelStreamingHandler:
-    """
-    Specialized handler for per-word streaming to UI.
-    Optimized for smooth, natural word-by-word delivery.
-    """
-    
-    def __init__(self, connection_id: str, websocket_url: str, conversation_id: str = None, trace_id: str = None):
-        self.connection_id = connection_id
-        self.websocket_url = websocket_url
-        self.conversation_id = conversation_id
-        self.trace_id = trace_id
-        self.full_response = ""
-        self.chunk_count = 0
-        self.last_send_time = datetime.now().timestamp()
-        self.sent_chunks = set()  # Track sent chunks to avoid duplicates
-        self.start_signal_sent = False  # Track if start signal was already sent
-        
-        # Ultra-optimized timing configuration
-        self.min_interval = 0.001  # Ultra-fast: 1ms minimum
-        self.max_interval = 0.005  # Ultra-fast: 5ms maximum
-        self.enable_word_breaking = True
-        
-    def send_streaming_chunk(self, chunk: str, is_final: bool = False):
-        """
-        Send a streaming chunk to the WebSocket client.
-        """
-        try:
-            # Build the streaming response payload
-            streaming_payload = {
-                "type": "streaming_response",
-                "chunk": chunk,
-                "chunk_index": self.chunk_count,
-                "is_final": is_final,
-                "full_response": self.full_response,  # Always include accumulated response
-                "partial_response": self.full_response,  # Current accumulated text
-                "streaming_mode": "word_level",
-                "response_length": len(self.full_response)  # Length for debugging
-            }
-            
-            # Send the chunk to the client
-            send_to_client(
-                self.connection_id, 
-                json.dumps(streaming_payload), 
-                self.websocket_url
-            )
-            
-            self.chunk_count += 1
-            logger.debug(f"Sent word chunk {self.chunk_count}: '{chunk}' to {self.connection_id}")
-            logger.debug(f"Full response so far ({len(self.full_response)} chars): '{self.full_response[:100]}...'")
-            
-        except Exception as e:
-            logger.error(f"Error sending word chunk: {str(e)}")
-    
-    def send_start_signal(self):
-        """Send a signal indicating that word-level streaming has started."""
-        if self.start_signal_sent:
-            logger.debug("Start signal already sent, skipping duplicate")
-            return
-            
-        try:
-            start_payload = {
-                "type": "streaming_start",
-                "message": "AI is generating response word by word...",
-                "streaming_mode": "word_level"
-            }
-            
-            if self.conversation_id:
-                start_payload["conversation_id"] = self.conversation_id
-                start_payload["id"] = self.conversation_id
-            
-            if self.trace_id:
-                start_payload["trace_id"] = self.trace_id
-            
-            send_to_client(
-                self.connection_id, 
-                json.dumps(start_payload), 
-                self.websocket_url
-            )
-            self.start_signal_sent = True
-            logger.info(f"Sent word-level streaming start signal to {self.connection_id}")
-        except Exception as e:
-            logger.error(f"Error sending streaming start signal: {str(e)}")
-    
-    def send_error_signal(self, error_message: str):
-        """Send an error signal to the client."""
-        try:
-            error_payload = {
-                "type": "streaming_error",
-                "error": error_message,
-                "streaming_mode": "word_level"
-            }
-            send_to_client(
-                self.connection_id, 
-                json.dumps(error_payload), 
-                self.websocket_url
-            )
-            logger.error(f"Sent streaming error signal to {self.connection_id}: {error_message}")
-        except Exception as e:
-            logger.error(f"Error sending streaming error signal: {str(e)}")
-    
-    def send_text(self, text: str):
-        """Send text content as a streaming chunk."""
-        try:
-            self.full_response += text
-            self.send_streaming_chunk(text)
-            logger.info(f"Sent additional text content to {self.connection_id}: {text[:50]}...")
-        except Exception as e:
-            logger.error(f"Error sending text content: {str(e)}")
-    
-    def process_word_streaming(self, llm_response_generator):
-        """
-        Process the streaming response from the LLM and send individual words to the client.
-        """
-        try:
-            generator = llm_response_generator
-
-            # Handle non-iterable responses
-            if generator is not None and not hasattr(generator, '__iter__') and hasattr(generator, 'response_gen'):
-                try:
-                    generator = generator.response_gen
-                except Exception:
-                    generator = None
-
-            # Handle non-streaming responses
-            if generator is None or not hasattr(generator, '__iter__'):
-                final_text = self._extract_clean_text(getattr(llm_response_generator, 'response', llm_response_generator))
-                if final_text:
-                    self._send_immediate_chunk(final_text)
-                    self.full_response += final_text
-                    self.send_streaming_chunk("", is_final=True)
-                    return self.full_response
-
-            # Process each chunk from the LLM with optimized timing
-            chunk_count = 0
-            for chunk in generator:
-                chunk_text = self._extract_clean_text(chunk)
-                if chunk_text:
-                    # Add to full response before processing
-                    self.full_response += chunk_text
-                    chunk_count += 1
-                    
-                    # Send first chunk immediately for faster perceived response
-                    if chunk_count == 1:
-                        self._send_immediate_chunk(chunk_text)
-                    else:
-                        # Process for word-level streaming with optimized timing
-                        self._process_word_chunks_optimized(chunk_text)
-            
-            # Send final chunk
-            self.send_streaming_chunk("", is_final=True)
-            
-            logger.info(f"Completed word-level streaming for {self.connection_id} with {chunk_count} chunks")
-            return self.full_response
-            
-        except Exception as e:
-            error_msg = f"Error in word-level streaming: {str(e)}"
-            logger.error(error_msg)
-            self.send_error_signal(error_msg)
-            raise
-    
-    def _send_immediate_chunk(self, text: str):
-        """Send the first chunk immediately for faster perceived response."""
-        try:
-            self.send_streaming_chunk(text)
-            self.last_send_time = datetime.now().timestamp()
-            logger.debug(f"Sent immediate chunk: '{text}' to {self.connection_id}")
-        except Exception as e:
-            logger.error(f"Error sending immediate chunk: {str(e)}")
-    
-    def _process_word_chunks_optimized(self, text: str):
-        """Process text and send individual words with optimized timing."""
-        words = self._break_into_words(text) if self.enable_word_breaking else text.split()
-        
-        for word in words:
-            if word.strip():
-                self._send_word_with_optimized_timing(word)
-    
-    def _send_word_with_optimized_timing(self, word: str):
-        """Send a word with optimized timing for faster response."""
-        current_time = datetime.now().timestamp()
-        time_since_last = current_time - self.last_send_time
-        
-        # Ultra-fast streaming - minimal delay for natural feel
-        optimized_min_interval = max(0.0005, self.min_interval * 0.05)  # 95% faster
-        
-        if time_since_last < optimized_min_interval:
-            time.sleep(optimized_min_interval - time_since_last)
-        
-        word_hash = hash(word)
-        
-        if word_hash not in self.sent_chunks:
-            self.send_streaming_chunk(word + " ")  # Add space for natural separation
-            self.sent_chunks.add(word_hash)
-            self.last_send_time = datetime.now().timestamp()
-            logger.debug(f"Sent optimized word: '{word}'")
-    
-    def _break_into_words(self, text: str) -> List[str]:
-        """Advanced word breaking for better streaming."""
-        import re
-        words = re.findall(r'\S+|\s+', text)
-        return [word for word in words if word.strip()]
-    
-    def _extract_clean_text(self, chunk) -> str:
-        """Enhanced text extraction with better LangChain response handling."""
-        try:
-            if hasattr(chunk, 'content'):
-                content = chunk.content
-                if isinstance(content, str):
-                    return content
-                elif isinstance(content, dict):
-                    if 'response' in content:
-                        return str(content['response'])
-                    elif 'text' in content:
-                        return str(content['text'])
-                    else:
-                        return str(content)
-                else:
-                    return str(content)
-            elif isinstance(chunk, dict):
-                if 'response' in chunk:
-                    response_content = chunk['response']
-                    if isinstance(response_content, str):
-                        return response_content
-                    elif isinstance(response_content, dict) and 'content' in response_content:
-                        return str(response_content['content'])
-                    else:
-                        return str(response_content)
-                elif 'content' in chunk:
-                    return str(chunk['content'])
-                elif 'text' in chunk:
-                    return str(chunk['text'])
-                elif 'message' in chunk:
-                    return str(chunk['message'])
-                else:
-                    for key, value in chunk.items():
-                        if isinstance(value, str) and value.strip() and key not in ['input', 'history']:
-                            return value
-                    return ""
-            elif isinstance(chunk, str):
-                return chunk
-            else:
-                return str(chunk)
-        except Exception as e:
-            logger.warning(f"Error extracting text from chunk: {str(e)}")
-            return ""
+# WordLevelStreamingHandler moved to src/helpers/streaming_handler.py
 
 class BedrockKnowledgeBaseWorkflow:
     """
@@ -448,29 +208,8 @@ class BedrockKnowledgeBaseWorkflow:
                 env = os.getenv('ENV', 'dev')  # Default to 'dev' if not set
                 vector_db = "872051E8-E5C8-4AD1-83A8-ADB347D6C2CC"  # Use KB ID as fallback
                 
-                # Enhanced retrieval configuration for complex queries
-                query_complexity = self._assess_query_complexity(user_query)
-                results_count = min(10 if query_complexity == 'complex' else 5, 10)  # Max 10 for complex
-                
-                retrieval_config = {
-                    "vectorSearchConfiguration": {
-                        "numberOfResults": results_count,
-                        "overrideSearchType": "SEMANTIC",
-                        "filter": {
-                            "andAll": [
-                                {"equals": {"key": "knowledgeBaseId", "value": vector_db}},
-                                {
-                                    "startsWith": {
-                                        "key": "x-amz-bedrock-kb-source-uri",
-                                        "value": f"s3://docops-kb-{env}/{vector_db}/",
-                                    }
-                                },
-                            ]
-                        }
-                    }
-                }
-                
-                logger.info(f"Query complexity: {query_complexity}, retrieving {results_count} documents")
+                # Use helper to get retrieval configuration
+                retrieval_config = document_analyzer.get_retrieval_config(user_query, env, vector_db)
                 
                 logger.info(f"🔍 Using filters - Environment: {env}, Vector DB: {vector_db}")
                 logger.info(f"🔍 S3 path filter: s3://docops-kb-{env}/{vector_db}/")
@@ -481,24 +220,8 @@ class BedrockKnowledgeBaseWorkflow:
                     retrievalConfiguration=retrieval_config
                 )
                 
-                # Extract retrieved content
-                for i, result in enumerate(response.get('retrievalResults', []), 1):
-                    metadata = result.get('metadata', {})
-                    content_text = result.get('content', {}).get('text', '')
-                    score = result.get('score', 0)
-                    
-                    document_info = {
-                        'content': content_text,
-                        'score': score,  # Relevance score
-                        'metadata': result.get('metadata', {})  # Additional metadata
-                    }
-                    context_documents.append(document_info)
-                    
-                    # Enhanced logging for debugging
-                    logger.info(f"Document {i}: Title='{metadata.get('title', 'N/A')}', Score={score:.3f}, Content_length={len(content_text)}")
-                    logger.debug(f"Document {i} content preview: {content_text[:200]}...")
-                        
-                logger.info(f"Retrieved {len(context_documents)} documents from Knowledge Base")
+                # Use helper to process retrieval results
+                context_documents = document_analyzer.process_retrieval_results(response)
                         
             except Exception as e:
                 logger.error(f"Error retrieving from Knowledge Base: {e}")
@@ -524,93 +247,14 @@ class BedrockKnowledgeBaseWorkflow:
         context_documents = state.get("context_documents", [])
         conversation_id = state.get("conversation_id", "")
         
-        # Prepare context-aware prompt with detailed system instructions
-        system_instructions = """You are an AI assistant designed to provide accurate and comprehensive answers based on information from the vector database. Follow these guidelines:
-
-1. **Context-Based Information**:
-- Use only the data available in the current context from the vector database.
-- If you have context documents but they don't directly answer the specific question, try to provide related information from the context that might be helpful.
-- Only respond with "I am not able to obtain an answer for this particular query" if the context is completely unrelated to the question or if no context is provided.
-
-2. **Detailed Information**:
-- Provide thorough and well-organized responses using the context data.
-- Use headings, bullet points, or numbered lists to structure information clearly.
-- Apply bold or italic formatting for emphasis where needed.
-
-3. **Emotes**:
-- Incorporate appropriate emotes based on the content and tone of the query.
-- Use positive emotes for encouraging responses and neutral or informative emotes for factual information.
-
-4. **Table Generation**:
-- If the query requests data in a table format, generate and present the information using the context data.
-- Ensure the table is well-organized with headers and properly aligned columns.
-- Use Markdown or other formatting tools to enhance readability.
-
-5. **Chat Format**:
-- For chat or conversation-related queries, structure your response in a conversational format.
-- Use formatting to differentiate between user inputs and responses.
-
-6. **Specific Formats**:
-- If the user requests information in a specific format (e.g., JSON, XML, Markdown), provide the response using the context data.
-- Ensure the format is applied correctly and the data is structured appropriately.
-
-7. **Non-Professional Topics**:
-- If the query concerns non-professional subjects (e.g., politics, sports), politely redirect the user to relevant professional topics.
-- Suggest related professional queries and provide a concise explanation.
-
-8. **Accuracy and Citations**:
-- Ensure responses are accurate and solely based on the data in the current context.
-- Do not provide information not mentioned in the context. Do not add any additional information that is not present in the context.
-
-Keep your responses clear, informative, and engaging, ensuring they are derived exclusively from the provided context."""
-
-        # Initialize selected_docs
-        selected_docs = []
-        
-        if context_documents:
-            # Enhanced context selection for complex queries
-            selected_docs = self._select_optimal_documents(context_documents, user_query)
-            context = "\n\n---DOCUMENT SEPARATOR---\n\n".join([doc['content'] for doc in selected_docs])
-            
-            # Log the context for debugging
-            logger.info(f"Context documents found: {len(context_documents)}")
-            logger.info(f"Selected documents: {len(selected_docs)}")
-            logger.info(f"Context content length: {len(context)} characters")
-            logger.info(f"First 200 chars of context: {context[:200]}...")
-            
-            # Check if we have meaningful content
-            if context.strip() and len(context.strip()) > 10:
-                # Build sources text for inclusion in the AI response
-                sources_text = self._build_sources_text(selected_docs)
-                
-                prompt = f"""{system_instructions}
-
-Context:
-{context}
-
-User Question: {user_query}
-
-Please provide a well-formatted answer based on the context above following the guidelines specified. Reference the source numbers when citing information.
-
-IMPORTANT: After providing your main answer, you MUST include the following sources section exactly as shown:
-
-{sources_text}
-
-This sources section should be included as part of your response to help users access the original documents."""
-            else:
-                # No meaningful content found in documents
-                logger.warning("Documents retrieved but no meaningful content found")
-                prompt = f"""{system_instructions}
-
-User Question: {user_query}
-
-Since the retrieved documents do not contain sufficient information to answer your query, please respond with: "I am not able to obtain an answer for this particular query." and suggest the user provide more specific information or try rephrasing their question."""
-        else:
-            prompt = f"""{system_instructions}
-
-User Question: {user_query}
-
-Since no specific context is available from the vector database, please respond with: "I am not able to obtain an answer for this particular query." and suggest the user provide more specific information or try rephrasing their question."""
+        # Use helper to build context-aware prompt
+        system_instructions = get_default_system_instructions()
+        prompt = build_context_aware_prompt(
+            system_instructions=system_instructions,
+            context_documents=context_documents,
+            user_query=user_query,
+            max_tokens=AZURE_OPENAI_MAX_TOKENS
+        )
         
         try:
             if self.chat_model:
@@ -703,146 +347,7 @@ Since no specific context is available from the vector database, please respond 
         # state["sources_info"] = sources_info
         return state
     
-    def _select_optimal_documents(self, context_documents: List[Dict], user_query: str) -> List[Dict]:
-        """
-        Select optimal documents based on query complexity and token limits
-        """
-        if not context_documents:
-            return []
-            
-        # Simple query indicators (can be enhanced with NLP analysis)
-        simple_indicators = ['what is', 'how to', 'define', 'explain']
-        complex_indicators = ['troubleshoot', 'issue', 'problem', 'error', 'failure', 'multiple', 'compare', 'analyze']
-        
-        query_lower = user_query.lower()
-        is_complex_query = any(indicator in query_lower for indicator in complex_indicators)
-        is_simple_query = any(indicator in query_lower for indicator in simple_indicators)
-        
-        # Estimate token usage (rough approximation: 4 chars per token)
-        max_context_tokens = AZURE_OPENAI_MAX_TOKENS * 0.6  # Reserve 40% for response
-        current_tokens = 0
-        selected_docs = []
-        
-        # Sort documents by relevance score (highest first)
-        sorted_docs = sorted(context_documents, key=lambda x: x.get('score', 0), reverse=True)
-        
-        # Log the scores for debugging
-        logger.info("Document scores: " + ", ".join([f"{doc.get('score', 0):.3f}" for doc in sorted_docs[:5]]))
-        
-        for doc in sorted_docs:
-            content = doc.get('content', '').strip()
-            doc_score = doc.get('score', 0)
-            
-            # Skip documents with no content
-            if not content or len(content) < 10:
-                logger.warning(f"Skipping document with insufficient content (length: {len(content)})")
-                continue
-            
-            doc_tokens = len(content) / 4  # Rough token estimation
-            
-            # Decision logic based on query complexity
-            if is_complex_query:
-                # For complex queries, prioritize more documents up to token limit
-                # Lower the score threshold for complex queries
-                if current_tokens + doc_tokens <= max_context_tokens and len(selected_docs) < 4 and doc_score > 0.3:
-                    selected_docs.append(doc)
-                    current_tokens += doc_tokens
-                    logger.info(f"Complex query: Added document with score {doc_score:.3f}")
-            elif is_simple_query:
-                # For simple queries, use fewer but highest-quality documents
-                # Be more selective for simple queries
-                if len(selected_docs) < 1 or (len(selected_docs) < 2 and doc_score > 0.5):
-                    selected_docs.append(doc)
-                    current_tokens += doc_tokens
-                    logger.info(f"Simple query: Added high-score document {doc_score:.3f}")
-            else:
-                # Default behavior for moderate complexity
-                # Use a moderate threshold
-                if len(selected_docs) < 3 and doc_score > 0.4:
-                    selected_docs.append(doc)
-                    current_tokens += doc_tokens
-                    logger.info(f"Default: Added document with score {doc_score:.3f}")
-            
-            # Stop if we've reached reasonable limits
-            if current_tokens >= max_context_tokens:
-                logger.info(f"Token limit reached. Using {len(selected_docs)} documents.")
-                break
-        
-        # If no documents meet the score threshold, take the best one anyway
-        if not selected_docs and sorted_docs:
-            best_doc = sorted_docs[0]
-            if best_doc.get('content', '').strip():
-                selected_docs.append(best_doc)
-                logger.info(f"Fallback: Added best document with score {best_doc.get('score', 0):.3f}")
-        
-        scores_list = [f"{doc.get('score', 0):.3f}" for doc in selected_docs]
-        logger.info(f"Selected {len(selected_docs)} documents for query. Scores: {scores_list}")
-        return selected_docs
-    
-    def _build_sources_text(self, selected_docs: List[Dict]) -> str:
-        """
-        Build formatted sources text with clickable links for streaming inclusion
-        """
-        if not selected_docs:
-            return ""
-        
-        sources_lines = ["\n\n**Source[s]:**"]
-        
-        for i, doc in enumerate(selected_docs, 1):
-            metadata = doc.get('metadata', {})
-            title = metadata.get('title', f'Document {i}')
-            doc_link = metadata.get('docLink', '')
-            
-            if doc_link:
-                # Create markdown link format
-                source_line = f"{i}. [{title}]({doc_link})"
-            else:
-                # Just show the title if no link available
-                source_line = f"{i}. {title}"
-            
-            sources_lines.append(source_line)
-        
-        return "\n".join(sources_lines)
-    
-    def _assess_query_complexity(self, user_query: str) -> str:
-        """
-        Assess query complexity to determine retrieval strategy
-        """
-        query_lower = user_query.lower()
-        
-        # Complex query patterns
-        complex_patterns = [
-            'multiple', 'several', 'various', 'different',
-            'compare', 'versus', 'vs', 'difference between',
-            'troubleshoot', 'diagnose', 'analyze', 'investigate',
-            'step by step', 'detailed', 'comprehensive',
-            'issue', 'problem', 'error', 'failure', 'bug',
-            'and', '&', 'also', 'additionally', 'furthermore'
-        ]
-        
-        # Simple query patterns  
-        simple_patterns = [
-            'what is', 'define', 'meaning of',
-            'how to', 'show me', 'explain',
-            'list', 'give me', 'provide'
-        ]
-        
-        complex_score = sum(1 for pattern in complex_patterns if pattern in query_lower)
-        simple_score = sum(1 for pattern in simple_patterns if pattern in query_lower)
-        
-        # Additional complexity indicators
-        word_count = len(user_query.split())
-        has_technical_terms = any(term in query_lower for term in [
-            'kubernetes', 'docker', 'pod', 'container', 'service',
-            'deployment', 'configmap', 'secret', 'ingress'
-        ])
-        
-        if complex_score >= 2 or word_count > 15 or (complex_score >= 1 and has_technical_terms):
-            return 'complex'
-        elif simple_score >= 1 and word_count <= 8:
-            return 'simple'
-        else:
-            return 'moderate'
+    # Document analysis methods moved to src/helpers/document_analyzer.py
     
     def process_chat_query(self, user_query: str, conversation_id: str = None, vector_db: str = None, websocket_connection: Dict = None) -> Dict[str, Any]:
         """
@@ -992,32 +497,15 @@ def create(event, context):
         logger.info(f"Creating item for authenticated user: {email} (ID: {user_id})")
         
         # SEND IMMEDIATE STREAMING SIGNALS - BEFORE ANY PROCESSING
-        try:
-            # Send thinking signal immediately to show processing has started
-            thinking_payload = {
-                "type": "streaming_thinking",
-                "message": "Processing your request...",
-                "streaming_mode": "word_level"
-            }
-            send_to_client(connectionId, json.dumps(thinking_payload), url)
-            logger.info("⚡ IMMEDIATE thinking signal sent - no processing delay")
-            
-            # Send start signal immediately
-            start_payload = {
-                "type": "streaming_start",
-                "message": "AI is generating response word by word...",
-                "streaming_mode": "word_level",
-                "conversation_id": str(uuid.uuid4())
-            }
-            send_to_client(connectionId, json.dumps(start_payload), url)
-            logger.info("⚡ IMMEDIATE streaming start signal sent - no processing delay")
-        except Exception as e:
-            logger.warning(f"Failed to send immediate streaming signals: {str(e)}")
+        conversation_id = validation_schema['datas'].get('conversationId', str(uuid.uuid4()))
+        send_immediate_streaming_signals(connectionId, url, conversation_id)
         
         # Process chat query using LangGraph workflow with Bedrock Knowledge Base
         user_query = validation_schema['datas'].get('query', '')
-        conversation_id = validation_schema['datas'].get('conversationId', str(uuid.uuid4()))
         vector_db = validation_schema['datas'].get('vectorDb', KNOWLEDGE_BASE_ID)  # Get vector DB parameter
+        
+        # Extract user email using helper
+        user_email = extract_user_email_from_event(event)
         
         if user_query:
             logger.info(f"Processing chat query with LangGraph workflow: {user_query[:100]}...")
@@ -1034,191 +522,59 @@ def create(event, context):
                 workflow_result = bedrock_workflow.process_chat_query(user_query, conversation_id, vector_db, websocket_connection)
                 
                 if workflow_result.get('success', False):
-                    # Create conversation_data in exact format requested
-                    conversation_data = {
-                        "user": user_query,                                      # Original user question
-                        "aiAssistant": workflow_result.get('ai_response', ''),   # Formatted response with HTML source links
-                        "traceId": workflow_result.get('conversation_id', conversation_id)  # Langfuse tracking ID
-                    }
-                    
-                    # Get user email for createdBy/updatedBy
-                    user_email = email  # This comes from auth middleware above
-                    
-                    # Structure data exactly as requested
-                    validation_schema['datas'] = {
-                        "conversationId": str(workflow_result.get('conversation_id', conversation_id)),
-                        "assistantId": str(validation_schema['datas'].get('assistantId', str(uuid.uuid4()))),
-                        "title": f"Chat - {user_query[:50]}..." if len(user_query) > 50 else f"Chat - {user_query}",
-                        "createdBy": user_email,
-                        "updatedBy": user_email,
-                        "languageCode": "en",
-                        "createdAt": datetime.now().isoformat(),
-                        "updatedAt": datetime.now().isoformat(),
-                        "isActive": True,
-                        "iaModel": workflow_result.get('model_used', AZURE_OPENAI_MODEL),
-                        "chatHistory": [conversation_data],     # Current Q&A pair
-                        "memoryHistory": [conversation_data],   # Full conversation memory (start with current)
-                        
-                        # Keep additional metadata for compatibility
-                        "contextUsed": workflow_result.get('context_used', False),
-                        "sourcesCount": workflow_result.get('sources_count', 0),
-                        "sourcesInfo": workflow_result.get('sources_info', [])
-                    }
+                    # Use helper to build success case data structure
+                    validation_schema['datas'] = conversation_builder.build_success_case_data(
+                        workflow_result, user_query, user_email
+                    )
                     
                     logger.info("LangGraph workflow completed successfully")
                     
-                    # Send immediate AI response to client via WebSocket
-                    # Extract user info from the event (from authentication middleware)
-                    user_email = 'unknown@example.com'  # Default fallback
+                    # Send immediate AI response to client via WebSocket using helper
+                    websocket_response = conversation_builder.build_websocket_response(
+                        user_email=user_email,
+                        conversation_id=workflow_result.get('conversation_id', conversation_id),
+                        user_query=user_query,
+                        ai_response=workflow_result.get('ai_response', ''),
+                        sources_info=workflow_result.get('sources_info', []),
+                        context_used=workflow_result.get('context_used', False),
+                        sources_count=workflow_result.get('sources_count', 0)
+                    )
                     
-                    try:
-                        # Method 1: From authentication middleware (added by @authenticate_websocket decorator)
-                        auth_info = event.get('auth', {})
-                        if auth_info and auth_info.get('is_authenticated'):
-                            user_info = auth_info.get('user_info', {})
-                            user_email = user_info.get('email', '')
-                            if user_email:
-                                logger.info(f"Found email from auth middleware: {user_email}")
-                        
-                        # Method 2: From requestContext (for REST APIs)
-                        if not user_email:
-                            user_email = event.get('requestContext', {}).get('authorizer', {}).get('email', '')
-                            if user_email:
-                                logger.info(f"Found email in requestContext: {user_email}")
-                        
-                        # Method 3: Extract from JWT token directly as fallback
-                        if not user_email:
-                            from src.helpers.cognito_auth import extract_token_from_event, extract_user_info
-                            token = extract_token_from_event(event)
-                            if token:
-                                user_info = extract_user_info(token)
-                                user_email = user_info.get('email', '')
-                                if user_email:
-                                    logger.info(f"Found email from JWT token: {user_email}")
-                            
-                    except Exception as e:
-                        logger.error(f"Error extracting user email: {e}")
-                    
-                    # Final fallback
-                    if not user_email or user_email == '':
-                        user_email = 'unknown@example.com'
-                        logger.warning("Could not extract user email, using fallback")
-                    
-                    logger.info(f"Using user email: {user_email}")
-                    
-                    # Create chat history entry
-                    chat_history_entry = {
-                        "user": validation_schema['datas'].get('query', ''),
-                        "aiAssistant": workflow_result.get('ai_response', ''),
-                        "traceId": workflow_result.get('conversation_id', conversation_id)
-                    }
-                    
-                    # Create new response format (clean format without nested data)
-                    new_format_response = {
-                        "userId": user_email,
-                        "conversationId": workflow_result.get('conversation_id', conversation_id),
-                        "chatHistory": [chat_history_entry],
-                        "trace_id": workflow_result.get('conversation_id', conversation_id),
-                        "sources": workflow_result.get('sources_info', []),
-                        "contextUsed": workflow_result.get('context_used', False),
-                        "sourcesCount": workflow_result.get('sources_count', 0)
-                    }
-                    
-                    # Final response with data and status at top level
-                    final_response = {
-                        "data": new_format_response,
-                        "status": 201
-                    }
-                    
+                    final_response = conversation_builder.build_final_websocket_response(websocket_response, 201)
                     send_to_client(connectionId, json.dumps(final_response), url)
                     
                 else:
                     # Workflow failed, but continue with regular processing
                     logger.warning(f"LangGraph workflow failed: {workflow_result.get('error', 'Unknown error')}")
                     
-                    # Create conversation_data for failure case
-                    conversation_data = {
-                        "user": user_query,
-                        "aiAssistant": 'AI processing temporarily unavailable',
-                        "traceId": conversation_id
-                    }
-                    
-                    # Structure data exactly as requested for failure case
-                    validation_schema['datas'] = {
-                        "conversationId": str(conversation_id),
-                        "assistantId": str(validation_schema['datas'].get('assistantId', str(uuid.uuid4()))),
-                        "title": f"Chat - {user_query[:50]}..." if len(user_query) > 50 else f"Chat - {user_query}",
-                        "createdBy": email,
-                        "updatedBy": email,
-                        "languageCode": "en",
-                        "createdAt": datetime.now().isoformat(),
-                        "updatedAt": datetime.now().isoformat(),
-                        "isActive": True,
-                        "iaModel": 'AZURE_OPENAI_GPT_4O',
-                        "chatHistory": [conversation_data],
-                        "memoryHistory": [conversation_data],
-                        "contextUsed": False,
-                        "sourcesCount": 0,
-                        "sourcesInfo": []
-                    }
+                    # Use helper to build failure case data structure
+                    validation_schema['datas'] = conversation_builder.build_failure_case_data(
+                        user_query=user_query,
+                        conversation_id=conversation_id,
+                        user_email=user_email
+                    )
                     
             except Exception as workflow_err:
                 logger.error(f"LangGraph workflow execution error: {workflow_err}")
                 
-                # Create conversation_data for error case
-                conversation_data = {
-                    "user": user_query,
-                    "aiAssistant": 'AI processing encountered an error',
-                    "traceId": conversation_id
-                }
-                
-                # Structure data exactly as requested for error case
-                validation_schema['datas'] = {
-                    "conversationId": str(conversation_id),
-                    "assistantId": str(validation_schema['datas'].get('assistantId', str(uuid.uuid4()))),
-                    "title": f"Chat - {user_query[:50]}..." if len(user_query) > 50 else f"Chat - {user_query}",
-                    "createdBy": email,
-                    "updatedBy": email,
-                    "languageCode": "en",
-                    "createdAt": datetime.now().isoformat(),
-                    "updatedAt": datetime.now().isoformat(),
-                    "isActive": True,
-                    "iaModel": 'AZURE_OPENAI_GPT_4O',
-                    "chatHistory": [conversation_data],
-                    "memoryHistory": [conversation_data],
-                    "contextUsed": False,
-                    "sourcesCount": 0,
-                    "sourcesInfo": []
-                }
+                # Use helper to build error case data structure  
+                validation_schema['datas'] = conversation_builder.build_error_case_data(
+                    user_query=user_query,
+                    conversation_id=conversation_id,
+                    user_email=user_email
+                )
         else:
             logger.warning("No query provided for AI processing")
             
-            # Create conversation_data for no query case
-            conversation_data = {
-                "user": "",
-                "aiAssistant": "No query provided",
-                "traceId": conversation_id
-            }
-            
-            # Structure data exactly as requested for no query case
-            validation_schema['datas'] = {
-                "conversationId": str(conversation_id),
-                "assistantId": str(validation_schema['datas'].get('assistantId', str(uuid.uuid4()))),
-                "title": "Empty Chat",
-                "createdBy": email,
-                "updatedBy": email,
-                "languageCode": "en",
-                "createdAt": datetime.now().isoformat(),
-                "updatedAt": datetime.now().isoformat(),
-                "isActive": True,
-                "iaModel": 'AZURE_OPENAI_GPT_4O',
-                "chatHistory": [conversation_data],
-                "memoryHistory": [conversation_data]
-            }
+            # Use helper to build no query case data structure
+            validation_schema['datas'] = conversation_builder.build_no_query_case_data(
+                conversation_id=conversation_id,
+                user_email=user_email
+            )
 
-        # Construct the new item to be inserted
+        # Construct the new item to be inserted using helper
         try:
-            new_item = construct_new_item(validation_schema['datas'])
+            new_item = conversation_builder.construct_new_dynamodb_item(validation_schema['datas'])
             logger.debug('New item to be inserted: %s', new_item)
         except Exception as construct_err:
             logger.error(f"Error constructing new item: {str(construct_err)}")
@@ -1289,7 +645,7 @@ def construct_new_item(datas):
     item = {
         "id": str(uuid.uuid4()),  # Generate a unique ID for the new item
         "conversationId": str(datas.get('conversationId', '')),
-        "assistantId": str(datas.get('assistantId', '')),
+        "assistantId": '268f80b4-61f4-470e-bd8d-e6091e09a3cb',
         "title": datas.get('title', ''),
         "createdBy": datas.get('createdBy', ''),
         "updatedBy": datas.get('updatedBy', ''),

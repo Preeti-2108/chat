@@ -1034,13 +1034,36 @@ def create(event, context):
                 workflow_result = bedrock_workflow.process_chat_query(user_query, conversation_id, vector_db, websocket_connection)
                 
                 if workflow_result.get('success', False):
-                    # Add AI response data to the item being stored
-                    validation_schema['datas']['aiResponse'] = workflow_result.get('ai_response', '')
-                    validation_schema['datas']['contextUsed'] = workflow_result.get('context_used', False)
-                    validation_schema['datas']['sourcesCount'] = workflow_result.get('sources_count', 0)
-                    validation_schema['datas']['sourcesInfo'] = workflow_result.get('sources_info', [])
-                    validation_schema['datas']['modelUsed'] = workflow_result.get('model_used', AZURE_OPENAI_MODEL)
-                    validation_schema['datas']['conversationId'] = workflow_result.get('conversation_id', conversation_id)
+                    # Create conversation_data in exact format requested
+                    conversation_data = {
+                        "user": user_query,                                      # Original user question
+                        "aiAssistant": workflow_result.get('ai_response', ''),   # Formatted response with HTML source links
+                        "traceId": workflow_result.get('conversation_id', conversation_id)  # Langfuse tracking ID
+                    }
+                    
+                    # Get user email for createdBy/updatedBy
+                    user_email = email  # This comes from auth middleware above
+                    
+                    # Structure data exactly as requested
+                    validation_schema['datas'] = {
+                        "conversationId": str(workflow_result.get('conversation_id', conversation_id)),
+                        "assistantId": str(validation_schema['datas'].get('assistantId', str(uuid.uuid4()))),
+                        "title": f"Chat - {user_query[:50]}..." if len(user_query) > 50 else f"Chat - {user_query}",
+                        "createdBy": user_email,
+                        "updatedBy": user_email,
+                        "languageCode": "en",
+                        "createdAt": datetime.now().isoformat(),
+                        "updatedAt": datetime.now().isoformat(),
+                        "isActive": True,
+                        "iaModel": workflow_result.get('model_used', AZURE_OPENAI_MODEL),
+                        "chatHistory": [conversation_data],     # Current Q&A pair
+                        "memoryHistory": [conversation_data],   # Full conversation memory (start with current)
+                        
+                        # Keep additional metadata for compatibility
+                        "contextUsed": workflow_result.get('context_used', False),
+                        "sourcesCount": workflow_result.get('sources_count', 0),
+                        "sourcesInfo": workflow_result.get('sources_info', [])
+                    }
                     
                     logger.info("LangGraph workflow completed successfully")
                     
@@ -1112,28 +1135,86 @@ def create(event, context):
                 else:
                     # Workflow failed, but continue with regular processing
                     logger.warning(f"LangGraph workflow failed: {workflow_result.get('error', 'Unknown error')}")
-                    validation_schema['datas']['aiResponse'] = 'AI processing temporarily unavailable'
-                    validation_schema['datas']['contextUsed'] = False
-                    validation_schema['datas']['sourcesCount'] = 0
-                    validation_schema['datas']['modelUsed'] = 'AZURE_OPENAI_GPT_4O'
-                    validation_schema['datas']['conversationId'] = conversation_id
+                    
+                    # Create conversation_data for failure case
+                    conversation_data = {
+                        "user": user_query,
+                        "aiAssistant": 'AI processing temporarily unavailable',
+                        "traceId": conversation_id
+                    }
+                    
+                    # Structure data exactly as requested for failure case
+                    validation_schema['datas'] = {
+                        "conversationId": str(conversation_id),
+                        "assistantId": str(validation_schema['datas'].get('assistantId', str(uuid.uuid4()))),
+                        "title": f"Chat - {user_query[:50]}..." if len(user_query) > 50 else f"Chat - {user_query}",
+                        "createdBy": email,
+                        "updatedBy": email,
+                        "languageCode": "en",
+                        "createdAt": datetime.now().isoformat(),
+                        "updatedAt": datetime.now().isoformat(),
+                        "isActive": True,
+                        "iaModel": 'AZURE_OPENAI_GPT_4O',
+                        "chatHistory": [conversation_data],
+                        "memoryHistory": [conversation_data],
+                        "contextUsed": False,
+                        "sourcesCount": 0,
+                        "sourcesInfo": []
+                    }
                     
             except Exception as workflow_err:
                 logger.error(f"LangGraph workflow execution error: {workflow_err}")
-                # Continue with regular processing even if AI workflow fails
-                validation_schema['datas']['aiResponse'] = 'AI processing encountered an error'
-                validation_schema['datas']['contextUsed'] = False
-                validation_schema['datas']['sourcesCount'] = 0
-                validation_schema['datas']['modelUsed'] = 'AZURE_OPENAI_GPT_4O'
-                validation_schema['datas']['conversationId'] = conversation_id
+                
+                # Create conversation_data for error case
+                conversation_data = {
+                    "user": user_query,
+                    "aiAssistant": 'AI processing encountered an error',
+                    "traceId": conversation_id
+                }
+                
+                # Structure data exactly as requested for error case
+                validation_schema['datas'] = {
+                    "conversationId": str(conversation_id),
+                    "assistantId": str(validation_schema['datas'].get('assistantId', str(uuid.uuid4()))),
+                    "title": f"Chat - {user_query[:50]}..." if len(user_query) > 50 else f"Chat - {user_query}",
+                    "createdBy": email,
+                    "updatedBy": email,
+                    "languageCode": "en",
+                    "createdAt": datetime.now().isoformat(),
+                    "updatedAt": datetime.now().isoformat(),
+                    "isActive": True,
+                    "iaModel": 'AZURE_OPENAI_GPT_4O',
+                    "chatHistory": [conversation_data],
+                    "memoryHistory": [conversation_data],
+                    "contextUsed": False,
+                    "sourcesCount": 0,
+                    "sourcesInfo": []
+                }
         else:
             logger.warning("No query provided for AI processing")
-            validation_schema['datas']['conversationId'] = conversation_id
-        
-        validation_schema['datas']['createdBy'] = email
-        validation_schema['datas']['updatedBy'] = email
-        validation_schema['datas']['createdAt'] = datetime.now().isoformat()
-        validation_schema['datas']['updatedAt'] = datetime.now().isoformat()
+            
+            # Create conversation_data for no query case
+            conversation_data = {
+                "user": "",
+                "aiAssistant": "No query provided",
+                "traceId": conversation_id
+            }
+            
+            # Structure data exactly as requested for no query case
+            validation_schema['datas'] = {
+                "conversationId": str(conversation_id),
+                "assistantId": str(validation_schema['datas'].get('assistantId', str(uuid.uuid4()))),
+                "title": "Empty Chat",
+                "createdBy": email,
+                "updatedBy": email,
+                "languageCode": "en",
+                "createdAt": datetime.now().isoformat(),
+                "updatedAt": datetime.now().isoformat(),
+                "isActive": True,
+                "iaModel": 'AZURE_OPENAI_GPT_4O',
+                "chatHistory": [conversation_data],
+                "memoryHistory": [conversation_data]
+            }
 
         # Construct the new item to be inserted
         try:
@@ -1199,16 +1280,34 @@ def create(event, context):
 def construct_new_item(datas):
     """
     Construct a new item with a unique ID and the provided data.
-    
-    This function generates a unique identifier for the new item and prepares
-    the data for insertion into the database.
+    Format exactly as specified with proper conversation structure.
     
     :param datas: The data to be included in the new item.
-    :return: A dictionary representing the new item.
+    :return: A dictionary representing the new item in exact format.
     """
-    datas['id'] = str(uuid.uuid4())  # Generate a unique ID for the new item
-    expression = generate_create_query(datas)  # Generate the item expression
-    return expression
+    # Create the item structure exactly as requested
+    item = {
+        "id": str(uuid.uuid4()),  # Generate a unique ID for the new item
+        "conversationId": str(datas.get('conversationId', '')),
+        "assistantId": str(datas.get('assistantId', '')),
+        "title": datas.get('title', ''),
+        "createdBy": datas.get('createdBy', ''),
+        "updatedBy": datas.get('updatedBy', ''),
+        "languageCode": datas.get('languageCode', 'en'),
+        "createdAt": datas.get('createdAt', ''),
+        "updatedAt": datas.get('updatedAt', ''),
+        "isActive": datas.get('isActive', True),
+        "iaModel": datas.get('iaModel', ''),
+        "chatHistory": datas.get('chatHistory', []),     # Current Q&A pair
+        "memoryHistory": datas.get('memoryHistory', []), # Full conversation memory
+    }
+    
+    # Add any additional fields that might be present (like sources, etc.)
+    for key, value in datas.items():
+        if key not in item:  # Don't override the structured fields above
+            item[key] = value
+    
+    return item
 
 def generate_create_query(fields):
     """

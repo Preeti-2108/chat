@@ -86,7 +86,7 @@ from src.post.handler import BedrockKnowledgeBaseWorkflow
  *       operationId: continueChatResponse
  *       summary: Receive response for the continued chat conversation.
  *       message:
- *         $ref: '#/components/messages/ContinueChatResponse'
+ *         $ref: '#/components/messages/chatUpdateResponse'
  */
 """
 

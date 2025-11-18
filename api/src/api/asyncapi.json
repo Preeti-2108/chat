@@ -1,0 +1,252 @@
+{
+  "asyncapi": "2.6.0",
+  "id": "urn:templatepython:api",
+  "defaultContentType": "application/json",
+  "info": {
+    "title": "Python Template CDK Websocket",
+    "version": "1.0.0",
+    "description": "API for Template",
+    "contact": {
+      "name": "API Support",
+      "email": "support.dps.fr.api.contact@soprasteria.com",
+      "url": "https://example.com/support"
+    },
+    "license": {
+      "name": "MIT",
+      "url": "https://opensource.org/licenses/MIT"
+    }
+  },
+  "tags": [
+    {
+      "name": "Template",
+      "description": "Operations related to template"
+    }
+  ],
+  "servers": {
+    "production": {
+      "url": "%BASE_URL%%TF_VAR_API_VERSION%/%TF_VAR_API_SYSTEM_NAME%",
+      "protocol": "wss"
+    }
+  },
+  "channels": {
+    "get": {
+      "description": "Channel for retrieving a specific template by ID.",
+      "publish": {
+        "operationId": "get",
+        "summary": "Get a specific template.",
+        "message": {
+          "messageId": "get",
+          "contentType": "application/json",
+          "payload": {
+            "type": "object",
+            "required": [
+              "action",
+              "datas"
+            ],
+            "properties": {
+              "action": {
+                "type": "string",
+                "description": "The action to perform.",
+                "example": "get"
+              },
+              "datas": {
+                "type": "object",
+                "required": [
+                  "id"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "The unique identifier of the template to retrieve.",
+                    "example": "123e4567-e89b-12d3-a456-426614174000"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "subscribe": {
+        "operationId": "getResponse",
+        "summary": "Receive response for the retrieved template.",
+        "message": {
+          "$ref": "#/components/messages/chatGetResponse"
+        }
+      }
+    },
+    "create": {
+      "description": "Channel for posting and creating a new chat conversation.",
+      "publish": {
+        "operationId": "create",
+        "summary": "Post and initiate a new chat.",
+        "message": {
+          "messageId": "create",
+          "contentType": "application/json",
+          "payload": {
+            "type": "object",
+            "required": [
+              "action",
+              "datas"
+            ],
+            "properties": {
+              "action": {
+                "type": "string",
+                "description": "The action to perform (create for new conversations).",
+                "example": "create"
+              },
+              "datas": {
+                "type": "object",
+                "required": [
+                  "query",
+                  "modelName",
+                  "assistantId"
+                ],
+                "properties": {
+                  "query": {
+                    "type": "string",
+                    "description": "The user's query for the AI assistant.",
+                    "example": "What is the process to apply for leave?"
+                  },
+                  "modelName": {
+                    "type": "string",
+                    "description": "The model name to use for the AI assistant.",
+                    "example": "AZURE_OPENAI_GPT_4O"
+                  },
+                  "assistantId": {
+                    "type": "string",
+                    "description": "The ID of the chat assistant.",
+                    "example": "184CF8DA-B821-4FF4-BD6C-CDAFA166E2E0"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "subscribe": {
+        "operationId": "createResponse",
+        "summary": "Receive response for the initiated chat  .",
+        "message": {
+          "$ref": "#/components/messages/CreateResponse"
+        }
+      }
+    },
+    "continue_chat": {
+      "description": "Channel for continuing an existing chat conversation.",
+      "publish": {
+        "operationId": "continue_chat",
+        "summary": "Continue an existing chat conversation.",
+        "message": {
+          "messageId": "continue_chat",
+          "contentType": "application/json",
+          "payload": {
+            "type": "object",
+            "required": [
+              "action",
+              "datas"
+            ],
+            "properties": {
+              "action": {
+                "type": "string",
+                "description": "The action to perform (continue for existing conversations).",
+                "example": "continue"
+              },
+              "datas": {
+                "type": "object",
+                "required": [
+                  "conversationId",
+                  "query",
+                  "modelName"
+                ],
+                "properties": {
+                  "conversationId": {
+                    "type": "string",
+                    "description": "The ID of the existing conversation to continue.",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                  },
+                  "query": {
+                    "type": "string",
+                    "description": "The user's follow-up query for the AI assistant.",
+                    "example": "Can you provide more details about the leave approval process?"
+                  },
+                  "modelName": {
+                    "type": "string",
+                    "description": "The model name to use for the AI assistant.",
+                    "example": "AZURE_OPENAI_GPT_4O"
+                  },
+                  "assistantId": {
+                    "type": "string",
+                    "description": "The ID of the chat assistant.",
+                    "example": "184CF8DA-B821-4FF4-BD6C-CDAFA166E2E0"
+                  },
+                  "vectorDb": {
+                    "type": "string",
+                    "description": "Optional vector database ID for knowledge base filtering.",
+                    "example": "872051E8-E5C8-4AD1-83A8-ADB347D6C2CC"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "subscribe": {
+        "operationId": "continueChatResponse",
+        "summary": "Receive response for the continued chat conversation.",
+        "message": {
+          "$ref": "#/components/messages/chatUpdateResponse"
+        }
+      }
+    }
+  },
+  "components": {
+    "messages": {
+      "CreateResponse": {
+        "messageId": "createResponse",
+        "contentType": "application/json",
+        "payload": {
+          "$ref": "#/components/schemas/CHATINTERNAL"
+        }
+      },
+      "chatUpdateResponse": {
+        "messageId": "chatUpdateResponse",
+        "contentType": "application/json",
+        "payload": {
+          "$ref": "#/components/schemas/CHATINTERNAL"
+        }
+      },
+      "chatGetResponse": {
+        "messageId": "chatGetResponse",
+        "contentType": "application/json",
+        "payload": {
+          "$ref": "#/components/schemas/CHATINTERNAL"
+        }
+      }
+    },
+    "schemas": {
+      "CHATINTERNAL": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Indicates whether the request was successful or not.",
+            "example": true
+          },
+          "message": {
+            "type": "string",
+            "description": "A message describing the result of the chat conversation.",
+            "example": "Chat conversation successful."
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "content": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

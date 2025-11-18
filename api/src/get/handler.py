@@ -49,7 +49,7 @@ from src.helpers.scope_manager import require_resource_permission  # Scope valid
  *       operationId: getResponse
  *       summary: Receive response for the retrieved template.
  *       message:
- *         $ref: '#/components/messages/GetResponse'
+ *         $ref: '#/components/messages/chatGetResponse'
  */
 """
 

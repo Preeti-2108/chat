@@ -108,40 +108,8 @@ async function generateAsyncAPIDocument(baseDir = './src') {
         components.messages = {};
     }
 
-    // Generate missing response messages
-    const missingMessages = [
-        'TemplateDeleteResponse',
-        'TemplateGetResponse',
-        'NewTemplateResponse',
-        'TemplateUpdateResponse',
-        'TemplateListResponse'
-    ];
-
-    missingMessages.forEach(messageName => {
-        if (!components.messages[messageName]) {
-            components.messages[messageName] = {
-                messageId: messageName,
-                contentType: "application/json",
-                payload: {
-                    type: "object",
-                    properties: {
-                        success: {
-                            type: "boolean",
-                            description: "Indicates if the operation was successful"
-                        },
-                        message: {
-                            type: "string",
-                            description: "Response message"
-                        },
-                        data: {
-                            type: "object",
-                            description: "Response data"
-                        }
-                    }
-                }
-            };
-        }
-    });
+    // Only generate components that are actually referenced in channels
+    // Remove unused template message components to fix validation issues
 
     let asyncAPIDocument = {
         ...asyncapiDefinition, // Spread the base AsyncAPI definition

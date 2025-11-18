@@ -15,74 +15,18 @@ from src.helpers.auth_middleware import authenticate_websocket, get_user_scopes,
 from src.helpers.scope_manager import get_user_resource_permissions, require_resource_permission  # Advanced scope utilities
 
 """
-/**
- * @asyncapi
- * channels:
- *   list:
- *     description: Channel for retrieving a list of templates.
- *     publish:
- *       operationId: list
- *       summary: Return a list of templates.
- *       message:
- *         messageId: list
- *         contentType: application/json
- *         payload:
- *           type: array
- *           items:
- *             type: object
- *             properties:
- *               templateCompany:
- *                 type: string
- *                 description: Template company name.
- *                 example: Company Name
- *               templateAgent:
- *                 type: string
- *                 description: Template agent name.
- *                 example: Agent Name
- *               templateRootCause:
- *                 type: string
- *                 description: Template root cause.
- *                 example: Root Cause
- *               templateAgentValidation:
- *                 type: boolean
- *                 description: Template agent validation.
- *                 example: true
- *               isActive:
- *                 type: boolean
- *                 description: Is active or not.
- *                 example: true
- *               templateIntentFailed:
- *                 type: boolean
- *                 description: Template intent failed.
- *                 example: false
- *               templateStatus:
- *                 type: string
- *                 description: Template status.
- *                 example: Template Status
- *               createdBy:
- *                 type: string
- *                 description: Template creator.
- *                 example: Firstname Lastname
- *               updatedBy:
- *                 type: string
- *                 description: Template modifier.
- *                 example: Firstname Lastname
- *               createdAt:
- *                 type: string
- *                 format: date-time
- *                 description: Template creation date.
- *                 example: 2023-10-16T13:25:10.666Z
- *               updatedAt:
- *                 type: string
- *                 format: date-time
- *                 description: Template modification date.
- *                 example: 2023-10-16T13:28:40.028Z
- *     subscribe:
- *       operationId: listResponse
- *       summary: Retrieve templates based on query parameters.
- *       message:
- *         $ref: '#/components/messages/ListResponse'
- */
+LIST Handler for Chat Conversations
+
+This module handles listing and filtering of chat conversations.
+It provides WebSocket-based access to query and retrieve multiple
+conversation records based on various criteria.
+
+Key functionality:
+- Lists chat conversations with filtering capabilities
+- Supports pagination and sorting
+- Validates user permissions and authentication
+- Returns conversation lists via WebSocket
+- Handles complex query parameters and filters
 """
 
 # Configure logger

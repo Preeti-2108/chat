@@ -82,8 +82,8 @@ class LambdasStack(Stack):
             "disconnect": "src.disconnect.handler.disconnect",
             "default": "src.default.handler.default",
             "send_message": "src.send_message.handler.send_message",
-            "create": "src.post.handler.create",
-            "update": "src.put.handler.edit",
+            "create": "src.post.handler.start_chat",
+            "update": "src.put.handler.continue_chat",
             "delete": "src.delete.handler.delete",
             "get": "src.get.handler.get",
             "list": "src.list.handler.list"

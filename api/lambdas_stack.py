@@ -84,9 +84,9 @@ class LambdasStack(Stack):
             "send_message": "src.send_message.handler.send_message",
             "create": "src.post.handler.create",
             "update": "src.put.handler.edit",
-            "delete": "src.delete.handler.delete",
-            "get": "src.get.handler.get",
-            "list": "src.list.handler.list"
+            # "delete": "src.delete.handler.delete",
+            # "get": "src.get.handler.get",
+            # "list": "src.list.handler.list"
         }
 
         lambdas = {}

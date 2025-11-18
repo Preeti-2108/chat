@@ -11,7 +11,7 @@ const asyncapiDefinition = {
     "id": "urn:templatepython:api", // Unique identifier for the API
     "defaultContentType": "application/json", // Default content type for messages
     "info": {
-      "title": "Python Template CDK Websocket", // Title of the API
+      "title": "DPS-WS-Chatinternal-KB-Bedrock", // Title of the API
       "version": "1.0.0", // Version of the API
       "description": "API for Template", // Brief description of the API
       "contact": {

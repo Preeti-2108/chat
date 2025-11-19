@@ -78,9 +78,9 @@ class ConversationDataBuilder:
             "memoryHistory": [conversation_data],
             
             # Metadata for compatibility
-            "contextUsed": context_used,
-            "sourcesCount": sources_count,
-            "sourcesInfo": sources_info
+            # "contextUsed": context_used,
+            # "sourcesCount": sources_count,
+            # "sourcesInfo": sources_info
         }
         
         return data_structure

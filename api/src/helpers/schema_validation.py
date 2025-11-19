@@ -9,7 +9,7 @@ class PostRequestModel(BaseModel):
     assistantId: str
 
 class PutRequestModel(BaseModel):
-    conversationId: str
+    id: str
     query: str
 
 class DeleteRequestModel(BaseModel):

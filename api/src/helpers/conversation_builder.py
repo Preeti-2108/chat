@@ -195,7 +195,6 @@ class ConversationDataBuilder:
         """
         # Create the item structure exactly as required
         item = {
-            "id": str(uuid.uuid4()),  # Generate a unique ID for the new item
             "conversationId": str(datas.get('conversationId', '')),
             "assistantId": datas.get('assistantId', self.default_assistant_id),
             "title": datas.get('title', ''),

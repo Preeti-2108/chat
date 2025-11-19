@@ -38,13 +38,13 @@ from src.post.handler import BedrockKnowledgeBaseWorkflow
 /**
  * @asyncapi
  * channels:
- *   continue_chat:
- *     description: Channel for continuing an existing chat conversation.
+ *   chatUpdate:
+ *     description: Channel for updating a chat conversation by ID.
  *     publish:
- *       operationId: continue_chat
- *       summary: Continue an existing chat conversation.
+ *       operationId: chatUpdate
+ *       summary: Update a chat conversation by ID.
  *       message:
- *         messageId: continue_chat
+ *         messageId: chatUpdate
  *         contentType: application/json
  *         payload:
  *           type: object
@@ -54,38 +54,25 @@ from src.post.handler import BedrockKnowledgeBaseWorkflow
  *           properties:
  *             action:
  *               type: string
- *               description: "The action to perform (continue for existing conversations)."
- *               example: continue
+ *               description: The action to perform.
+ *               example: update
  *             datas:
  *               type: object
  *               required:
- *                 - conversationId
+ *                 - id
  *                 - query
- *                 - modelName
  *               properties:
- *                 conversationId:
+ *                 id:
  *                   type: string
- *                   description: The ID of the existing conversation to continue.
- *                   example: "550e8400-e29b-41d4-a716-446655440000"
+ *                   description: The ID of the chat conversation to update.
+ *                   example: "123e4567-e89b-12d3-a456-426614174000"
  *                 query:
  *                   type: string
- *                   description: The user's follow-up query for the AI assistant.
- *                   example: "Can you provide more details about the leave approval process?"
- *                 modelName:
- *                   type: string
- *                   description: The model name to use for the AI assistant.
- *                   example: "AZURE_OPENAI_GPT_4O"
- *                 assistantId:
- *                   type: string
- *                   description: The ID of the chat assistant.
- *                   example: "184CF8DA-B821-4FF4-BD6C-CDAFA166E2E0"
- *                 vectorDb:
- *                   type: string
- *                   description: Optional vector database ID for knowledge base filtering.
- *                   example: "872051E8-E5C8-4AD1-83A8-ADB347D6C2CC"
+ *                   description: The user's query for the AI assistant.
+ *                   example: "Make a descriptive of previous conversation"
  *     subscribe:
- *       operationId: continueChatResponse
- *       summary: Receive response for the continued chat conversation.
+ *       operationId: chatUpdateResponse
+ *       summary: Receive response for the updated chat.
  *       message:
  *         $ref: '#/components/messages/chatUpdateResponse'
  */

@@ -125,9 +125,9 @@ class State(Dict[str, Any]):
             dynamodb = boto3.resource('dynamodb')
             table = dynamodb.Table(table_name)
             
-            # Query for existing conversation
+            # Query for existing conversation using conversationId as primary key
             response = table.get_item(
-                Key={'id': conversation_id}
+                Key={'conversationId': conversation_id}
             )
             
             if 'Item' in response:
@@ -136,7 +136,7 @@ class State(Dict[str, Any]):
                 logger.info(f"Retrieved {len(chat_history)} messages from conversation {conversation_id}")
                 return chat_history
             else:
-                logger.warning(f"No existing conversation found with ID: {conversation_id}")
+                logger.warning(f"No existing conversation found with conversationId: {conversation_id}")
                 return []
                 
         except Exception as e:
@@ -337,14 +337,81 @@ def continue_chat(event, context):
             logger.info(f"Using vector DB: {vector_db}")
             
             try:
-                # Debug: First let's see what conversations exist in the database
-                logger.info("DEBUG: Scanning all conversations in the database...")
-                all_conversations_response = table.scan()
-                all_conversations = all_conversations_response.get('Items', [])
-                logger.info(f"DEBUG: Total conversations in database: {len(all_conversations)}")
+                # FIRST: Check if conversation exists before calling workflow
+                # Retrieve existing conversation from DynamoDB using conversationId field
+                existing_conversation = None
+                try:
+                    # Ensure conversation_id is string for proper comparison
+                    conversation_id_str = str(conversation_id)
+                    logger.info(f"PRE-WORKFLOW: Looking for conversation with conversationId: '{conversation_id_str}'")
+                    
+                    # Debug: First let's see what conversations exist in the database
+                    logger.info("DEBUG: Scanning all conversations in the database...")
+                    all_conversations_response = table.scan()
+                    all_conversations = all_conversations_response.get('Items', [])
+                    logger.info(f"DEBUG: Total conversations in database: {len(all_conversations)}")
+                    
+                    # Show detailed info about conversations that might match
+                    matching_conversations = []
+                    for conv in all_conversations:
+                        conv_id = conv.get('conversationId')
+                        if conv_id:
+                            logger.info(f"DEBUG: Conversation - conversationId: '{conv_id}' (type: {type(conv_id)}), title: '{conv.get('title', 'N/A')}'")
+                            if str(conv_id) == conversation_id_str:
+                                matching_conversations.append(conv)
+                        else:
+                            logger.info(f"DEBUG: Conversation - conversationId: MISSING, title: '{conv.get('title', 'N/A')}'")
+                    
+                    logger.info(f"DEBUG: Found {len(matching_conversations)} conversations with matching conversationId")
+                    
+                    # Primary method: Direct lookup by conversationId as primary key
+                    response = table.get_item(
+                        Key={'conversationId': conversation_id_str}
+                    )
+                    
+                    if 'Item' in response:
+                        existing_conversation = response['Item']
+                        logger.info(f"PRE-WORKFLOW: Found conversation with conversationId: {existing_conversation.get('conversationId')}")
+                    else:
+                        existing_conversation = None
+                        logger.warning(f"PRE-WORKFLOW: No conversation found with conversationId {conversation_id}")
+                        
+                        # Fallback: Try scan method in case table structure is different
+                        scan_response = table.scan(
+                            FilterExpression=boto3.dynamodb.conditions.Attr('conversationId').eq(conversation_id_str)
+                        )
+                        existing_conversations = scan_response.get('Items', [])
+                        logger.info(f"PRE-WORKFLOW: DynamoDB scan fallback found {len(existing_conversations)} conversations with conversationId {conversation_id}")
+                        
+                        if existing_conversations:
+                            existing_conversation = existing_conversations[0]
+                            logger.info(f"PRE-WORKFLOW: Found conversation via scan: conversationId={existing_conversation.get('conversationId')}")
+                    
+                    if not existing_conversation:
+                        logger.warning(f"PRE-WORKFLOW: No conversation found with conversationId {conversation_id}")
+                        
+                        # Debug: Show what conversations actually exist
+                        logger.info("DEBUG: Showing actual conversations in database for debugging...")
+                        debug_response = table.scan(Limit=5)
+                        debug_items = debug_response.get('Items', [])
+                        for i, item in enumerate(debug_items):
+                            logger.info(f"DEBUG Conv {i}: conversationId='{item.get('conversationId')}', title='{item.get('title', 'N/A')}', createdBy='{item.get('createdBy', 'N/A')}'")
                 
-                for conv in all_conversations[:3]:  # Show first 3 for debugging
-                    logger.info(f"DEBUG: Conversation - ID: {conv.get('id')}, conversationId: {conv.get('conversationId')}")
+                except Exception as scan_err:
+                    logger.error(f"Error scanning for conversation: {scan_err}")
+                    existing_conversation = None
+                
+                if not existing_conversation:
+                    logger.error(f"Conversation {conversation_id} not found. PUT operation requires existing conversation.")
+                    response_result = Responses.result_response(STATUS_ERROR, False, f'Conversation {conversation_id} not found. Use POST to create a new conversation.')
+                    send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+                    return {
+                        'statusCode': STATUS_ERROR,
+                        'body': json.dumps('Conversation not found')
+                    }
+                
+                # Conversation exists, now execute the AI workflow
+                logger.info(f"PRE-WORKFLOW: Conversation found, proceeding with AI workflow")
                 
                 # Execute chat continuation workflow  
                 # Create websocket connection info for the workflow
@@ -357,56 +424,26 @@ def continue_chat(event, context):
                 logger.info(f"Workflow result keys: {list(workflow_result.keys()) if isinstance(workflow_result, dict) else type(workflow_result)}")
                 
                 if workflow_result.get('success', False):
-                    # Retrieve existing conversation from DynamoDB using conversationId field
-                    # Note: We need to scan/query by conversationId, not id (which is a UUID)
-                    try:
-                        # Ensure conversation_id is string for proper comparison
-                        conversation_id_str = str(conversation_id)
-                        logger.info(f"Scanning for conversation with conversationId: '{conversation_id_str}'")
-                        
-                        response = table.scan(
-                            FilterExpression=boto3.dynamodb.conditions.Attr('conversationId').eq(conversation_id_str)
-                        )
-                        existing_conversations = response.get('Items', [])
-                        logger.info(f"Found {len(existing_conversations)} conversations with conversationId {conversation_id}")
-                        
-                        if existing_conversations:
-                            logger.info(f"First conversation found: ID={existing_conversations[0].get('id')}, conversationId={existing_conversations[0].get('conversationId')}")
-                        
-                        existing_conversation = existing_conversations[0] if existing_conversations else None
-                    except Exception as scan_err:
-                        logger.error(f"Error scanning for conversation: {scan_err}")
-                        existing_conversation = None
+                    # Update existing conversation with AI response
+                    existing_chat_history = existing_conversation.get('chatHistory', [])
                     
-                    if not existing_conversation:
-                        logger.error(f"Conversation {conversation_id} not found. PUT operation requires existing conversation.")
-                        response_result = Responses.result_response(STATUS_ERROR, False, f'Conversation {conversation_id} not found. Use POST to create a new conversation.')
-                        send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
-                        return {
-                            'statusCode': STATUS_ERROR,
-                            'body': json.dumps('Conversation not found')
+                    # Add new chat entry using helper
+                    new_chat_entry = conversation_builder.create_conversation_data(
+                        user_query, workflow_result.get('ai_response', ''), conversation_id
+                    )
+                    
+                    updated_chat_history = existing_chat_history + [new_chat_entry]
+                    
+                    # Update the conversation in DynamoDB using conversationId as primary key
+                    table.update_item(
+                        Key={'conversationId': conversation_id_str},
+                        UpdateExpression='SET chatHistory = :history, updatedBy = :updatedBy, updatedAt = :updatedAt',
+                        ExpressionAttributeValues={
+                            ':history': updated_chat_history,
+                            ':updatedBy': email,
+                            ':updatedAt': datetime.now().isoformat()
                         }
-                    else:
-                        # Update existing conversation
-                        existing_chat_history = existing_conversation.get('chatHistory', [])
-                        
-                        # Add new chat entry using helper
-                        new_chat_entry = conversation_builder.create_conversation_data(
-                            user_query, workflow_result.get('ai_response', ''), conversation_id
-                        )
-                        
-                        updated_chat_history = existing_chat_history + [new_chat_entry]
-                        
-                        # Update the conversation in DynamoDB using the correct primary key (id field)
-                        table.update_item(
-                            Key={'id': existing_conversation['id']},
-                            UpdateExpression='SET chatHistory = :history, updatedBy = :updatedBy, updatedAt = :updatedAt',
-                            ExpressionAttributeValues={
-                                ':history': updated_chat_history,
-                                ':updatedBy': email,
-                                ':updatedAt': datetime.now().isoformat()
-                            }
-                        )
+                    )
                     
                     logger.info("Chat continuation workflow completed successfully")
                     

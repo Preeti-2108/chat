@@ -193,7 +193,8 @@ class ConversationDataBuilder:
         Returns:
             Complete DynamoDB item ready for insertion
         """
-        # Create the item structure exactly as required
+        # Create the item structure using conversationId as primary key
+        # No separate 'id' field needed - conversationId serves as the primary key
         item = {
             "conversationId": str(datas.get('conversationId', '')),
             "assistantId": datas.get('assistantId', self.default_assistant_id),

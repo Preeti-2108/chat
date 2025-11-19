@@ -227,10 +227,15 @@ def continue_chat(event, context):
 
     # Extract necessary information from the event
     try:
-        event_info = extract_event_info(event)
-        url = event_info.get('url')
-        connectionId = event_info.get('connectionId')
+        # event_info = extract_event_info(event)
+        # url = event_info.get('url')
+        # connectionId = event_info.get('connectionId')
+
+        body = json.loads(event.get('body', '{}'))
+        connectionId = body.get('datas', {}).get('id')
         
+        logger.info("URL length: %s", len(url) if url else 0)
+        logger.info("Connection ID length: %s", len(connectionId) if connectionId else 0)
         if not connectionId:
             logger.error("No connection ID found in event")
             return {
@@ -291,7 +296,7 @@ def continue_chat(event, context):
         # Extract chat continuation parameters
         user_query = validation_schema['datas'].get('query', '')
         conversation_id = validation_schema['datas'].get('id')
-        # vector_db = validation_schema['datas'].get('vectorDb', KNOWLEDGE_BASE_ID)
+        vector_db = validation_schema['datas'].get('vectorDb', KNOWLEDGE_BASE_ID)
         
         # Debug: Log the exact values being extracted
         logger.info(f"DEBUG: Extracted conversation_id: '{conversation_id}' (type: {type(conversation_id)})")

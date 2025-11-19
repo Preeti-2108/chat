@@ -236,6 +236,8 @@ def continue_chat(event, context):
     dynamodb = boto3.resource('dynamodb')
     table = dynamodb.Table(table_name)
 
+    logger.info(f"Event received: {event}")
+
     # Extract necessary information from the event
     try:
         event_info = extract_event_info(event)

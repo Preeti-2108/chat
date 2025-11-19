@@ -227,20 +227,31 @@ def continue_chat(event, context):
 
     # Extract necessary information from the event
     try:
-        # event_info = extract_event_info(event)
-        # url = event_info.get('url')
-        # connectionId = event_info.get('connectionId')
+        # Extract WebSocket connection info from requestContext
+        event_info = extract_event_info(event)
+        url = event_info.get('url')
+        connectionId = event_info.get('connectionId')
 
+        # Extract conversation ID from request body
         body = json.loads(event.get('body', '{}'))
-        connectionId = body.get('datas', {}).get('id')
+        conversation_id_from_body = body.get('datas', {}).get('id')
         
         logger.info("URL length: %s", len(url) if url else 0)
-        logger.info("Connection ID length: %s", len(connectionId) if connectionId else 0)
+        logger.info("WebSocket Connection ID: %s", connectionId)
+        logger.info("Conversation ID from body: %s", conversation_id_from_body)
+        
         if not connectionId:
             logger.error("No connection ID found in event")
             return {
                 'statusCode': STATUS_ERROR,
                 'body': json.dumps('Missing connection ID')
+            }
+            
+        if not conversation_id_from_body:
+            logger.error("No conversation ID found in request body")
+            return {
+                'statusCode': STATUS_ERROR,
+                'body': json.dumps('Missing conversation ID in request body')
             }
     except Exception as event_err:
         logger.error(f"Error extracting event info: {str(event_err)}")

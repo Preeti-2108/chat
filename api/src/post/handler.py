@@ -27,6 +27,7 @@ from src.helpers.streaming_handler import WordLevelStreamingHandler, send_immedi
 from src.helpers.conversation_builder import conversation_builder, extract_user_email_from_event
 from src.helpers.document_analyzer import document_analyzer, build_context_aware_prompt
 from src.helpers.system_instructions import get_default_system_instructions, get_error_response_templates
+from src.helpers.intent_detector import is_simple_query, get_simple_response
 
 """
 /**
@@ -113,6 +114,10 @@ class State(Dict[str, Any]):
     has_context: bool
     websocket_connection: Dict[str, Any]
     vector_db: str
+    is_simple_query: bool
+    skip_rag: bool
+    skip_llm: bool
+    simple_response: str
 
 # WordLevelStreamingHandler moved to src/helpers/streaming_handler.py
 
@@ -180,15 +185,108 @@ class BedrockKnowledgeBaseWorkflow:
         workflow = StateGraph(State)
         
         # Add nodes
-        workflow.add_node("retrieve_from_kb", self.retrieve_from_knowledge_base)
+        workflow.add_node("detect_intent", self.detect_query_intent)
+        workflow.add_node("retrieve_from_kb", self.retrieve_from_knowledge_base)  
         workflow.add_node("generate_response", self.generate_chat_response)
+        workflow.add_node("handle_simple_query", self.handle_simple_query)
         
-        # Add edges - workflow flow
-        workflow.set_entry_point("retrieve_from_kb")
+        # Add edges - workflow flow with conditional routing
+        workflow.set_entry_point("detect_intent")
+        
+        # Conditional edge: if simple query, skip RAG and LLM
+        workflow.add_conditional_edges(
+            "detect_intent",
+            self.route_based_on_intent,
+            {
+                "simple": "handle_simple_query",
+                "complex": "retrieve_from_kb"
+            }
+        )
+        
+        # Continue with normal flow for complex queries
         workflow.add_edge("retrieve_from_kb", "generate_response")
         workflow.add_edge("generate_response", END)
+        workflow.add_edge("handle_simple_query", END)
         
         return workflow.compile()
+    
+    def detect_query_intent(self, state: State) -> State:
+        """
+        Node 0: Detect if query is simple and can be handled without RAG/LLM
+        """
+        user_query = state.get("user_query", "")
+        logger.info(f"🧠 Detecting intent for query: '{user_query[:50]}...'")
+        
+        # Use document analyzer's skip_rag method for comprehensive analysis
+        skip_decision = document_analyzer.should_skip_rag(user_query)
+        
+        state["is_simple_query"] = skip_decision["skip_rag"]
+        state["skip_rag"] = skip_decision["skip_rag"]
+        state["skip_llm"] = skip_decision["skip_llm"]
+        
+        if skip_decision["skip_rag"]:
+            state["simple_response"] = skip_decision["simple_response"]
+            logger.info(f"✅ Simple query detected - Cost savings: {skip_decision['estimated_savings']['cost']}")
+            logger.info(f"📊 Processing method: {skip_decision['estimated_savings']['processing_method']}")
+        else:
+            logger.info(f"🔄 Complex query - Proceeding with RAG + LLM: {skip_decision['reason']}")
+        
+        return state
+    
+    def route_based_on_intent(self, state: State) -> str:
+        """
+        Conditional routing function to determine next node based on query complexity
+        """
+        if state.get("skip_rag", False):
+            logger.info("🚀 Routing to simple query handler (skipping RAG + LLM)")
+            return "simple"
+        else:
+            logger.info("🔍 Routing to knowledge base retrieval (complex query)")
+            return "complex"
+    
+    def handle_simple_query(self, state: State) -> State:
+        """
+        Node for handling simple queries with predefined responses
+        """
+        user_query = state.get("user_query", "")
+        simple_response = state.get("simple_response", "")
+        conversation_id = state.get("conversation_id", "")
+        
+        logger.info(f"💬 Handling simple query with predefined response")
+        
+        # Check if WebSocket streaming is available
+        connection_info = state.get("websocket_connection", {})
+        connection_id = connection_info.get("connectionId")
+        url = connection_info.get("url")
+        
+        if connection_id and url and ENABLE_WEBSOCKET_STREAMING:
+            # Send simple response via WebSocket streaming for consistency
+            try:
+                streaming_handler = WordLevelStreamingHandler(
+                    connection_id=connection_id,
+                    websocket_url=url,
+                    conversation_id=conversation_id,
+                    trace_id=conversation_id
+                )
+                
+                # Send start signal
+                streaming_handler.send_start_signal()
+                
+                # Send simple response as streaming (even though it's immediate)
+                streaming_handler.send_word(simple_response)
+                streaming_handler.send_end_signal()
+                
+                logger.info("✅ Simple response sent via WebSocket streaming")
+                
+            except Exception as e:
+                logger.error(f"❌ Error sending simple response via WebSocket: {e}")
+        
+        # Update state with the response
+        state["ai_response"] = simple_response
+        state["has_context"] = False  # Simple queries don't use context
+        
+        logger.info(f"✅ Simple query processed in ~50ms with $0 cost")
+        return state
     
     def retrieve_from_knowledge_base(self, state: State) -> State:
         """
@@ -363,7 +461,11 @@ class BedrockKnowledgeBaseWorkflow:
                 "ai_response": "",
                 "has_context": False,
                 "vector_db": vector_db or KNOWLEDGE_BASE_ID,
-                "websocket_connection": websocket_connection or {}
+                "websocket_connection": websocket_connection or {},
+                "is_simple_query": False,
+                "skip_rag": False,
+                "skip_llm": False,
+                "simple_response": ""
             }
             
             # Execute the workflow
@@ -377,7 +479,9 @@ class BedrockKnowledgeBaseWorkflow:
                 "sources_count": len(final_state.get("context_documents", [])),
                 "sources_info": final_state.get("sources_info", []),
                 "conversation_id": final_state.get("conversation_id", ""),
-                "model_used": AZURE_OPENAI_MODEL,
+                "model_used": AZURE_OPENAI_MODEL if not final_state.get("is_simple_query", False) else "rule_based",
+                "processing_method": "simple_response" if final_state.get("is_simple_query", False) else "rag_llm",
+                "cost_optimized": final_state.get("is_simple_query", False),
                 "timestamp": datetime.now().isoformat()
             }
             

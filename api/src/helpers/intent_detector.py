@@ -1,0 +1,185 @@
+"""
+Simple Intent Detector
+Handles basic queries without needing RAG or LLM processing for cost and speed optimization.
+"""
+
+import logging
+from typing import Dict, Any
+
+logger = logging.getLogger(__name__)
+
+def is_simple_query(text: str) -> bool:
+    """
+    Detect if a query is simple and can be handled with predefined responses.
+    
+    Args:
+        text: User input text
+        
+    Returns:
+        True if query is simple, False if it needs RAG/LLM processing
+    """
+    if not text or not isinstance(text, str):
+        return False
+        
+    text = text.lower().strip()
+    
+    # Simple greeting and conversation keywords
+    simple_keywords = [
+        # Greetings
+        "hi", "hello", "hey", "good morning", "good evening", "good afternoon",
+        "greetings", "howdy", "what's up", "wassup",
+        
+        # Thanks and acknowledgments
+        "thank you", "thanks", "thx", "appreciate", "grateful",
+        
+        # Confirmations
+        "ok", "okay", "alright", "sure", "yes", "no", "yep", "nope",
+        "got it", "understood", "makes sense", "sounds good",
+        
+        # Basic identity questions
+        "who are you", "what is your name", "what are you", "introduce yourself",
+        
+        # Farewells
+        "bye", "goodbye", "see you", "farewell", "catch you later", "take care",
+        "talk to you later", "ttyl", "see ya",
+        
+        # Basic status/health checks
+        "how are you", "what's up", "how's it going", "how are things",
+        
+        # Simple affirmations
+        "great", "awesome", "perfect", "excellent", "wonderful", "nice",
+        "cool", "good job", "well done"
+    ]
+    
+    # Check for exact keyword matches
+    for kw in simple_keywords:
+        if kw in text:
+            return True
+    
+    # Also treat very short messages as potentially simple
+    word_count = len(text.split())
+    if word_count <= 2:
+        return True
+    
+    # Check for simple yes/no or one-word responses
+    if text in ["yes", "no", "y", "n", "true", "false", "1", "0"]:
+        return True
+    
+    return False
+
+def get_simple_response(user_input: str) -> str:
+    """
+    Generate appropriate response for simple queries.
+    
+    Args:
+        user_input: The user's simple query
+        
+    Returns:
+        Predefined response string
+    """
+    if not user_input or not isinstance(user_input, str):
+        return "Hello! How can I help you today?"
+    
+    user_input = user_input.lower().strip()
+    
+    # Greetings
+    if any(greeting in user_input for greeting in ["hi", "hello", "hey", "good morning", "good evening", "good afternoon"]):
+        return "Hello! I'm here to help you with your questions. What would you like to know?"
+    
+    # Thanks
+    if any(thanks in user_input for thanks in ["thank", "thx", "appreciate", "grateful"]):
+        return "You're welcome! I'm glad I could help. Is there anything else you'd like to know?"
+    
+    # Identity questions
+    if any(identity in user_input for identity in ["who are you", "what is your name", "what are you", "introduce"]):
+        return "I'm your AI assistant, here to help answer your questions and provide information. How can I assist you today?"
+    
+    # Farewells
+    if any(farewell in user_input for farewell in ["bye", "goodbye", "see you", "farewell", "take care"]):
+        return "Goodbye! Have a great day! Feel free to come back if you have more questions."
+    
+    # Status checks
+    if any(status in user_input for status in ["how are you", "what's up", "how's it going"]):
+        return "I'm doing well and ready to help! What can I assist you with today?"
+    
+    # Confirmations and acknowledgments
+    if any(confirm in user_input for confirm in ["ok", "okay", "alright", "sure", "got it", "understood"]):
+        return "Great! Is there anything else I can help you with?"
+    
+    # Positive responses
+    if any(positive in user_input for positive in ["great", "awesome", "perfect", "excellent", "wonderful", "nice", "cool"]):
+        return "I'm glad to hear that! Is there anything else you'd like to know or discuss?"
+    
+    # Yes/No responses
+    if user_input in ["yes", "y", "yep", "yeah"]:
+        return "Understood! How can I help you further?"
+    
+    if user_input in ["no", "n", "nope", "nah"]:
+        return "No problem! Let me know if you need anything else."
+    
+    # Generic fallback for other simple queries
+    return "I'm here to help! Please feel free to ask me any questions you have."
+
+def get_query_intent_info(user_input: str) -> Dict[str, Any]:
+    """
+    Get detailed information about the query intent for logging/analytics.
+    
+    Args:
+        user_input: User query string
+        
+    Returns:
+        Dictionary with intent classification details
+    """
+    is_simple = is_simple_query(user_input)
+    
+    intent_info = {
+        "is_simple": is_simple,
+        "word_count": len(user_input.split()) if user_input else 0,
+        "character_count": len(user_input) if user_input else 0,
+        "requires_rag": not is_simple,
+        "requires_llm": not is_simple,
+        "estimated_cost": 0.0 if is_simple else None,  # Simple queries cost nothing
+        "estimated_latency_ms": 50 if is_simple else None  # Simple queries are very fast
+    }
+    
+    if is_simple:
+        intent_info["response_type"] = "predefined"
+        intent_info["processing_method"] = "rule_based"
+    else:
+        intent_info["response_type"] = "generated"
+        intent_info["processing_method"] = "rag_llm"
+    
+    return intent_info
+
+# Example usage and testing
+if __name__ == "__main__":
+    test_queries = [
+        "Hello!",
+        "Thank you so much",
+        "How do I deploy Kubernetes pods?",
+        "What is Docker?",
+        "Bye!",
+        "Who are you?",
+        "ok",
+        "Compare microservices vs monolith architecture",
+        "Hey there",
+        "What's the difference between REST and GraphQL APIs?"
+    ]
+    
+    print("🧪 Testing Intent Detector:")
+    print("=" * 50)
+    
+    for query in test_queries:
+        is_simple = is_simple_query(query)
+        intent_info = get_query_intent_info(query)
+        
+        print(f"Query: '{query}'")
+        print(f"  Simple: {is_simple}")
+        print(f"  Method: {intent_info['processing_method']}")
+        
+        if is_simple:
+            response = get_simple_response(query)
+            print(f"  Response: '{response}'")
+        else:
+            print(f"  → Needs RAG + LLM processing")
+        print()

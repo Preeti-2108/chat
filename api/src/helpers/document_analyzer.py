@@ -2,10 +2,12 @@
 Document Analysis Helper
 Handles document selection, complexity assessment, and source formatting.
 Reduces redundancy in document processing logic.
+Now includes simple query detection for optimization.
 """
 
 import logging
 from typing import List, Dict, Any
+from .intent_detector import is_simple_query, get_simple_response, get_query_intent_info
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +21,7 @@ class DocumentAnalyzer:
     def assess_query_complexity(self, user_query: str) -> str:
         """
         Assess query complexity to determine retrieval strategy.
+        Now includes simple query detection to skip RAG/LLM for basic interactions.
         
         Args:
             user_query: The user's query string
@@ -26,6 +29,11 @@ class DocumentAnalyzer:
         Returns:
             'simple', 'moderate', or 'complex'
         """
+        # First check if it's a simple conversational query
+        if is_simple_query(user_query):
+            logger.info(f"Detected simple conversational query: '{user_query[:50]}...'")
+            return 'simple'
+        
         query_lower = user_query.lower()
         
         # Complex query patterns
@@ -61,6 +69,41 @@ class DocumentAnalyzer:
             return 'simple'
         else:
             return 'moderate'
+    
+    def should_skip_rag(self, user_query: str) -> Dict[str, Any]:
+        """
+        Determine if the query should skip RAG processing entirely.
+        
+        Args:
+            user_query: The user's query string
+            
+        Returns:
+            Dictionary with skip decision and simple response if applicable
+        """
+        intent_info = get_query_intent_info(user_query)
+        
+        if intent_info["is_simple"]:
+            simple_response = get_simple_response(user_query)
+            logger.info(f"Query can skip RAG - Simple conversational query detected")
+            
+            return {
+                "skip_rag": True,
+                "skip_llm": True, 
+                "simple_response": simple_response,
+                "reason": "Simple conversational query",
+                "estimated_savings": {
+                    "cost": "100%",
+                    "latency_ms": intent_info["estimated_latency_ms"],
+                    "processing_method": intent_info["processing_method"]
+                }
+            }
+        
+        return {
+            "skip_rag": False,
+            "skip_llm": False,
+            "simple_response": None,
+            "reason": "Complex query requires RAG + LLM processing"
+        }
     
     def select_optimal_documents(self, context_documents: List[Dict], user_query: str) -> List[Dict]:
         """

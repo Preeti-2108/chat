@@ -290,8 +290,8 @@ def continue_chat(event, context):
         
         # Extract chat continuation parameters
         user_query = validation_schema['datas'].get('query', '')
-        conversation_id = validation_schema['datas'].get('conversationId')
-        vector_db = validation_schema['datas'].get('vectorDb', KNOWLEDGE_BASE_ID)
+        conversation_id = validation_schema['datas'].get('id')
+        # vector_db = validation_schema['datas'].get('vectorDb', KNOWLEDGE_BASE_ID)
         
         # Debug: Log the exact values being extracted
         logger.info(f"DEBUG: Extracted conversation_id: '{conversation_id}' (type: {type(conversation_id)})")

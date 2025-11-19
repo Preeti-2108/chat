@@ -304,6 +304,11 @@ def continue_chat(event, context):
         conversation_id = validation_schema['datas'].get('conversationId')
         vector_db = validation_schema['datas'].get('vectorDb', KNOWLEDGE_BASE_ID)
         
+        # Debug: Log the exact values being extracted
+        logger.info(f"DEBUG: Extracted conversation_id: '{conversation_id}' (type: {type(conversation_id)})")
+        logger.info(f"DEBUG: Extracted user_query: '{user_query}'")
+        logger.info(f"DEBUG: Full validation_schema['datas']: {validation_schema['datas']}")
+        
         if not conversation_id:
             response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'conversationId is required for continuing chat.')
             send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
@@ -318,6 +323,15 @@ def continue_chat(event, context):
             logger.info(f"Using vector DB: {vector_db}")
             
             try:
+                # Debug: First let's see what conversations exist in the database
+                logger.info("DEBUG: Scanning all conversations in the database...")
+                all_conversations_response = table.scan()
+                all_conversations = all_conversations_response.get('Items', [])
+                logger.info(f"DEBUG: Total conversations in database: {len(all_conversations)}")
+                
+                for conv in all_conversations[:3]:  # Show first 3 for debugging
+                    logger.info(f"DEBUG: Conversation - ID: {conv.get('id')}, conversationId: {conv.get('conversationId')}")
+                
                 # Execute chat continuation workflow
                 workflow_result = bedrock_workflow.process_chat_query(user_query, conversation_id, vector_db)
                 
@@ -325,34 +339,32 @@ def continue_chat(event, context):
                     # Retrieve existing conversation from DynamoDB using conversationId field
                     # Note: We need to scan/query by conversationId, not id (which is a UUID)
                     try:
+                        # Ensure conversation_id is string for proper comparison
+                        conversation_id_str = str(conversation_id)
+                        logger.info(f"Scanning for conversation with conversationId: '{conversation_id_str}'")
+                        
                         response = table.scan(
-                            FilterExpression=boto3.dynamodb.conditions.Attr('conversationId').eq(conversation_id)
+                            FilterExpression=boto3.dynamodb.conditions.Attr('conversationId').eq(conversation_id_str)
                         )
                         existing_conversations = response.get('Items', [])
+                        logger.info(f"Found {len(existing_conversations)} conversations with conversationId {conversation_id}")
+                        
+                        if existing_conversations:
+                            logger.info(f"First conversation found: ID={existing_conversations[0].get('id')}, conversationId={existing_conversations[0].get('conversationId')}")
+                        
                         existing_conversation = existing_conversations[0] if existing_conversations else None
                     except Exception as scan_err:
                         logger.error(f"Error scanning for conversation: {scan_err}")
                         existing_conversation = None
                     
                     if not existing_conversation:
-                        logger.warning(f"Conversation {conversation_id} not found, creating new entry")
-                        # Create new conversation entry using helper
-                        chat_entry = conversation_builder.build_chat_history_entry(
-                            user_query, workflow_result.get('ai_response', ''), conversation_id
-                        )
-                        new_conversation = {
-                            'id': conversation_id,
-                            'userId': email,
-                            'conversationId': conversation_id,
-                            'chatHistory': [chat_entry],
-                            'createdBy': email,
-                            'updatedBy': email,
-                            'createdAt': datetime.now().isoformat(),
-                            'updatedAt': datetime.now().isoformat()
+                        logger.error(f"Conversation {conversation_id} not found. PUT operation requires existing conversation.")
+                        response_result = Responses.result_response(STATUS_ERROR, False, f'Conversation {conversation_id} not found. Use POST to create a new conversation.')
+                        send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+                        return {
+                            'statusCode': STATUS_ERROR,
+                            'body': json.dumps('Conversation not found')
                         }
-                        
-                        table.put_item(Item=new_conversation)
-                        updated_chat_history = new_conversation['chatHistory']
                     else:
                         # Update existing conversation
                         existing_chat_history = existing_conversation.get('chatHistory', [])

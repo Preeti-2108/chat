@@ -9,7 +9,7 @@ class PostRequestModel(BaseModel):
     assistantId: str
 
 class PutRequestModel(BaseModel):
-    id: str
+    conversationId: str
     query: str
 
 class DeleteRequestModel(BaseModel):
@@ -72,6 +72,7 @@ def validate_request_datas_schema_pydantic(action: str, datas: Dict[str, Any], l
     action_mapping = {
         'create': 'POST',
         'update': 'PUT',
+        'continue': 'PUT',  # Continue chat also uses PUT validation
         'delete': 'DELETE',
         'get': 'GET',      # Get specific chat by ID
         'getassistant': 'GETASSISTANT',      # Get specific chat assistant by ID

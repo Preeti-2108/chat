@@ -262,6 +262,8 @@ class BedrockKnowledgeBaseWorkflow:
         if connection_id and url and ENABLE_WEBSOCKET_STREAMING:
             # Send simple response via WebSocket streaming for consistency
             try:
+                from src.helpers.intent_detector import create_mock_streaming_response
+                
                 streaming_handler = WordLevelStreamingHandler(
                     connection_id=connection_id,
                     websocket_url=url,
@@ -272,14 +274,21 @@ class BedrockKnowledgeBaseWorkflow:
                 # Send start signal
                 streaming_handler.send_start_signal()
                 
-                # Send simple response as streaming (even though it's immediate)
-                streaming_handler.send_word(simple_response)
-                streaming_handler.send_end_signal()
+                # Create a streaming response that matches LLM streaming pattern
+                mock_streaming_generator = create_mock_streaming_response(simple_response)
+                
+                # Process streaming response just like LLM responses
+                ai_response = streaming_handler.process_word_streaming(mock_streaming_generator)
+                
+                # Update the simple_response with the streamed result
+                simple_response = ai_response
                 
                 logger.info("✅ Simple response sent via WebSocket streaming")
                 
             except Exception as e:
                 logger.error(f"❌ Error sending simple response via WebSocket: {e}")
+                # Fallback to basic response if streaming fails
+                logger.info("📤 Falling back to non-streaming simple response")
         
         # Update state with the response
         state["ai_response"] = simple_response

@@ -4,7 +4,8 @@ Handles basic queries without needing RAG or LLM processing for cost and speed o
 """
 
 import logging
-from typing import Dict, Any
+import time
+from typing import Dict, Any, Generator
 
 logger = logging.getLogger(__name__)
 
@@ -150,6 +151,64 @@ def get_query_intent_info(user_input: str) -> Dict[str, Any]:
         intent_info["processing_method"] = "rag_llm"
     
     return intent_info
+
+def get_streaming_simple_response(user_input: str) -> Generator[str, None, None]:
+    """
+    Get a streaming simple response that simulates LLM word-by-word streaming.
+    This maintains consistency with the existing streaming pattern.
+    
+    Args:
+        user_input: User query text
+        
+    Yields:
+        Individual words/chunks of the response for streaming
+    """
+    response = get_simple_response(user_input)
+    
+    # Split response into words for streaming
+    words = response.split()
+    
+    for i, word in enumerate(words):
+        # Add natural streaming delay (very small to maintain speed advantage)
+        if i > 0:  # Don't delay the first word
+            time.sleep(0.01)  # 10ms delay between words for natural feel
+        
+        # Yield word with space (except for last word)
+        if i < len(words) - 1:
+            yield word + " "
+        else:
+            yield word
+
+def create_mock_streaming_response(response_text: str):
+    """
+    Create a mock streaming response object that matches LangChain's streaming interface.
+    This allows simple responses to work with the existing WordLevelStreamingHandler.
+    
+    Args:
+        response_text: The complete response text
+        
+    Returns:
+        Generator that yields mock response chunks
+    """
+    class MockStreamingChunk:
+        def __init__(self, content: str):
+            self.content = content
+            
+        def __str__(self):
+            return self.content
+    
+    words = response_text.split()
+    
+    for i, word in enumerate(words):
+        # Small delay for natural streaming feel
+        if i > 0:
+            time.sleep(0.01)
+            
+        # Yield mock chunk with content
+        if i < len(words) - 1:
+            yield MockStreamingChunk(word + " ")
+        else:
+            yield MockStreamingChunk(word)
 
 # Example usage and testing
 if __name__ == "__main__":

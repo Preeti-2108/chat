@@ -306,21 +306,30 @@ def continue_chat(event, context):
         
         # Extract chat continuation parameters
         user_query = validation_schema['datas'].get('query', '')
-        conversation_id = validation_schema['datas'].get('id')
+        conversation_id = validation_schema['datas'].get('id')  # This should match conversation_id_from_body
         vector_db = validation_schema['datas'].get('vectorDb', KNOWLEDGE_BASE_ID)
         
         # Debug: Log the exact values being extracted
-        logger.info(f"DEBUG: Extracted conversation_id: '{conversation_id}' (type: {type(conversation_id)})")
+        logger.info(f"DEBUG: From validation_schema - conversation_id: '{conversation_id}' (type: {type(conversation_id)})")
+        logger.info(f"DEBUG: From body directly - conversation_id_from_body: '{conversation_id_from_body}' (type: {type(conversation_id_from_body)})")
         logger.info(f"DEBUG: Extracted user_query: '{user_query}'")
         logger.info(f"DEBUG: Full validation_schema['datas']: {validation_schema['datas']}")
         
+        # Use the conversation_id from validation (should be the same as conversation_id_from_body)
         if not conversation_id:
-            response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'conversationId is required for continuing chat.')
+            logger.error(f"No conversation ID found in validation_schema. Raw body conversation ID: {conversation_id_from_body}")
+            response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Conversation ID is required for continuing chat.')
             send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
             return {
                 'statusCode': STATUS_UNPROCESSABLE_ENTITY,
-                'body': json.dumps('conversationId is required')
+                'body': json.dumps('Conversation ID is required')
             }
+        
+        # Ensure both IDs match for consistency
+        if conversation_id != conversation_id_from_body:
+            logger.warning(f"ID mismatch: validation_schema ID '{conversation_id}' != body ID '{conversation_id_from_body}'")
+            # Use the one from validation_schema as it's been validated
+            logger.info(f"Using conversation_id from validation_schema: '{conversation_id}'")
         
         if user_query:
             logger.info(f"Processing chat continuation with LangGraph workflow: {user_query[:100]}...")
@@ -337,8 +346,15 @@ def continue_chat(event, context):
                 for conv in all_conversations[:3]:  # Show first 3 for debugging
                     logger.info(f"DEBUG: Conversation - ID: {conv.get('id')}, conversationId: {conv.get('conversationId')}")
                 
-                # Execute chat continuation workflow
-                workflow_result = bedrock_workflow.process_chat_query(user_query, conversation_id, vector_db)
+                # Execute chat continuation workflow  
+                # Create websocket connection info for the workflow
+                websocket_connection = {
+                    "connectionId": connectionId,
+                    "url": url
+                }
+                logger.info(f"Calling bedrock_workflow.process_chat_query with: user_query='{user_query}', conversation_id='{conversation_id}', vector_db='{vector_db}'")
+                workflow_result = bedrock_workflow.process_chat_query(user_query, conversation_id, vector_db, websocket_connection)
+                logger.info(f"Workflow result keys: {list(workflow_result.keys()) if isinstance(workflow_result, dict) else type(workflow_result)}")
                 
                 if workflow_result.get('success', False):
                     # Retrieve existing conversation from DynamoDB using conversationId field

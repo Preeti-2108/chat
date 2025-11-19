@@ -375,7 +375,7 @@ def continue_chat(event, context):
                         existing_chat_history = existing_conversation.get('chatHistory', [])
                         
                         # Add new chat entry using helper
-                        new_chat_entry = conversation_builder.build_chat_history_entry(
+                        new_chat_entry = conversation_builder.create_conversation_data(
                             user_query, workflow_result.get('ai_response', ''), conversation_id
                         )
                         
@@ -402,9 +402,11 @@ def continue_chat(event, context):
                         ai_response=workflow_result.get('ai_response', ''),
                         sources_info=workflow_result.get('sources_info', []),
                         context_used=workflow_result.get('context_used', False),
-                        sources_count=workflow_result.get('sources_count', 0),
-                        chat_history=updated_chat_history
+                        sources_count=workflow_result.get('sources_count', 0)
                     )
+                    
+                    # Update the websocket response with the full chat history
+                    websocket_response['chatHistory'] = updated_chat_history
                     
                     final_response = conversation_builder.build_final_websocket_response(websocket_response, 200)
                     

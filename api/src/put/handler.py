@@ -437,9 +437,10 @@ def continue_chat(event, context):
                     # Update the conversation in DynamoDB using conversationId as primary key
                     table.update_item(
                         Key={'conversationId': conversation_id_str},
-                        UpdateExpression='SET chatHistory = :history, updatedBy = :updatedBy, updatedAt = :updatedAt',
+                        UpdateExpression='SET chatHistory = :history, memoryHistory = :memoryHistory, updatedBy = :updatedBy, updatedAt = :updatedAt',
                         ExpressionAttributeValues={
                             ':history': updated_chat_history,
+                            ':memoryHistory': updated_chat_history,
                             ':updatedBy': email,
                             ':updatedAt': datetime.now().isoformat()
                         }

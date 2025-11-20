@@ -25,9 +25,11 @@ from src.helpers.queue_helper import send_message_to_queue  # Helper function to
 # New organized helpers to reduce redundancy
 from src.helpers.streaming_handler import WordLevelStreamingHandler, send_immediate_streaming_signals
 from src.helpers.conversation_builder import conversation_builder, extract_user_email_from_event
-from src.helpers.document_analyzer import document_analyzer, build_context_aware_prompt
+from src.helpers.document_analyzer import document_analyzer, build_context_aware_prompt, multi_query_analyzer
 from src.helpers.system_instructions import get_default_system_instructions, get_error_response_templates
 from src.helpers.intent_detector import is_simple_query, get_simple_response, create_mock_streaming_response
+from src.helpers.query_rewriter import query_rewriter, rewrite_query_for_better_similarity
+from src.helpers.bedrock_tuner import bedrock_tuner
 
 """
 /**
@@ -108,8 +110,10 @@ class State(Dict[str, Any]):
     """State object for LangGraph workflow"""
     messages: List[Any]
     user_query: str
+    query_variations: List[str]  # NEW: Multiple query variations for better retrieval
     context_documents: List[str]
     conversation_id: str
+    conversation_memory: List[Dict[str, Any]]  # NEW: Previous conversation context
     ai_response: str
     has_context: bool
     websocket_connection: Dict[str, Any]
@@ -186,6 +190,8 @@ class BedrockKnowledgeBaseWorkflow:
         
         # Add nodes
         workflow.add_node("detect_intent", self.detect_query_intent)
+        workflow.add_node("load_conversation_memory", self.load_conversation_memory)  # NEW
+        workflow.add_node("rewrite_query", self.rewrite_query_for_similarity)  # NEW
         workflow.add_node("retrieve_from_kb", self.retrieve_from_knowledge_base)  
         workflow.add_node("generate_response", self.generate_chat_response)
         workflow.add_node("handle_simple_query", self.handle_simple_query)
@@ -199,11 +205,13 @@ class BedrockKnowledgeBaseWorkflow:
             self.route_based_on_intent,
             {
                 "simple": "handle_simple_query",
-                "complex": "retrieve_from_kb"
+                "complex": "load_conversation_memory"  # Load memory before processing complex queries
             }
         )
         
-        # Continue with normal flow for complex queries
+        # Enhanced flow for complex queries with memory and query rewriting
+        workflow.add_edge("load_conversation_memory", "rewrite_query")
+        workflow.add_edge("rewrite_query", "retrieve_from_kb")
         workflow.add_edge("retrieve_from_kb", "generate_response")
         workflow.add_edge("generate_response", END)
         workflow.add_edge("handle_simple_query", END)
@@ -295,38 +303,170 @@ class BedrockKnowledgeBaseWorkflow:
         logger.info(f"✅ Simple query processed in ~50ms with $0 cost")
         return state
     
+    def load_conversation_memory(self, state: State) -> State:
+        """
+        NEW Node: Load conversation memory for context-aware processing
+        """
+        conversation_id = state.get("conversation_id", "")
+        logger.info(f"🧠 Loading conversation memory for: {conversation_id}")
+        
+        conversation_memory = []
+        
+        try:
+            # Import here to avoid circular dependencies
+            import boto3
+            table_name = os.getenv('TABLE')
+            
+            if table_name and conversation_id:
+                dynamodb = boto3.resource('dynamodb')
+                table = dynamodb.Table(table_name)
+                
+                # Get existing conversation
+                response = table.get_item(Key={'conversationId': conversation_id})
+                
+                if 'Item' in response:
+                    item = response['Item']
+                    chat_history = item.get('chatHistory', [])
+                    
+                    # Convert to memory format (last 3 exchanges for context)
+                    for entry in chat_history[-6:]:  # Last 3 Q&A pairs
+                        if isinstance(entry, dict):
+                            conversation_memory.append({
+                                "role": entry.get("role", "user"),
+                                "content": entry.get("content", ""),
+                                "timestamp": entry.get("timestamp", "")
+                            })
+                    
+                    logger.info(f"Loaded {len(conversation_memory)} previous messages")
+                else:
+                    logger.info("No previous conversation found - starting fresh")
+            
+        except Exception as e:
+            logger.error(f"Error loading conversation memory: {e}")
+            conversation_memory = []
+        
+        state["conversation_memory"] = conversation_memory
+        return state
+    
+    def rewrite_query_for_similarity(self, state: State) -> State:
+        """
+        NEW Node: Rewrite query for improved semantic similarity
+        """
+        user_query = state.get("user_query", "")
+        conversation_memory = state.get("conversation_memory", [])
+        
+        logger.info(f"🔧 Rewriting query for better similarity: '{user_query[:50]}...'")
+        
+        try:
+            # Assess query complexity for rewriting strategy
+            complexity = document_analyzer.assess_query_complexity(user_query)
+            
+            # Add conversation context to query if available
+            context_enhanced_query = user_query
+            if conversation_memory:
+                # Add context from recent conversation
+                recent_context = []
+                for msg in conversation_memory[-2:]:  # Last 2 messages for context
+                    if msg.get("role") == "assistant" and len(msg.get("content", "")) < 100:
+                        recent_context.append(msg.get("content", ""))
+                
+                if recent_context:
+                    context_enhanced_query = f"{user_query} (Context: {' '.join(recent_context)})"
+            
+            # Generate query variations for better retrieval
+            query_variations = rewrite_query_for_better_similarity(
+                context_enhanced_query, 
+                complexity, 
+                self.chat_model  # Use LLM for advanced rewriting when available
+            )
+            
+            state["query_variations"] = query_variations
+            
+            logger.info(f"Generated {len(query_variations)} query variations")
+            for i, variation in enumerate(query_variations[:3], 1):
+                logger.info(f"  {i}. {variation}")
+            
+        except Exception as e:
+            logger.error(f"Query rewriting failed: {e}")
+            # Fallback to original query
+            state["query_variations"] = [user_query]
+        
+        return state
+    
     def retrieve_from_knowledge_base(self, state: State) -> State:
         """
         Node 1: Retrieve relevant context from Bedrock Knowledge Base
         """
-        logger.info("Retrieving context from Bedrock Knowledge Base")
+        logger.info("Retrieving context from Bedrock Knowledge Base with Multi-Query RAG")
         
         user_query = state.get("user_query", "")
-        context_documents = []
+        query_variations = state.get("query_variations", [user_query])
+        all_context_documents = []
         
         if self.bedrock_agent_client and user_query and KNOWLEDGE_BASE_ID:
             
             try:
                 logger.info(f"🔍 Querying Knowledge Base ID: {KNOWLEDGE_BASE_ID}")
+                logger.info(f"🔄 Using {len(query_variations)} query variations for comprehensive retrieval")
                 
                 # Get environment and vector_db parameters
                 env = os.getenv('ENV', 'dev')  # Default to 'dev' if not set
                 vector_db = "872051E8-E5C8-4AD1-83A8-ADB347D6C2CC"  # Use KB ID as fallback
                 
-                # Use helper to get retrieval configuration
-                retrieval_config = document_analyzer.get_retrieval_config(user_query, env, vector_db)
-                
                 logger.info(f"🔍 Using filters - Environment: {env}, Vector DB: {vector_db}")
                 logger.info(f"🔍 S3 path filter: s3://docops-kb-{env}/{vector_db}/")
                 
-                response = self.bedrock_agent_client.retrieve(
-                    knowledgeBaseId=KNOWLEDGE_BASE_ID,
-                    retrievalQuery={'text': user_query},
-                    retrievalConfiguration=retrieval_config
+                # Multi-Query RAG: Search with each query variation
+                seen_documents = set()  # Track unique documents by content hash
+                
+                for i, query_variant in enumerate(query_variations[:3], 1):  # Limit to 3 variations
+                    logger.info(f"🔍 Query {i}: {query_variant[:60]}...")
+                    
+                    # Use Bedrock tuner to get optimized retrieval configuration for each variant
+                    retrieval_config = bedrock_tuner.get_optimized_retrieval_config(query_variant, env, vector_db)
+                    
+                    response = self.bedrock_agent_client.retrieve(
+                        knowledgeBaseId=KNOWLEDGE_BASE_ID,
+                        retrievalQuery={'text': query_variant},  # Use the query variation
+                        retrievalConfiguration=retrieval_config
+                    )
+                    
+                    # Use helper to process retrieval results for this variation
+                    variant_documents = document_analyzer.process_retrieval_results(response)
+                    
+                    # Add unique documents (avoid duplicates across query variations)
+                    for doc in variant_documents:
+                        doc_content = doc.get('content', '')[:100]  # Use content snippet as hash
+                        if doc_content and doc_content not in seen_documents:
+                            seen_documents.add(doc_content)
+                            # Add query variant info to document metadata
+                            doc['query_variant_used'] = query_variant
+                            doc['variant_index'] = i
+                            all_context_documents.append(doc)
+                
+                # Use Multi-Query RAG analyzer to combine and optimize documents
+                context_documents = multi_query_analyzer.combine_multi_query_results(
+                    documents_by_query=all_context_documents,
+                    original_query=user_query,
+                    max_documents=8
                 )
                 
-                # Use helper to process retrieval results
-                context_documents = document_analyzer.process_retrieval_results(response)
+                logger.info(f"📊 Multi-Query RAG Results:")
+                logger.info(f"  Total unique documents found: {len(all_context_documents)}")
+                logger.info(f"  Final selected documents: {len(context_documents)}")
+                
+                # Record performance metrics for bedrock tuner optimization
+                query_type = bedrock_tuner.classify_query_for_optimization(user_query)
+                retrieval_success = len(context_documents) > 0
+                avg_response_time = 1.5  # Placeholder - in real implementation, measure actual time
+                
+                bedrock_tuner.record_query_performance(
+                    query=user_query,
+                    query_type=query_type, 
+                    response_time=avg_response_time,
+                    success=retrieval_success,
+                    documents_found=len(context_documents)
+                )
                         
             except Exception as e:
                 logger.error(f"Error retrieving from Knowledge Base: {e}")
@@ -459,10 +599,12 @@ class BedrockKnowledgeBaseWorkflow:
         Main method to process a chat query through the LangGraph workflow
         """
         try:
-            # Initialize state
+            # Initialize state with new fields for enhanced RAG
             initial_state = {
                 "user_query": user_query,
+                "query_variations": [],  # NEW: Will be populated by rewrite_query node
                 "conversation_id": conversation_id or str(uuid.uuid4()),
+                "conversation_memory": [],  # NEW: Will be populated by load_conversation_memory node
                 "context_documents": [],
                 "messages": [],
                 "ai_response": "",

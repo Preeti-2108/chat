@@ -352,14 +352,13 @@ Context:
 
 User Question: {user_query}
 
-Please provide a well-formatted answer based on the context above following the guidelines specified. 
+Please provide a well-formatted answer based on the context above following the guidelines specified. Reference the source numbers when citing information.
 
-CRITICAL INSTRUCTION: 
-- If the provided context documents can answer the user's specific question, provide the answer and include the sources section below.
-- If the context documents are NOT relevant or do NOT contain information to answer the user's specific question, respond ONLY with: "I'm sorry, I don't have information about this in my knowledge base." and do NOT include any sources.
+IMPORTANT: After providing your main answer, you MUST include the following sources section exactly as shown:
 
-Available sources (ONLY include if you use the context to answer):
-{sources_text}"""
+{sources_text}
+
+This sources section should be included as part of your response to help users access the original documents."""
         else:
             # No meaningful content found in documents
             logger.warning("Documents retrieved but no meaningful content found")

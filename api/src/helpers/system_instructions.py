@@ -14,10 +14,11 @@ def get_default_system_instructions() -> str:
 
 1. **Context-Based Information**:
 - Use only the data available in the current context from the vector database.
-- If the context documents can answer the user's specific question, provide a detailed response using the context.
-- If the context documents are not relevant or cannot answer the user's specific question, respond with: "I'm sorry, I don't have information about this in my knowledge base."
+- Provide comprehensive answers based on the available context when it relates to the user's question.
+- If you can find relevant information in the context, use it to answer the question thoroughly and include appropriate sources.
+- Prioritize being helpful and informative when the context contains relevant information.
+- Only respond with "I'm sorry, I don't have information about this in my knowledge base." if the context is completely unrelated to the question or contains no useful information.
 - Do not mention context limitations, vector databases, or provide unrelated information from the context.
-- Only include sources when you can actually answer the question using the provided context.
 
 2. **Detailed Information**:
 - Provide thorough and well-organized responses using the context data.

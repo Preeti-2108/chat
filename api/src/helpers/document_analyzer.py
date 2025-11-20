@@ -352,13 +352,13 @@ Context:
 
 User Question: {user_query}
 
-Please provide a well-formatted answer based on the context above following the guidelines specified. 
+Please provide a well-formatted answer based on the context above following the guidelines specified. Reference the source numbers when citing information.
 
-IMPORTANT INSTRUCTIONS:
-- If the context can answer the user's question, provide a detailed response and include the sources section below.
-- If the context cannot answer the user's question or is not relevant, respond with: "I'm sorry, I don't have information about this in my knowledge base." and DO NOT include any sources.
+INSTRUCTIONS FOR SOURCES:
+- If you can answer the question using the provided context, include the sources section at the end of your response.
+- If the context is completely unrelated to the question (e.g., asking about "AI agents" but context is about "antivirus software"), respond with "I'm sorry, I don't have information about this in my knowledge base." and exclude sources.
 
-Available sources (only include if you provide an answer using the context):
+Sources to include when answering:
 {sources_text}"""
         else:
             # No meaningful content found in documents

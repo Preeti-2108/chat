@@ -83,8 +83,18 @@ def get_simple_response(user_input: str) -> str:
     
     user_input = user_input.lower().strip()
     
-    # Greetings
-    if any(greeting in user_input for greeting in ["hi", "hello", "hey", "good morning", "good evening", "good afternoon"]):
+    # Specific greetings with time-based responses
+    if "good morning" in user_input:
+        return "Good morning! I hope you're having a great start to your day. How can I assist you?"
+    
+    if "good evening" in user_input:
+        return "Good evening! I hope you've had a wonderful day. What can I help you with?"
+    
+    if "good afternoon" in user_input:
+        return "Good afternoon! I hope your day is going well. How can I assist you?"
+    
+    # General greetings
+    if any(greeting in user_input for greeting in ["hi", "hello", "hey"]):
         return "Hello! I'm here to help you with your questions. What would you like to know?"
     
     # Thanks

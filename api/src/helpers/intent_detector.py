@@ -52,9 +52,15 @@ def is_simple_query(text: str) -> bool:
         "cool", "good job", "well done"
     ]
     
-    # Check for exact keyword matches
+    # Check for exact keyword matches (whole words only)
+    import re
+    text_words = re.findall(r'\b\w+\b', text.lower())
+    text_as_string = ' '.join(text_words)
+    
     for kw in simple_keywords:
-        if kw in text:
+        # Use word boundary matching to avoid substring matches
+        pattern = r'\b' + re.escape(kw) + r'\b'
+        if re.search(pattern, text_as_string):
             return True
     
     # Also treat very short messages as potentially simple

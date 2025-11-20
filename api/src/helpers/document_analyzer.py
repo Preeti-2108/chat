@@ -411,8 +411,86 @@ class DocumentAnalyzer:
         return context_documents
 
 
-# Global instance for easy import and use
+# Multi-Query RAG Enhancement
+class MultiQueryDocumentAnalyzer(DocumentAnalyzer):
+    """
+    Enhanced DocumentAnalyzer with multi-query RAG capabilities.
+    Extends base functionality with query variation support.
+    """
+    
+    def combine_multi_query_results(self, query_results: List[Dict[str, Any]], original_query: str) -> List[Dict]:
+        """
+        Combine and deduplicate results from multiple query variations.
+        
+        Args:
+            query_results: List of result dictionaries from different query variations
+            original_query: The original user query for context
+            
+        Returns:
+            Combined and optimized document list
+        """
+        all_documents = []
+        seen_content_hashes = set()
+        
+        # Combine all documents from different query variations
+        for result in query_results:
+            documents = result.get('documents', [])
+            query_variant = result.get('query_variant', original_query)
+            
+            for doc in documents:
+                # Create content hash to identify duplicates
+                content = doc.get('content', '')
+                content_hash = hash(content[:200])  # Use first 200 chars as fingerprint
+                
+                if content_hash not in seen_content_hashes:
+                    seen_content_hashes.add(content_hash)
+                    
+                    # Add metadata about which query found this document
+                    doc['source_query'] = query_variant
+                    doc['multi_query_source'] = True
+                    
+                    all_documents.append(doc)
+        
+        # Re-score documents based on relevance to original query
+        scored_documents = self._rescore_for_original_query(all_documents, original_query)
+        
+        # Apply final document selection logic
+        final_documents = self.select_optimal_documents(scored_documents, original_query)
+        
+        logger.info(f"Multi-Query RAG: Combined {len(all_documents)} unique documents, selected {len(final_documents)} final")
+        
+        return final_documents
+    
+    def _rescore_for_original_query(self, documents: List[Dict], original_query: str) -> List[Dict]:
+        """
+        Re-score documents based on relevance to the original query.
+        This helps ensure the best documents rise to the top after multi-query combination.
+        """
+        query_terms = set(original_query.lower().split())
+        
+        for doc in documents:
+            content = doc.get('content', '').lower()
+            original_score = doc.get('score', 0)
+            
+            # Calculate term overlap bonus
+            content_terms = set(content.split())
+            overlap_ratio = len(query_terms.intersection(content_terms)) / len(query_terms) if query_terms else 0
+            
+            # Adjust score based on term overlap (small boost for direct relevance)
+            adjusted_score = original_score + (overlap_ratio * 0.1)  # Max 10% boost
+            doc['adjusted_score'] = min(adjusted_score, 1.0)  # Cap at 1.0
+            doc['original_score'] = original_score
+            doc['term_overlap_ratio'] = overlap_ratio
+        
+        # Sort by adjusted score
+        documents.sort(key=lambda x: x.get('adjusted_score', 0), reverse=True)
+        
+        return documents
+
+
+# Global instances for easy import and use
 document_analyzer = DocumentAnalyzer()
+multi_query_analyzer = MultiQueryDocumentAnalyzer()
 
 
 def build_context_aware_prompt(system_instructions: str, 

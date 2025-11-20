@@ -27,7 +27,7 @@ from src.helpers.streaming_handler import WordLevelStreamingHandler, send_immedi
 from src.helpers.conversation_builder import conversation_builder, extract_user_email_from_event
 from src.helpers.document_analyzer import document_analyzer, build_context_aware_prompt
 from src.helpers.system_instructions import get_default_system_instructions, get_error_response_templates
-from src.helpers.intent_detector import is_simple_query, get_simple_response
+from src.helpers.intent_detector import is_simple_query, get_simple_response, create_mock_streaming_response
 
 """
 /**
@@ -262,8 +262,6 @@ class BedrockKnowledgeBaseWorkflow:
         if connection_id and url and ENABLE_WEBSOCKET_STREAMING:
             # Send simple response via WebSocket streaming for consistency
             try:
-                from src.helpers.intent_detector import create_mock_streaming_response
-                
                 streaming_handler = WordLevelStreamingHandler(
                     connection_id=connection_id,
                     websocket_url=url,

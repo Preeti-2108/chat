@@ -366,12 +366,12 @@ This sources section should be included as part of your response to help users a
 
 User Question: {user_query}
 
-Since the retrieved documents do not contain sufficient information to answer your query, please respond with: "I am not able to obtain an answer for this particular query." and suggest the user provide more specific information or try rephrasing their question."""
+Since the retrieved documents do not contain sufficient information to answer your query, please respond with: "I'm sorry, I don't have information about this in my knowledge base.""""
     else:
         prompt = f"""{system_instructions}
 
 User Question: {user_query}
 
-Since no specific context is available from the vector database, please respond with: "I am not able to obtain an answer for this particular query." and suggest the user provide more specific information or try rephrasing their question."""
+Since no specific context is available from the vector database, please respond with: "I'm sorry, I don't have information about this in my knowledge base.""""
     
     return prompt

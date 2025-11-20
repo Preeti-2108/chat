@@ -118,6 +118,8 @@ def get_simple_response(user_input: str) -> str:
     if user_input in ["no", "n", "nope", "nah"]:
         return "No problem! Let me know if you need anything else."
     
+    # Default fallback for simple queries that don't match specific patterns
+    return "Hello! I'm here to help you with your questions. What would you like to know?"
     # Generic fallback for other simple queries
     return "I'm here to help! Please feel free to ask me any questions you have."
 

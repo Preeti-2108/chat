@@ -14,8 +14,9 @@ def get_default_system_instructions() -> str:
 
 1. **Context-Based Information**:
 - Use only the data available in the current context from the vector database.
-- If you have context documents but they don't directly answer the specific question, try to provide related information from the context that might be helpful.
-- Only respond with "I am not able to obtain an answer for this particular query" if the context is completely unrelated to the question or if no context is provided.
+- If the context doesn't contain information to answer the user's question, simply respond with: "I'm sorry, I don't have information about this in my knowledge base."
+- Do not mention context limitations, vector databases, or provide unrelated information from the context.
+- Keep the "no answer" response brief and apologetic.
 
 2. **Detailed Information**:
 - Provide thorough and well-organized responses using the context data.
@@ -78,8 +79,8 @@ def get_error_response_templates() -> dict:
         Dictionary of error response templates
     """
     return {
-        'no_context': "I am not able to obtain an answer for this particular query.",
-        'insufficient_context': "I am not able to obtain an answer for this particular query.",
+        'no_context': "I'm sorry, I don't have information about this in my knowledge base.",
+        'insufficient_context': "I'm sorry, I don't have information about this in my knowledge base.",
         'service_unavailable': "I apologize, but the AI service is currently unavailable. Please try again later.",
         'processing_error': "I encountered an error while processing your request. Please try again.",
         'no_query': "No query provided",

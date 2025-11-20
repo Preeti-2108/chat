@@ -342,7 +342,7 @@ def build_context_aware_prompt(system_instructions: str,
         
         # Check if we have meaningful content
         if context.strip() and len(context.strip()) > 10:
-            # Build sources text for inclusion in the AI response
+            # Build sources text but let AI decide whether to include it
             sources_text = analyzer.build_sources_text(selected_docs)
             
             prompt = f"""{system_instructions}
@@ -352,13 +352,14 @@ Context:
 
 User Question: {user_query}
 
-Please provide a well-formatted answer based on the context above following the guidelines specified. Reference the source numbers when citing information.
+Please provide a well-formatted answer based on the context above following the guidelines specified. 
 
-IMPORTANT: After providing your main answer, you MUST include the following sources section exactly as shown:
+CRITICAL INSTRUCTION: 
+- If the provided context documents can answer the user's specific question, provide the answer and include the sources section below.
+- If the context documents are NOT relevant or do NOT contain information to answer the user's specific question, respond ONLY with: "I'm sorry, I don't have information about this in my knowledge base." and do NOT include any sources.
 
-{sources_text}
-
-This sources section should be included as part of your response to help users access the original documents."""
+Available sources (ONLY include if you use the context to answer):
+{sources_text}"""
         else:
             # No meaningful content found in documents
             logger.warning("Documents retrieved but no meaningful content found")

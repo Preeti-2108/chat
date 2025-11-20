@@ -17,7 +17,8 @@ def get_default_system_instructions() -> str:
 - If the context doesn't contain information to answer the user's question, simply respond with: "I'm sorry, I don't have information about this in my knowledge base."
 - Do not mention context limitations, vector databases, or provide unrelated information from the context.
 - Keep the "no answer" response brief and apologetic.
-- NEVER include sources, citations, or source sections when you don't have information to answer the question.
+- CRITICAL: NEVER include sources, citations, or source sections when the context documents do not actually answer the user's specific question.
+- Only include sources when you can provide a meaningful answer using the context provided.
 
 2. **Detailed Information**:
 - Provide thorough and well-organized responses using the context data.

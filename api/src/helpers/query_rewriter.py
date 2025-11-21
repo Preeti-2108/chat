@@ -1,14 +1,24 @@
 ﻿"""
 Fully Dynamic Query Rewriter for RAG Systems
+Works with or without LangChain dependencies
 """
 
 import logging
-from typing import Optional
-from langchain.prompts import ChatPromptTemplate
-from langchain_core.runnables import RunnableSequence
-from langchain.schema.output_parser import JsonOutputParser
+from typing import Optional, Dict, Any
+import json
 
 logger = logging.getLogger(__name__)
+
+# Try to import LangChain components, fallback if not available
+try:
+    from langchain.prompts import ChatPromptTemplate
+    from langchain_core.runnables import RunnableSequence
+    from langchain.schema.output_parser import JsonOutputParser
+    LANGCHAIN_AVAILABLE = True
+    logger.info("LangChain components loaded successfully")
+except ImportError:
+    logger.warning("LangChain not available - using fallback query rewriter")
+    LANGCHAIN_AVAILABLE = False
 
 DYNAMIC_REWRITE_PROMPT = """
 You are an intelligent Query Rewriter for document retrieval systems.
@@ -37,22 +47,76 @@ Output only the rewritten query in this JSON format:
 }
 """
 
+class DirectLLMRewriter:
+    """
+    Fallback query rewriter that works without LangChain
+    """
+    def __init__(self, llm):
+        self.llm = llm
+    
+    def invoke(self, inputs: Dict[str, Any]) -> Dict[str, str]:
+        """
+        Invoke the LLM directly for query rewriting
+        """
+        user_query = inputs.get("query", "")
+        
+        # Create a simple prompt
+        prompt = f"{DYNAMIC_REWRITE_PROMPT}\n\nUser query: {user_query}"
+        
+        try:
+            # Try to use the LLM directly
+            if hasattr(self.llm, 'invoke'):
+                response = self.llm.invoke([{"role": "user", "content": prompt}])
+                content = response.content if hasattr(response, 'content') else str(response)
+            else:
+                # Fallback for different LLM interfaces
+                content = str(self.llm(prompt))
+            
+            # Try to parse JSON from response
+            try:
+                # Look for JSON in the response
+                start = content.find('{')
+                end = content.rfind('}') + 1
+                if start >= 0 and end > start:
+                    json_str = content[start:end]
+                    result = json.loads(json_str)
+                    return result
+            except:
+                pass
+            
+            # If JSON parsing fails, return original query
+            return {"rewritten_query": user_query}
+            
+        except Exception as e:
+            logger.error(f"DirectLLMRewriter failed: {e}")
+            return {"rewritten_query": user_query}
+
 def build_query_rewriter(llm):
+    """
+    Build query rewriter with or without LangChain
+    """
     if not llm:
+        logger.warning("No LLM provided for query rewriting")
         return None
     
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", DYNAMIC_REWRITE_PROMPT),
-        ("user", "{query}")
-    ])
-    
-    parser = JsonOutputParser()
-    
-    return RunnableSequence([
-        prompt,
-        llm,
-        parser
-    ])
+    if LANGCHAIN_AVAILABLE:
+        # Use LangChain if available
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", DYNAMIC_REWRITE_PROMPT),
+            ("user", "{query}")
+        ])
+        
+        parser = JsonOutputParser()
+        
+        return RunnableSequence([
+            prompt,
+            llm,
+            parser
+        ])
+    else:
+        # Return a simple wrapper for direct LLM use
+        logger.info("Using fallback query rewriter without LangChain")
+        return DirectLLMRewriter(llm)
 
 def safe_rewrite_query(rewriter, user_query: str) -> str:
     if not rewriter or not user_query:

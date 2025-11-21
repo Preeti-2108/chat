@@ -214,7 +214,12 @@ class BedrockKnowledgeBaseWorkflow:
         workflow.add_edge("generate_response", END)
         workflow.add_edge("handle_simple_query", END)
         
-        return workflow.compile()
+        compiled_workflow = workflow.compile()
+        logger.info(f"✅ [WORKFLOW DEBUG] LangGraph workflow compiled successfully")
+        logger.info(f"🔗 [WORKFLOW DEBUG] Workflow nodes: detect_intent, rewrite_query, retrieve_from_kb, generate_response, handle_simple_query")
+        logger.info(f"🔗 [WORKFLOW DEBUG] Conditional edges: detect_intent -> {{simple: handle_simple_query, complex: rewrite_query}}")
+        
+        return compiled_workflow
     
     def detect_query_intent(self, state: State) -> State:
         """
@@ -237,6 +242,8 @@ class BedrockKnowledgeBaseWorkflow:
         else:
             logger.info(f"🔄 Complex query - Proceeding with RAG + LLM: {skip_decision['reason']}")
         
+        logger.info(f"🔍 [WORKFLOW DEBUG] Final state after detect_intent: skip_rag={state.get('skip_rag')}, is_simple_query={state.get('is_simple_query')}")
+        
         return state
     
     def rewrite_query_node(self, state: State) -> State:
@@ -244,28 +251,33 @@ class BedrockKnowledgeBaseWorkflow:
         Node: Dynamically rewrite query for better document retrieval
         """
         user_query = state.get("user_query", "")
-        logger.info(f"🔧 Rewriting query for optimal retrieval: '{user_query[:50]}...'")
+        logger.info(f"🔧 [REWRITE_QUERY_NODE] EXECUTING! Query: '{user_query[:50]}...'")
+        logger.info(f"🔧 [REWRITE_QUERY_NODE] State keys: {list(state.keys())}")
         
         # Use the dynamic query rewriter with safe fallback
         rewritten_query = safe_rewrite_query(self.query_rewriter, user_query)
         
         if rewritten_query != user_query:
-            logger.info(f"✅ Query optimized: '{user_query}' → '{rewritten_query}'")
+            logger.info(f"✅ [REWRITE_QUERY_NODE] Query optimized: '{user_query}' → '{rewritten_query}'")
         else:
-            logger.debug(f"Query unchanged: '{user_query}'")
+            logger.info(f"💡 [REWRITE_QUERY_NODE] Query unchanged: '{user_query}'")
             
         state["rewritten_query"] = rewritten_query
+        logger.info(f"🔧 [REWRITE_QUERY_NODE] COMPLETED! Rewritten query set in state")
         return state
     
     def route_based_on_intent(self, state: State) -> str:
         """
         Conditional routing function to determine next node based on query complexity
         """
-        if state.get("skip_rag", False):
-            logger.info("🚀 Routing to simple query handler (skipping RAG + LLM)")
+        skip_rag = state.get("skip_rag", False)
+        user_query = state.get("user_query", "")
+        
+        if skip_rag:
+            logger.info(f"🚀 Routing to SIMPLE query handler for: '{user_query[:30]}...'")
             return "simple"
         else:
-            logger.info("🔍 Routing to knowledge base retrieval (complex query)")
+            logger.info(f"🔍 Routing to QUERY REWRITER for complex query: '{user_query[:30]}...'")
             return "complex"
     
     def handle_simple_query(self, state: State) -> State:
@@ -323,16 +335,23 @@ class BedrockKnowledgeBaseWorkflow:
         """
         Node 1: Retrieve relevant context from Bedrock Knowledge Base
         """
-        logger.info("Retrieving context from Bedrock Knowledge Base")
+        logger.info(f"📚 [RETRIEVE_FROM_KB] EXECUTING! Retrieving context from Bedrock Knowledge Base")
+        logger.info(f"📚 [RETRIEVE_FROM_KB] State keys: {list(state.keys())}")
         
         # Use rewritten query for optimal retrieval, fallback to original
         retrieval_query = state.get("rewritten_query") or state.get("user_query", "")
         original_query = state.get("user_query", "")
         
-        logger.info(f"🔍 QUERY ANALYSIS:")
+        logger.info(f"🔍 [RETRIEVE_FROM_KB] QUERY ANALYSIS:")
         logger.info(f"🔍   Original query: '{original_query}'")
         logger.info(f"🔍   Retrieval query: '{retrieval_query}'")
         logger.info(f"🔍   Query was rewritten: {retrieval_query != original_query}")
+        
+        if state.get("rewritten_query"):
+            logger.info(f"✅ [RETRIEVE_FROM_KB] Using REWRITTEN query for retrieval")
+        else:
+            logger.warning(f"⚠️ [RETRIEVE_FROM_KB] No rewritten_query found! Using original query")
+            logger.warning(f"⚠️ [RETRIEVE_FROM_KB] This suggests rewrite_query_node was SKIPPED!")
         
         # Test specific queries for debugging
         test_queries = [
@@ -546,7 +565,9 @@ class BedrockKnowledgeBaseWorkflow:
             }
             
             # Execute the workflow
+            logger.info(f"🚀 [WORKFLOW DEBUG] Starting LangGraph execution with state: skip_rag={initial_state['skip_rag']}, user_query='{user_query[:30]}...'")
             final_state = self.workflow.invoke(initial_state)
+            logger.info(f"✅ [WORKFLOW DEBUG] LangGraph execution completed. Final state keys: {list(final_state.keys())}")
             
             # Return structured response
             return {

@@ -22,7 +22,7 @@ from src.helpers.auth_middleware import authenticate_websocket  # Cognito authen
 from src.helpers.scope_manager import require_resource_permission  # Scope validation
 from src.helpers.queue_helper import send_message_to_queue  # Helper function to send messages to an SQS queue
 
-# New organized helpers to reduce redundancy
+## New organized helpers to reduce redundancy
 from src.helpers.streaming_handler import WordLevelStreamingHandler, send_immediate_streaming_signals
 from src.helpers.conversation_builder import conversation_builder, extract_user_email_from_event
 from src.helpers.document_analyzer import document_analyzer, build_context_aware_prompt, multi_query_analyzer

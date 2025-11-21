@@ -329,10 +329,22 @@ class BedrockKnowledgeBaseWorkflow:
         retrieval_query = state.get("rewritten_query") or state.get("user_query", "")
         original_query = state.get("user_query", "")
         
-        if retrieval_query != original_query:
-            logger.info(f"🔍 Using optimized query for retrieval: '{retrieval_query}'")
-        else:
-            logger.info(f"🔍 Using original query for retrieval: '{retrieval_query}'")
+        logger.info(f"🔍 QUERY ANALYSIS:")
+        logger.info(f"🔍   Original query: '{original_query}'")
+        logger.info(f"🔍   Retrieval query: '{retrieval_query}'")
+        logger.info(f"🔍   Query was rewritten: {retrieval_query != original_query}")
+        
+        # Test specific queries for debugging
+        test_queries = [
+            "Do you have any information about microsoft?",
+            "How to open an incident on microsoft?",
+            "Support Windows Microsoft",
+            "Windows license support",
+            "Support des Licences Windows"
+        ]
+        
+        if retrieval_query.lower() in [q.lower() for q in test_queries]:
+            logger.info(f"🔍 ⚠️  DEBUGGING KNOWN PROBLEMATIC QUERY: '{retrieval_query}'")
         context_documents = []
         
         if self.bedrock_agent_client and retrieval_query and KNOWLEDGE_BASE_ID:
@@ -355,6 +367,33 @@ class BedrockKnowledgeBaseWorkflow:
                     retrievalQuery={'text': retrieval_query},
                     retrievalConfiguration=retrieval_config
                 )
+                
+                # 🔍 DEBUG: Log detailed Bedrock response
+                logger.info(f"🔍 BEDROCK RESPONSE DEBUG:")
+                logger.info(f"🔍 Query used: '{retrieval_query}'")
+                
+                if 'retrievalResults' in response:
+                    results = response['retrievalResults']
+                    logger.info(f"🔍 Total results returned: {len(results)}")
+                    
+                    for i, result in enumerate(results[:5]):  # Log first 5 results
+                        score = result.get('score', 0)
+                        content = result.get('content', {}).get('text', '')[:200]  # First 200 chars
+                        location = result.get('location', {})
+                        uri = location.get('s3Location', {}).get('uri', 'No URI')
+                        
+                        logger.info(f"🔍 Result {i+1}: Score={score:.4f}")
+                        logger.info(f"🔍   URI: {uri}")
+                        logger.info(f"🔍   Content preview: '{content}...'")
+                        
+                        # Check for French content
+                        french_indicators = ['licence', 'support des', 'windows', 'microsoft']
+                        has_french = any(indicator in content.lower() for indicator in french_indicators)
+                        logger.info(f"🔍   Contains French indicators: {has_french}")
+                        logger.info(f"🔍   ---")
+                else:
+                    logger.warning(f"🔍 No retrievalResults in Bedrock response!")
+                    logger.info(f"🔍 Response keys: {list(response.keys())}")
                 
                 # Use helper to process retrieval results
                 context_documents = document_analyzer.process_retrieval_results(response)

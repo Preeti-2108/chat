@@ -28,6 +28,7 @@ from src.helpers.conversation_builder import conversation_builder, extract_user_
 from src.helpers.document_analyzer import document_analyzer, build_context_aware_prompt
 from src.helpers.system_instructions import get_default_system_instructions, get_error_response_templates
 from src.helpers.intent_detector import is_simple_query, get_simple_response, create_mock_streaming_response
+from src.helpers.query_rewriter import build_query_rewriter, safe_rewrite_query
 
 """
 /**
@@ -108,6 +109,7 @@ class State(Dict[str, Any]):
     """State object for LangGraph workflow"""
     messages: List[Any]
     user_query: str
+    rewritten_query: str
     context_documents: List[str]
     conversation_id: str
     ai_response: str
@@ -130,6 +132,8 @@ class BedrockKnowledgeBaseWorkflow:
     def __init__(self):
         self.bedrock_agent_client = self._setup_bedrock_agent()
         self.chat_model = self._setup_chat_model()
+        # Initialize dynamic query rewriter
+        self.query_rewriter = build_query_rewriter(self.chat_model)
         self.workflow = self._create_workflow()
     
     def _setup_bedrock_agent(self):
@@ -184,8 +188,9 @@ class BedrockKnowledgeBaseWorkflow:
         """Create the LangGraph workflow with nodes and edges"""
         workflow = StateGraph(State)
         
-        # Add nodes
+        # Add nodes  
         workflow.add_node("detect_intent", self.detect_query_intent)
+        workflow.add_node("rewrite_query", self.rewrite_query_node)
         workflow.add_node("retrieve_from_kb", self.retrieve_from_knowledge_base)  
         workflow.add_node("generate_response", self.generate_chat_response)
         workflow.add_node("handle_simple_query", self.handle_simple_query)
@@ -199,11 +204,12 @@ class BedrockKnowledgeBaseWorkflow:
             self.route_based_on_intent,
             {
                 "simple": "handle_simple_query",
-                "complex": "retrieve_from_kb"
+                "complex": "rewrite_query"
             }
         )
         
-        # Continue with normal flow for complex queries
+        # After rewriting, proceed to retrieval
+        workflow.add_edge("rewrite_query", "retrieve_from_kb")
         workflow.add_edge("retrieve_from_kb", "generate_response")
         workflow.add_edge("generate_response", END)
         workflow.add_edge("handle_simple_query", END)
@@ -231,6 +237,24 @@ class BedrockKnowledgeBaseWorkflow:
         else:
             logger.info(f"🔄 Complex query - Proceeding with RAG + LLM: {skip_decision['reason']}")
         
+        return state
+    
+    def rewrite_query_node(self, state: State) -> State:
+        """
+        Node: Dynamically rewrite query for better document retrieval
+        """
+        user_query = state.get("user_query", "")
+        logger.info(f"🔧 Rewriting query for optimal retrieval: '{user_query[:50]}...'")
+        
+        # Use the dynamic query rewriter with safe fallback
+        rewritten_query = safe_rewrite_query(self.query_rewriter, user_query)
+        
+        if rewritten_query != user_query:
+            logger.info(f"✅ Query optimized: '{user_query}' → '{rewritten_query}'")
+        else:
+            logger.debug(f"Query unchanged: '{user_query}'")
+            
+        state["rewritten_query"] = rewritten_query
         return state
     
     def route_based_on_intent(self, state: State) -> str:
@@ -301,10 +325,17 @@ class BedrockKnowledgeBaseWorkflow:
         """
         logger.info("Retrieving context from Bedrock Knowledge Base")
         
-        user_query = state.get("user_query", "")
+        # Use rewritten query for optimal retrieval, fallback to original
+        retrieval_query = state.get("rewritten_query") or state.get("user_query", "")
+        original_query = state.get("user_query", "")
+        
+        if retrieval_query != original_query:
+            logger.info(f"🔍 Using optimized query for retrieval: '{retrieval_query}'")
+        else:
+            logger.info(f"🔍 Using original query for retrieval: '{retrieval_query}'")
         context_documents = []
         
-        if self.bedrock_agent_client and user_query and KNOWLEDGE_BASE_ID:
+        if self.bedrock_agent_client and retrieval_query and KNOWLEDGE_BASE_ID:
             
             try:
                 logger.info(f"🔍 Querying Knowledge Base ID: {KNOWLEDGE_BASE_ID}")
@@ -314,14 +345,14 @@ class BedrockKnowledgeBaseWorkflow:
                 vector_db = "872051E8-E5C8-4AD1-83A8-ADB347D6C2CC"  # Use KB ID as fallback
                 
                 # Use helper to get retrieval configuration
-                retrieval_config = document_analyzer.get_retrieval_config(user_query, env, vector_db)
+                retrieval_config = document_analyzer.get_retrieval_config(retrieval_query, env, vector_db)
                 
                 logger.info(f"🔍 Using filters - Environment: {env}, Vector DB: {vector_db}")
                 logger.info(f"🔍 S3 path filter: s3://docops-kb-{env}/{vector_db}/")
                 
                 response = self.bedrock_agent_client.retrieve(
                     knowledgeBaseId=KNOWLEDGE_BASE_ID,
-                    retrievalQuery={'text': user_query},
+                    retrievalQuery={'text': retrieval_query},
                     retrievalConfiguration=retrieval_config
                 )
                 
@@ -332,8 +363,8 @@ class BedrockKnowledgeBaseWorkflow:
                 logger.error(f"Error retrieving from Knowledge Base: {e}")
         elif not KNOWLEDGE_BASE_ID:
             logger.warning("⚠️  Knowledge Base retrieval skipped: KNOWLEDGE_BASE_ID not configured")
-        elif not user_query:
-            logger.warning("⚠️  Knowledge Base retrieval skipped: No user query provided")
+        elif not retrieval_query:
+            logger.warning("⚠️  Knowledge Base retrieval skipped: No query provided")
         elif not self.bedrock_agent_client:
             logger.warning("⚠️  Knowledge Base retrieval skipped: Bedrock agent client not available")
         

@@ -511,34 +511,7 @@ class BedrockKnowledgeBaseWorkflow:
         # Extract source information from context documents
         sources_info = []
         logger.info(f"Processing {len(context_documents)} context documents for source extraction")
-        
-        # for i, doc in enumerate(context_documents):
-        #     logger.info(f"Document {i+1} structure: {type(doc)}")
-        #     logger.info(f"Document {i+1} keys: {doc.keys() if isinstance(doc, dict) else 'Not a dict'}")
-            
-        #     if isinstance(doc, dict):
-        #         location = doc.get('location', {})
-        #         logger.info(f"Document {i+1} location: {location}")
-                
-        #         # Handle different possible location structures
-        #         uri = ''
-        #         if 's3Location' in location:
-        #             uri = location.get('s3Location', {}).get('uri', '')
-        #         elif 'uri' in location:
-        #             uri = location.get('uri', '')
-                
-        #         source_info = {
-        #             'uri': uri,
-        #             'score': doc.get('score', 0),
-        #             'type': location.get('type', 'unknown'),
-        #             'metadata': doc.get('metadata', {}),
-        #             'location_raw': location  # Include raw location for debugging
-        #         }
-        #         sources_info.append(source_info)
-        #         logger.info(f"Added source info: {source_info}")
-        
-        # logger.info(f"Final sources_info: {sources_info}")
-        # state["sources_info"] = sources_info
+
         return state
     
     # Document analysis methods moved to src/helpers/document_analyzer.py

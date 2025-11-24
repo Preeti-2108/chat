@@ -455,14 +455,33 @@ class BedrockKnowledgeBaseWorkflow:
         # DEBUG: Log state keys to verify websocket_connection is present
         logger.info(f"🤖 [GENERATE_CHAT_RESPONSE] State keys: {list(state.keys())}")
         
-        # Use helper to build context-aware prompt
+        # Use helper to build context-aware prompt with conversation history
         system_instructions = get_default_system_instructions()
+        
+        # Build conversation history for the prompt
+        conversation_history = ""
+        messages = state.get("messages", [])
+        if messages:
+            conversation_history = "\n\nConversation History:\n"
+            for msg in messages:
+                if hasattr(msg, 'content'):
+                    role = "Human" if isinstance(msg, HumanMessage) else "AI Assistant"
+                    conversation_history += f"{role}: {msg.content}\n"
+            conversation_history += f"\nHuman: {user_query}\nAI Assistant: "
+            logger.info(f"🧠 [GENERATE_CHAT_RESPONSE] Including conversation history with {len(messages)} previous messages")
+        
+        # Build prompt with conversation context
         prompt = build_context_aware_prompt(
             system_instructions=system_instructions,
             context_documents=context_documents,
             user_query=user_query,
             max_tokens=AZURE_OPENAI_MAX_TOKENS
         )
+        
+        # Add conversation history to prompt for memory
+        if conversation_history:
+            prompt = system_instructions + conversation_history
+            logger.info(f"🧠 [GENERATE_CHAT_RESPONSE] Using conversation-aware prompt with history")
         
         try:
             if self.chat_model:
@@ -587,12 +606,36 @@ class BedrockKnowledgeBaseWorkflow:
         Main method to process a chat query through the LangGraph workflow
         """
         try:
-            # Initialize state
+            # Load existing conversation history from DynamoDB for memory continuity
+            existing_messages = []
+            if conversation_id:
+                try:
+                    # Try to load conversation history from DynamoDB
+                    import boto3
+                    table_name = os.getenv('TABLE')
+                    if table_name:
+                        dynamodb = boto3.resource('dynamodb')
+                        table = dynamodb.Table(table_name)
+                        
+                        response = table.get_item(Key={'conversationId': conversation_id})
+                        if 'Item' in response:
+                            chat_history = response['Item'].get('chatHistory', [])
+                            # Convert DynamoDB chat history to LangGraph messages
+                            for entry in chat_history:
+                                if entry.get('user'):
+                                    existing_messages.append(HumanMessage(content=entry['user']))
+                                if entry.get('aiAssistant'):
+                                    existing_messages.append(AIMessage(content=entry['aiAssistant']))
+                            logger.info(f"🧠 [MEMORY LOAD] Loaded {len(existing_messages)} messages from DynamoDB for conversation {conversation_id}")
+                except Exception as db_err:
+                    logger.warning(f"⚠️ [MEMORY LOAD] Could not load DynamoDB history: {db_err}")
+            
+            # Initialize state with existing conversation history
             initial_state = {
                 "user_query": user_query,
                 "conversation_id": conversation_id or str(uuid.uuid4()),
                 "context_documents": [],
-                "messages": [],
+                "messages": existing_messages,  # Include existing conversation history
                 "ai_response": "",
                 "has_context": False,
                 "vector_db": vector_db or KNOWLEDGE_BASE_ID,
@@ -612,10 +655,14 @@ class BedrockKnowledgeBaseWorkflow:
             # Load existing conversation context for debugging
             context = self.get_conversation_context(thread_id)
             if context != "No conversation history":
-                logger.info(f"🧠 [MEMORY] Previous conversation context found:")
+                logger.info(f"🧠 [MEMORY] Previous conversation context found for thread_id {thread_id}:")
                 logger.info(f"🧠 [MEMORY] {context}")
             else:
                 logger.info(f"🧠 [MEMORY] No previous conversation context for thread_id: {thread_id}")
+            
+            # Also check memory checkpoints
+            checkpoints = self.get_memory_checkpoints(thread_id)
+            logger.info(f"🧠 [MEMORY] Found {len(checkpoints)} memory checkpoints for thread_id: {thread_id}")
             
             # Use stream with thread_id for memory persistence (following reference pattern)
             final_state = None
@@ -755,6 +802,14 @@ def start_chat(event, context):
         
         action = body.get('action')
         datas = body.get('datas')
+        
+        # DEBUG: Log the action and check for potential routing issues
+        logger.info(f"🔍 [POST HANDLER] Received action: '{action}' with datas keys: {list(datas.keys()) if datas else 'None'}")
+        
+        # Check if this should be a PUT operation instead
+        if datas and datas.get('id'):
+            logger.warning(f"⚠️ [POST HANDLER] Received 'id' in request - this might should be a PUT operation instead!")
+            logger.warning(f"⚠️ [POST HANDLER] conversation_id provided: {datas.get('id')}")
 
         # Validate the request data schema
         try:

@@ -200,6 +200,12 @@ def continue_chat(event, context):
         
         action = body.get('action')
         datas = body.get('datas')
+        
+        # DEBUG: Log PUT handler usage for conversation continuation
+        logger.info(f"🔄 [PUT HANDLER] Processing conversation continuation - action: '{action}'")
+        logger.info(f"🔄 [PUT HANDLER] Request datas keys: {list(datas.keys()) if datas else 'None'}")
+        if datas and datas.get('id'):
+            logger.info(f"🔄 [PUT HANDLER] Continuing conversation_id: {datas.get('id')}")
 
         # Validate the request data schema using pydantic (similar to POST)
         try:

@@ -40,6 +40,9 @@ def is_simple_query(text: str) -> bool:
         # Basic identity questions
         "who are you", "what is your name", "what are you", "introduce yourself",
         
+        # Name introductions  
+        "my name is", "i am", "i'm", "call me", "you can call me",
+        
         # Farewells
         "bye", "goodbye", "see you", "farewell", "catch you later", "take care",
         "talk to you later", "ttyl", "see ya",
@@ -92,6 +95,14 @@ def get_simple_response(user_input: str) -> str:
     
     if "good afternoon" in user_input:
         return "Good afternoon! I hope your day is going well. How can I assist you?"
+    
+    # Name introductions - when someone introduces themselves (check this FIRST before general greetings)
+    if ("my name is" in user_input or 
+        "call me" in user_input or
+        "you can call me" in user_input or
+        (("i am" in user_input or "i'm" in user_input) and 
+         not any(adj in user_input for adj in ["happy", "sad", "tired", "busy", "good", "fine", "ok", "great", "looking", "asking", "trying"]))):
+        return "How are you doing? It's nice to meet you! How can I help you today?"
     
     # General greetings
     if any(greeting in user_input for greeting in ["hi", "hello", "hey"]):

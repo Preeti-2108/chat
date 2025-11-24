@@ -291,12 +291,20 @@ class BedrockKnowledgeBaseWorkflow:
         simple_response = state.get("simple_response", "")
         conversation_id = state.get("conversation_id", "")
         
-        logger.info(f"💬 Handling simple query with predefined response")
+        logger.info(f"💬 [HANDLE_SIMPLE_QUERY] Handling simple query with predefined response")
+        
+        # DEBUG: Log state keys to verify websocket_connection is present
+        logger.info(f"💬 [HANDLE_SIMPLE_QUERY] State keys: {list(state.keys())}")
         
         # Check if WebSocket streaming is available
         connection_info = state.get("websocket_connection", {})
         connection_id = connection_info.get("connectionId")
         url = connection_info.get("url")
+        
+        # DEBUG: Log WebSocket connection details for simple queries
+        logger.info(f"💬 [WEBSOCKET DEBUG] Simple query connection info: {connection_info}")
+        logger.info(f"💬 [WEBSOCKET DEBUG] Connection ID: {connection_id}")
+        logger.info(f"💬 [WEBSOCKET DEBUG] URL: {url}")
         
         if connection_id and url and ENABLE_WEBSOCKET_STREAMING:
             # Send simple response via WebSocket streaming for consistency
@@ -438,11 +446,14 @@ class BedrockKnowledgeBaseWorkflow:
         """
         Node 2: Generate response using Bedrock chat model with retrieved context
         """
-        logger.info("Generating chat response using Bedrock model")
+        logger.info("🤖 [GENERATE_CHAT_RESPONSE] Starting response generation")
         
         user_query = state.get("user_query", "")
         context_documents = state.get("context_documents", [])
         conversation_id = state.get("conversation_id", "")
+        
+        # DEBUG: Log state keys to verify websocket_connection is present
+        logger.info(f"🤖 [GENERATE_CHAT_RESPONSE] State keys: {list(state.keys())}")
         
         # Use helper to build context-aware prompt
         system_instructions = get_default_system_instructions()
@@ -458,15 +469,23 @@ class BedrockKnowledgeBaseWorkflow:
                 # Create message for the chat model
                 messages = [HumanMessage(content=prompt)]
                 
-                logger.info("Starting Azure OpenAI streaming response...")
+                logger.info("🤖 [GENERATE_CHAT_RESPONSE] Starting Azure OpenAI streaming response...")
                 
                 # Check if WebSocket connection info is available in state
                 connection_info = state.get("websocket_connection", {})
                 connection_id = connection_info.get("connectionId")
                 url = connection_info.get("url")
                 
+                # DEBUG: Log WebSocket connection details
+                logger.info(f"🤖 [WEBSOCKET DEBUG] Connection info: {connection_info}")
+                logger.info(f"🤖 [WEBSOCKET DEBUG] Connection ID: {connection_id}")
+                logger.info(f"🤖 [WEBSOCKET DEBUG] URL: {url}")
+                logger.info(f"🤖 [WEBSOCKET DEBUG] ENABLE_WEBSOCKET_STREAMING: {ENABLE_WEBSOCKET_STREAMING}")
+                
                 if connection_id and url and ENABLE_WEBSOCKET_STREAMING:
                     # Use WordLevelStreamingHandler for advanced streaming
+                    logger.info(f"🤖 [STREAMING] Initializing WordLevelStreamingHandler with connection_id: {connection_id}")
+                    
                     streaming_handler = WordLevelStreamingHandler(
                         connection_id=connection_id,
                         websocket_url=url,
@@ -475,14 +494,16 @@ class BedrockKnowledgeBaseWorkflow:
                     )
                     
                     # Send start signal immediately
+                    logger.info("🤖 [STREAMING] Sending start signal...")
                     streaming_handler.send_start_signal()
                     
                     # Process streaming response
-                    logger.info("Using word-level streaming handler for response")
-                    logger.info(f"Messages sent to model: {messages}")
+                    logger.info("🤖 [STREAMING] Starting word-level streaming...")
+                    logger.info(f"🤖 [STREAMING] Messages sent to model: {[msg.content[:50] + '...' for msg in messages]}")
                     ai_response = streaming_handler.process_word_streaming(
                         self.chat_model.stream(messages)
                     )
+                    logger.info(f"🤖 [STREAMING] Streaming completed. Response length: {len(ai_response)}")
                 else:
                     # Fallback to regular invoke if no WebSocket info or streaming disabled
                     logger.info("Using regular invoke (streaming disabled or no WebSocket info)")
@@ -595,11 +616,14 @@ class BedrockKnowledgeBaseWorkflow:
             # Use stream with thread_id for memory persistence (following reference pattern)
             final_state = None
             for chunk in self.workflow.stream(
-                {"messages": [HumanMessage(content=user_query)]},
+                initial_state,  # Use initial_state instead of messages format
                 {"configurable": {"thread_id": thread_id}}
             ):
                 logger.debug(f"🔄 [MEMORY STREAM] Processing chunk: {list(chunk.keys())}")
-                final_state = chunk
+                # Get the last node's output as final state
+                if chunk:
+                    for node_name, node_state in chunk.items():
+                        final_state = node_state
             
             # Fallback to invoke if stream didn't return any chunks
             if final_state is None:
@@ -615,6 +639,14 @@ class BedrockKnowledgeBaseWorkflow:
             if isinstance(final_state, dict):
                 final_state["conversation_id"] = thread_id
             
+            # Check if streaming was used by examining WebSocket connection
+            streaming_used = bool(
+                websocket_connection and 
+                websocket_connection.get("connectionId") and 
+                websocket_connection.get("url") and
+                ENABLE_WEBSOCKET_STREAMING
+            )
+            
             # Return structured response with memory status
             return {
                 "success": True,
@@ -628,6 +660,7 @@ class BedrockKnowledgeBaseWorkflow:
                 "cost_optimized": final_state.get("is_simple_query", False),
                 "memory_enabled": True,  # Memory is now enabled following reference pattern
                 "thread_id": thread_id,  # Include thread_id for continuation
+                "streaming_used": streaming_used,  # Indicate whether streaming was used
                 "timestamp": datetime.now().isoformat()
             }
             
@@ -778,21 +811,30 @@ def start_chat(event, context):
                         workflow_result, user_query, user_email
                     )
                     
-                    logger.info("LangGraph workflow completed successfully")
+                    logger.info("✅ [POST HANDLER] LangGraph workflow completed successfully")
                     
-                    # Send immediate AI response to client via WebSocket using helper
-                    websocket_response = conversation_builder.build_websocket_response(
-                        user_email=user_email,
-                        conversation_id=workflow_result.get('conversation_id', conversation_id),
-                        user_query=user_query,
-                        ai_response=workflow_result.get('ai_response', ''),
-                        sources_info=workflow_result.get('sources_info', []),
-                        context_used=workflow_result.get('context_used', False),
-                        sources_count=workflow_result.get('sources_count', 0)
-                    )
-                    
-                    final_response = conversation_builder.build_final_websocket_response(websocket_response, 201)
-                    send_to_client(connectionId, json.dumps(final_response), url)
+                    # Check if streaming was actually used
+                    streaming_used = workflow_result.get('streaming_used', False)
+                    if streaming_used:
+                        logger.info("📡 [POST HANDLER] Streaming response already sent during workflow execution")
+                        logger.info("🔄 [POST HANDLER] Skipping duplicate WebSocket response to maintain streaming integrity")
+                    else:
+                        logger.warning("⚠️ [POST HANDLER] Streaming may have failed - sending fallback WebSocket response")
+                        
+                        # Send fallback WebSocket response if streaming didn't work
+                        websocket_response = conversation_builder.build_websocket_response(
+                            user_email=user_email,
+                            conversation_id=workflow_result.get('conversation_id', conversation_id),
+                            user_query=user_query,
+                            ai_response=workflow_result.get('ai_response', ''),
+                            sources_info=workflow_result.get('sources_info', []),
+                            context_used=workflow_result.get('context_used', False),
+                            sources_count=workflow_result.get('sources_count', 0)
+                        )
+                        
+                        final_response = conversation_builder.build_final_websocket_response(websocket_response, 201)
+                        send_to_client(connectionId, json.dumps(final_response), url)
+                        logger.info("📡 [POST HANDLER] Fallback WebSocket response sent")
                     
                 else:
                     # Workflow failed, but continue with regular processing
@@ -872,9 +914,23 @@ def start_chat(event, context):
         logger.error(f"Error occurred: {str(err)}, Event: {json.dumps(event)}")
         response_result = Responses.result_response(STATUS_ERROR, False, 'Error during the execution.')
 
-    # Send the response to the client
+    # Send the response to the client only if streaming wasn't already handled
     try:
-        send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+        # Check if this is a successful workflow response (streaming already handled)
+        is_streaming_response = (
+            response_result and 
+            isinstance(response_result, dict) and 
+            response_result.get('success') and
+            user_query  # Only if there was a query to process
+        )
+        
+        if not is_streaming_response:
+            # Send non-streaming response (errors, validation failures, etc.)
+            logger.info("📡 [POST HANDLER] Sending non-streaming response (error/validation)")
+            send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+        else:
+            logger.info("📡 [POST HANDLER] Skipping final response - streaming already completed")
+            
     except Exception as websocket_err:
         logger.error(f"Error sending response to client: {str(websocket_err)}")
         # Don't return error here as the main operation might have succeeded

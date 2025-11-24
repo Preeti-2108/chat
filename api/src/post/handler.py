@@ -11,6 +11,7 @@ from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_openai import AzureChatOpenAI
+from langgraph.checkpoint.memory import MemorySaver
 from botocore.config import Config
 
 from src.helpers.api_responses import Responses  # Custom helper for API responses
@@ -134,6 +135,8 @@ class BedrockKnowledgeBaseWorkflow:
         self.chat_model = self._setup_chat_model()
         # Initialize dynamic query rewriter
         self.query_rewriter = build_query_rewriter(self.chat_model)
+        # Initialize memory for conversation continuity (following reference pattern)
+        self.memory = MemorySaver()
         self.workflow = self._create_workflow()
     
     def _setup_bedrock_agent(self):
@@ -214,8 +217,8 @@ class BedrockKnowledgeBaseWorkflow:
         workflow.add_edge("generate_response", END)
         workflow.add_edge("handle_simple_query", END)
         
-        compiled_workflow = workflow.compile()
-        logger.info(f"✅ [WORKFLOW DEBUG] LangGraph workflow compiled successfully")
+        compiled_workflow = workflow.compile(checkpointer=self.memory)
+        logger.info(f"✅ [WORKFLOW DEBUG] LangGraph workflow compiled successfully with memory checkpointer")
         logger.info(f"🔗 [WORKFLOW DEBUG] Workflow nodes: detect_intent, rewrite_query, retrieve_from_kb, generate_response, handle_simple_query")
         logger.info(f"🔗 [WORKFLOW DEBUG] Conditional edges: detect_intent -> {{simple: handle_simple_query, complex: rewrite_query}}")
         
@@ -516,6 +519,48 @@ class BedrockKnowledgeBaseWorkflow:
     
     # Document analysis methods moved to src/helpers/document_analyzer.py
     
+    def get_memory_checkpoints(self, thread_id: str):
+        """
+        Get conversation memory checkpoints for a thread_id (following reference pattern)
+        Similar to process_checkpoints in reference code
+        """
+        try:
+            checkpoints = list(self.memory.list({"configurable": {"thread_id": thread_id}}))
+            logger.info(f"🧠 [MEMORY] Found {len(checkpoints)} checkpoints for thread_id: {thread_id}")
+            return checkpoints
+        except Exception as e:
+            logger.error(f"❌ [MEMORY] Error retrieving checkpoints: {e}")
+            return []
+    
+    def get_conversation_context(self, thread_id: str) -> str:
+        """
+        Get conversation context summary for debugging (following reference pattern)
+        """
+        try:
+            checkpoints = self.get_memory_checkpoints(thread_id)
+            if not checkpoints:
+                return "No conversation history"
+                
+            # Get the latest checkpoint
+            latest_checkpoint = checkpoints[0].checkpoint if checkpoints else None
+            if not latest_checkpoint:
+                return "No checkpoint data"
+                
+            messages = latest_checkpoint["channel_values"].get("messages", [])
+            if not messages:
+                return "No messages in conversation"
+                
+            context_summary = []
+            for msg in messages[-5:]:  # Last 5 messages
+                if isinstance(msg, HumanMessage):
+                    context_summary.append(f"User: {msg.content[:100]}...")
+                elif isinstance(msg, AIMessage):
+                    context_summary.append(f"AI: {msg.content[:100]}...")
+                    
+            return "\n".join(context_summary)
+        except Exception as e:
+            return f"Error loading context: {e}"
+    
     def process_chat_query(self, user_query: str, conversation_id: str = None, vector_db: str = None, websocket_connection: Dict = None) -> Dict[str, Any]:
         """
         Main method to process a chat query through the LangGraph workflow
@@ -537,12 +582,40 @@ class BedrockKnowledgeBaseWorkflow:
                 "simple_response": ""
             }
             
-            # Execute the workflow
-            logger.info(f"🚀 [WORKFLOW DEBUG] Starting LangGraph execution with state: skip_rag={initial_state['skip_rag']}, user_query='{user_query[:30]}...'")
-            final_state = self.workflow.invoke(initial_state)
-            logger.info(f"✅ [WORKFLOW DEBUG] LangGraph execution completed. Final state keys: {list(final_state.keys())}")
+            # Execute the workflow with memory using stream pattern (following reference code)
+            thread_id = conversation_id or str(uuid.uuid4())
+            logger.info(f"🚀 [WORKFLOW DEBUG] Starting LangGraph execution with memory: thread_id={thread_id}, user_query='{user_query[:30]}...'")
             
-            # Return structured response
+            # Load existing conversation context for debugging
+            context = self.get_conversation_context(thread_id)
+            if context != "No conversation history":
+                logger.info(f"🧠 [MEMORY] Previous conversation context:")
+                logger.info(f"🧠 [MEMORY] {context}")
+            
+            # Use stream with thread_id for memory persistence (following reference pattern)
+            final_state = None
+            for chunk in self.workflow.stream(
+                {"messages": [HumanMessage(content=user_query)]},
+                {"configurable": {"thread_id": thread_id}}
+            ):
+                logger.debug(f"🔄 [MEMORY STREAM] Processing chunk: {list(chunk.keys())}")
+                final_state = chunk
+            
+            # Fallback to invoke if stream didn't return any chunks
+            if final_state is None:
+                logger.warning("🔄 [MEMORY] Stream returned no chunks, falling back to invoke")
+                final_state = self.workflow.invoke(
+                    initial_state,
+                    {"configurable": {"thread_id": thread_id}}
+                )
+            
+            logger.info(f"✅ [WORKFLOW DEBUG] LangGraph execution completed with memory. Final state keys: {list(final_state.keys())}")
+            
+            # Update conversation_id to be the thread_id for consistency
+            if isinstance(final_state, dict):
+                final_state["conversation_id"] = thread_id
+            
+            # Return structured response with memory status
             return {
                 "success": True,
                 "ai_response": final_state.get("ai_response", ""),
@@ -553,6 +626,8 @@ class BedrockKnowledgeBaseWorkflow:
                 "model_used": AZURE_OPENAI_MODEL if not final_state.get("is_simple_query", False) else "rule_based",
                 "processing_method": "simple_response" if final_state.get("is_simple_query", False) else "rag_llm",
                 "cost_optimized": final_state.get("is_simple_query", False),
+                "memory_enabled": True,  # Memory is now enabled following reference pattern
+                "thread_id": thread_id,  # Include thread_id for continuation
                 "timestamp": datetime.now().isoformat()
             }
             
@@ -568,8 +643,9 @@ class BedrockKnowledgeBaseWorkflow:
                 "timestamp": datetime.now().isoformat()
             }
 
-# Initialize global workflow instance
+# Initialize global workflow instance with memory support
 bedrock_workflow = BedrockKnowledgeBaseWorkflow()
+logger.info(f"🧠 [POST INIT] Initialized workflow with memory checkpointer")
 
 @authenticate_websocket()
 # @require_resource_permission('CHATKBBEDROCKCDKWEBSOCKET', 'CREATE')

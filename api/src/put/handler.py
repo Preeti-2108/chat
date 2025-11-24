@@ -31,8 +31,8 @@ from src.helpers.conversation_builder import conversation_builder, extract_user_
 from src.helpers.document_analyzer import document_analyzer, build_context_aware_prompt
 from src.helpers.system_instructions import get_default_system_instructions, get_error_response_templates
 
-# Import workflow from POST handler to avoid duplication
-from src.post.handler import BedrockKnowledgeBaseWorkflow
+# Import shared workflow instance from POST handler for memory continuity
+from src.post.handler import bedrock_workflow
 
 """
 /**
@@ -101,91 +101,16 @@ logger.info(f"Azure OpenAI Endpoint configured: {AZURE_OPENAI_API_ENDPOINT}")
 logger.info(f"Azure OpenAI Temperature: {AZURE_OPENAI_TEMPERATURE}")
 logger.info(f"Azure OpenAI Max Tokens: {AZURE_OPENAI_MAX_TOKENS}")
 
-# State interface for LangGraph workflow
-class State(Dict[str, Any]):
-    """State object for LangGraph workflow"""
-    messages: List[Any]
-    user_query: str
-    context_documents: List[str]
-    conversation_id: str
-    ai_response: str
-    has_context: bool
-    chat_history: List[Dict[str, Any]]
+# No local state or workflow classes needed - using shared workflow from POST handler
+# The bedrock_workflow imported above contains:
+# - BedrockKnowledgeBaseWorkflow class with MemorySaver
+# - Memory methods: get_memory_checkpoints(), get_conversation_context()
+# - All workflow nodes and LangGraph logic
+# This ensures conversation continuity between POST and PUT operations
 
-# Reusing BedrockKnowledgeBaseWorkflow from POST handler to eliminate duplicate code
-    
-    def retrieve_conversation_history(self, conversation_id: str) -> List[Dict[str, Any]]:
-        """Retrieve existing conversation history from DynamoDB"""
-        try:
-            table_name = os.getenv('TABLE')
-            if not table_name:
-                logger.error("TABLE environment variable not set")
-                return []
-            
-            dynamodb = boto3.resource('dynamodb')
-            table = dynamodb.Table(table_name)
-            
-            # Query for existing conversation using conversationId as primary key
-            response = table.get_item(
-                Key={'conversationId': conversation_id}
-            )
-            
-            if 'Item' in response:
-                item = response['Item']
-                chat_history = item.get('chatHistory', [])
-                logger.info(f"Retrieved {len(chat_history)} messages from conversation {conversation_id}")
-                return chat_history
-            else:
-                logger.warning(f"No existing conversation found with conversationId: {conversation_id}")
-                return []
-                
-        except Exception as e:
-            logger.error(f"Error retrieving conversation history: {e}")
-            return []
-    
-    def process_continuation_query(self, user_query: str, conversation_id: str, vector_db: str = None) -> Dict[str, Any]:
-        """
-        Process a continuation query with conversation context
-        """
-        try:
-            # Retrieve existing conversation history
-            chat_history = self.retrieve_conversation_history(conversation_id)
-            
-            # For now, return a mock response since we can't use the full workflow
-            # In production, this would use the full LangGraph workflow
-            
-            mock_response = f"Continuing conversation {conversation_id}. Your query: '{user_query}'. This is a continuation of our previous discussion."
-            
-            if chat_history:
-                last_message = chat_history[-1] if chat_history else {}
-                mock_response += f" Previously, we discussed: '{last_message.get('user', 'N/A')}'"
-            
-            return {
-                "success": True,
-                "ai_response": mock_response,
-                "context_used": False,
-                "sources_count": 0,
-                "conversation_id": conversation_id,
-                "model_used": AZURE_OPENAI_MODEL or "AZURE_OPENAI_GPT_4O",
-                "timestamp": datetime.now().isoformat(),
-                "chat_history": chat_history
-            }
-            
-        except Exception as e:
-            logger.error(f"Continuation workflow execution failed: {e}")
-            return {
-                "success": False,
-                "error": "Failed to process continuation query",
-                "ai_response": "I apologize, but I encountered an error processing your continuation request.",
-                "context_used": False,
-                "sources_count": 0,
-                "conversation_id": conversation_id,
-                "timestamp": datetime.now().isoformat(),
-                "chat_history": []
-            }
-
-# Initialize global workflow instance (reuse from POST handler)
-bedrock_workflow = BedrockKnowledgeBaseWorkflow()
+# Use shared workflow instance from POST handler for memory continuity
+# bedrock_workflow is imported from src.post.handler above
+logger.info(f"🧠 [PUT INIT] Using shared workflow instance with memory from POST handler")
 
 @authenticate_websocket()
 # @require_resource_permission('CHATKBBEDROCKCDKWEBSOCKET', 'UPDATE')
@@ -419,9 +344,24 @@ def continue_chat(event, context):
                     "connectionId": connectionId,
                     "url": url
                 }
-                logger.info(f"Calling bedrock_workflow.process_chat_query with: user_query='{user_query}', conversation_id='{conversation_id}', vector_db='{vector_db}'")
+                # Check for existing memory context before continuing conversation
+                try:
+                    memory_context = bedrock_workflow.get_conversation_context(conversation_id)
+                    if memory_context != "No conversation history":
+                        logger.info(f"🧠 [PUT MEMORY] Found existing conversation context:")
+                        logger.info(f"🧠 [PUT MEMORY] {memory_context}")
+                    else:
+                        logger.info(f"🧠 [PUT MEMORY] No existing memory context for conversation: {conversation_id}")
+                except Exception as mem_err:
+                    logger.warning(f"⚠️ [PUT MEMORY] Could not load memory context: {mem_err}")
+                
+                logger.info(f"🔄 [PUT UPDATE] Calling bedrock_workflow.process_chat_query with memory enabled")
                 workflow_result = bedrock_workflow.process_chat_query(user_query, conversation_id, vector_db, websocket_connection)
-                logger.info(f"Workflow result keys: {list(workflow_result.keys()) if isinstance(workflow_result, dict) else type(workflow_result)}")
+                logger.info(f"✅ [PUT UPDATE] Workflow completed with memory. Result keys: {list(workflow_result.keys()) if isinstance(workflow_result, dict) else type(workflow_result)}")
+                
+                # Log memory status
+                if workflow_result.get('memory_enabled'):
+                    logger.info(f"🧠 [PUT MEMORY] Memory successfully used in conversation continuation")
                 
                 if workflow_result.get('success', False):
                     # Update existing conversation with AI response

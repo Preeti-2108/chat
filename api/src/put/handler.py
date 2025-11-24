@@ -356,6 +356,7 @@ def continue_chat(event, context):
                     logger.warning(f"⚠️ [PUT MEMORY] Could not load memory context: {mem_err}")
                 
                 logger.info(f"🔄 [PUT UPDATE] Calling bedrock_workflow.process_chat_query with memory enabled")
+                logger.info(f"🧠 [PUT MEMORY CONSISTENCY] Using conversation_id as thread_id: {conversation_id}")
                 workflow_result = bedrock_workflow.process_chat_query(user_query, conversation_id, vector_db, websocket_connection)
                 logger.info(f"✅ [PUT UPDATE] Workflow completed with memory. Result keys: {list(workflow_result.keys()) if isinstance(workflow_result, dict) else type(workflow_result)}")
                 

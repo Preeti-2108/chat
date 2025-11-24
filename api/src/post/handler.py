@@ -604,14 +604,18 @@ class BedrockKnowledgeBaseWorkflow:
             }
             
             # Execute the workflow with memory using stream pattern (following reference code)
+            # CRITICAL: Use conversation_id as thread_id for memory consistency across POST and PUT
             thread_id = conversation_id or str(uuid.uuid4())
-            logger.info(f"🚀 [WORKFLOW DEBUG] Starting LangGraph execution with memory: thread_id={thread_id}, user_query='{user_query[:30]}...'")
+            logger.info(f"🚀 [WORKFLOW DEBUG] Starting LangGraph execution with memory: thread_id={thread_id}, conversation_id={conversation_id}, user_query='{user_query[:30]}...'")
+            logger.info(f"🧠 [MEMORY CONSISTENCY] thread_id == conversation_id: {thread_id == conversation_id}")
             
             # Load existing conversation context for debugging
             context = self.get_conversation_context(thread_id)
             if context != "No conversation history":
-                logger.info(f"🧠 [MEMORY] Previous conversation context:")
+                logger.info(f"🧠 [MEMORY] Previous conversation context found:")
                 logger.info(f"🧠 [MEMORY] {context}")
+            else:
+                logger.info(f"🧠 [MEMORY] No previous conversation context for thread_id: {thread_id}")
             
             # Use stream with thread_id for memory persistence (following reference pattern)
             final_state = None
@@ -638,6 +642,7 @@ class BedrockKnowledgeBaseWorkflow:
             # Update conversation_id to be the thread_id for consistency
             if isinstance(final_state, dict):
                 final_state["conversation_id"] = thread_id
+                logger.info(f"🧠 [MEMORY CONSISTENCY] Updated final_state conversation_id to match thread_id: {thread_id}")
             
             # Check if streaming was used by examining WebSocket connection
             streaming_used = bool(

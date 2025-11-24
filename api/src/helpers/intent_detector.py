@@ -24,7 +24,20 @@ def is_simple_query(text: str) -> bool:
         
     text = text.lower().strip()
     
-    # Simple greeting and conversation keywords
+    # IMPORTANT: Check for memory-related queries first and exclude them from simple queries
+    # These should go through full workflow with memory to access conversation history
+    
+    # Questions about previous conversation context - need memory to recall
+    memory_queries = [
+        "what is my name", "what's my name", "my name", "do you remember my name",
+        "who am i", "what did i tell you", "what did we discuss", "remember when",
+        "earlier i said", "i mentioned", "you said", "we talked about"
+    ]
+    
+    if any(memory_query in text for memory_query in memory_queries):
+        return False  # Force memory-related questions to use full workflow
+    
+    # Simple greeting and conversation keywords (excluding name introductions)
     simple_keywords = [
         # Greetings
         "hi", "hello", "hey", "good morning", "good evening", "good afternoon",

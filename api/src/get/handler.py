@@ -58,7 +58,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))  # Set the log level based on environment variable or default to 'INFO'
 
 @authenticate_websocket()  # Require authentication for this handler
-@require_resource_permission('PYTHONTEMPLATECDKWEBSOCKET', 'READ')  # Require READ permission for this resource
+# @require_resource_permission('PYTHONTEMPLATECDKWEBSOCKET', 'READ')  # Require READ permission for this resource
 def get(event, context):
     """
     Handles the retrieval of a template item from a DynamoDB table based on the provided ID.

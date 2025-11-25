@@ -16,6 +16,45 @@ from src.helpers.auth_middleware import authenticate_websocket, get_authenticate
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))
 
+"""
+/**
+ * @asyncapi
+ * channels:
+ *   chatGetAssistant:
+ *     description: Channel for retrieving a specific chat by assistant ID.
+ *     publish:
+ *       operationId: chatGetAssistant
+ *       summary: Get a specific chat by assistant ID.
+ *       message:
+ *         messageId: chatGetAssistant
+ *         contentType: application/json
+ *         payload:
+ *           type: object
+ *           required:
+ *             - action
+ *             - datas
+ *           properties:
+ *             action:
+ *               type: string
+ *               description: The action to perform.
+ *               example: getassistant
+ *             datas:
+ *               type: object
+ *               required:
+ *                 - id
+ *               properties:
+ *                 id:
+ *                   type: string
+ *                   description: The unique identifier of the chat to retrieve.
+ *                   example: 184cf8da-b821-4ff4-bd6c-cdafa166e2e0
+ *     subscribe:
+ *       operationId: chatGetAssistantResponse
+ *       summary: Receive response for the retrieved chat.
+ *       message:
+ *         $ref: '#/components/messages/chatGetAssistantResponse'
+ */
+"""
+
 @authenticate_websocket()
 # @require_resource_permission('CHATKBBEDROCKCDKWEBSOCKET', 'READ')
 def getassistant(event, context):

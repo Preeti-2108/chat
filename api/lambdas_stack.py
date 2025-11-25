@@ -86,7 +86,8 @@ class LambdasStack(Stack):
             "update": "src.put.handler.continue_chat",
             "delete": "src.delete.handler.delete",
             "get": "src.get.handler.get",
-            "list": "src.list.handler.list"
+            "list": "src.list.handler.list",
+            "getassistant": "src.getassistant.handler.getassistant",
         }
 
         lambdas = {}
@@ -231,6 +232,15 @@ class LambdasStack(Stack):
             route_key="list",
             integration=integrations_alpha.WebSocketLambdaIntegration(
                 "ListIntegration", lambdas["list"]
+            )
+        )
+
+        apigwv2_alpha.WebSocketRoute(
+            self, "GetAssistantRoute",
+            web_socket_api=ws_api,
+            route_key="getassistant",
+            integration=integrations_alpha.WebSocketLambdaIntegration(
+                "GetAssistantIntegration", lambdas["getassistant"]
             )
         )
 

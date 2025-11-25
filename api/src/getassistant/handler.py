@@ -3,6 +3,8 @@
 import os
 import json
 import boto3
+from botocore.config import Config
+from boto3.dynamodb.conditions import Attr
 import logging
 from botocore.exceptions import ClientError
 from src.helpers.api_responses import Responses
@@ -13,8 +15,6 @@ from src.helpers.event_utils import extract_event_info
 from src.helpers.decimal_converter import convert_decimal_to_json_serializable as decimal_to_json_serializable
 from src.helpers.auth_middleware import authenticate_websocket, get_authenticated_user, get_user_email
 
-logger = logging.getLogger(__name__)
-logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))
 
 """
 /**
@@ -55,6 +55,9 @@ logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))
  */
 """
 
+logger = logging.getLogger(__name__)
+logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))
+
 @authenticate_websocket()
 # @require_resource_permission('CHATKBBEDROCKCDKWEBSOCKET', 'READ')
 def getassistant(event, context):
@@ -79,8 +82,15 @@ def getassistant(event, context):
             'body': json.dumps('Configuration error')
         }
 
-    dynamodb = boto3.resource('dynamodb')
-    table = dynamodb.Table(table_name)
+    # Use connection pooling for DynamoDB
+    config = Config(
+        max_pool_connections=50,
+        retries={'max_attempts': 3, 'mode': 'adaptive'},
+        connect_timeout=5,
+        read_timeout=30
+    )
+    dynamodb_resource = boto3.resource('dynamodb', config=config)
+    table = dynamodb_resource.Table(table_name)
 
     try:
         event_info = extract_event_info(event)
@@ -166,16 +176,23 @@ def getassistant(event, context):
                 'body': json.dumps('Validation errors.')
             }
 
-        # Query DynamoDB for items with assistantId
+        # Query DynamoDB for items with assistantId using paginated scan and correct FilterExpression
         try:
-            scan_kwargs = {
-                'FilterExpression': 'assistantId = :assistant_id',
-                'ExpressionAttributeValues': {':assistant_id': assistant_id}
-            }
-            response = table.scan(**scan_kwargs)
-            items = response.get('Items', [])
+            all_items = []
+            last_evaluated_key = None
+            while True:
+                scan_kwargs = {
+                    'FilterExpression': Attr('assistantId').eq(assistant_id)
+                }
+                if last_evaluated_key:
+                    scan_kwargs['ExclusiveStartKey'] = last_evaluated_key
+                response = table.scan(**scan_kwargs)
+                all_items.extend(response.get('Items', []))
+                last_evaluated_key = response.get('LastEvaluatedKey')
+                if not last_evaluated_key:
+                    break
             # Filter items by createdBy == email
-            user_items = [item for item in items if item.get('createdBy', '').strip() == email.strip()]
+            user_items = [item for item in all_items if item.get('createdBy', '').strip() == email.strip()]
             logger.info(f"Found {len(user_items)} items for assistantId {assistant_id} and user {email}")
             if user_items:
                 serializable_items = decimal_to_json_serializable(user_items)

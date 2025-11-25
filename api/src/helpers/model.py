@@ -13,6 +13,11 @@
  *       contentType: application/json
  *       payload:
  *         $ref: '#/components/schemas/CHATINTERNAL'
+  *     chatGetResponse:
+ *       messageId: chatGetResponse
+ *       contentType: application/json
+ *       payload:
+ *         $ref: '#/components/schemas/CHATINTERNAL'
  *     chatGetAssistantResponse:
  *       messageId: chatGetAssistantResponse
  *       contentType: application/json

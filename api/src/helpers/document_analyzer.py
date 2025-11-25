@@ -222,6 +222,71 @@ class DocumentAnalyzer:
         
         return selected_docs
     
+    def assess_context_relevance(self, user_query: str, selected_docs: List[Dict]) -> float:
+        """
+        Assess if the selected documents are relevant to the user's query using semantic matching.
+        
+        Args:
+            user_query: The user's question
+            selected_docs: List of selected document dictionaries
+            
+        Returns:
+            Relevance score between 0.0 and 1.0
+        """
+        if not selected_docs or not user_query:
+            return 0.0
+        
+        query_lower = user_query.lower()
+        
+        # Extract key concepts from the query
+        query_keywords = set()
+        
+        # Common synonyms and cross-language mappings
+        concept_mappings = {
+            'incident': ['incident', 'ticket', 'support', 'problem', 'issue'],
+            'microsoft': ['microsoft', 'ms', 'office', 'windows', 'azure'],
+            'open': ['open', 'create', 'ouvrir', 'créer', 'new', 'submit'],
+            'support': ['support', 'help', 'aide', 'assistance', 'service'],
+            'procedure': ['procedure', 'procédure', 'process', 'steps', 'how'],
+            'licence': ['license', 'licence', 'licensing', 'activation', 'key']
+        }
+        
+        # Find concepts in query
+        for concept, synonyms in concept_mappings.items():
+            if any(synonym in query_lower for synonym in synonyms):
+                query_keywords.add(concept)
+        
+        # Score documents based on concept overlap
+        total_score = 0.0
+        max_possible_score = 0.0
+        
+        for doc in selected_docs:
+            content = doc.get('content', '').lower()
+            doc_score = doc.get('score', 0.0)
+            
+            # Count concept matches in document
+            concept_matches = 0
+            for concept, synonyms in concept_mappings.items():
+                if concept in query_keywords:
+                    max_possible_score += 1.0
+                    if any(synonym in content for synonym in synonyms):
+                        concept_matches += 1
+            
+            # Weighted by document score from Bedrock
+            document_relevance = (concept_matches / max(len(query_keywords), 1)) * doc_score
+            total_score += document_relevance
+        
+        # Normalize score
+        if max_possible_score > 0:
+            final_score = min(total_score / max_possible_score, 1.0)
+        else:
+            final_score = 0.0
+        
+        logger.info(f"🎯 [RELEVANCE] Query concepts: {query_keywords}")
+        logger.info(f"🎯 [RELEVANCE] Relevance score: {final_score:.3f}")
+        
+        return final_score
+    
     def build_sources_text(self, selected_docs: List[Dict]) -> str:
         """
         Build formatted sources text with clickable links for inclusion in AI responses.
@@ -235,7 +300,7 @@ class DocumentAnalyzer:
         if not selected_docs:
             return ""
         
-        sources_lines = ["\n\n**Source[s]:**"]
+        sources_lines = ["", "---", "**Sources:**"]
         
         for i, doc in enumerate(selected_docs, 1):
             metadata = doc.get('metadata', {})
@@ -251,7 +316,11 @@ class DocumentAnalyzer:
             
             sources_lines.append(source_line)
         
-        return "\n".join(sources_lines)
+        # Add instruction for AI to include these sources
+        sources_text = "\n".join(sources_lines)
+        sources_text += "\n\n**INSTRUCTION: Include the above sources at the end of your response when answering based on the provided context.**"
+        
+        return sources_text
     
     def build_context_string(self, selected_docs: List[Dict]) -> str:
         """
@@ -377,66 +446,46 @@ def build_context_aware_prompt(system_instructions: str,
         logger.info(f"Context content length: {len(context)} characters")
         logger.info(f"First 200 chars of context: {context[:200]}...")
         
-        # 🔍 DETAILED DEBUG: Log document scores and content preview
-        for i, doc in enumerate(selected_docs[:3]):  # Log first 3 docs
-            score = doc.get('score', 0)
-            content_preview = doc.get('content', '')[:300]
-            metadata = doc.get('metadata', {})
-            title = metadata.get('title', 'No title')
-            logger.info(f"📄 [DEBUG] Doc {i+1}: Score={score:.4f}, Title='{title}'")
-            logger.info(f"📄 [DEBUG] Doc {i+1} Content: '{content_preview}...'")
-            
-            # Check for Microsoft/incident keywords
-            content_lower = content_preview.lower()
-            microsoft_words = ['microsoft', 'incident', 'support', 'ticket', 'procédure', 'ouvrir']
-            found_keywords = [word for word in microsoft_words if word in content_lower]
-            logger.info(f"📄 [DEBUG] Doc {i+1} Keywords found: {found_keywords}")
-            logger.info(f"📄 [DEBUG] ---")
+
         
         # Check if we have meaningful content
         if context.strip() and len(context.strip()) > 10:
-            # Build sources text but let AI decide whether to include it
+            # 🎯 SMART RELEVANCE CHECK: Assess if context is actually relevant
+            relevance_score = analyzer.assess_context_relevance(user_query, selected_docs)
+            
+            # Build sources text
             sources_text = analyzer.build_sources_text(selected_docs)
             
-            prompt = f"""{system_instructions}
+            if relevance_score >= 0.3:  # Context seems relevant
+                prompt = f"""{system_instructions}
 
 Context:
 {context}
 
 User Question: {user_query}
 
-Please provide a well-formatted answer based on the context above following the guidelines specified. Reference the source numbers when citing information.
+Please provide a comprehensive answer based on the context above following the system guidelines. Always include the source references at the end of your response.
 
-INSTRUCTIONS FOR CROSS-LANGUAGE CONTEXT:
-- The context may be in different languages (French, English, etc.) but still be relevant to your question
-- Look for semantic relationships: "incident" = "incident", "Microsoft support" = "Support Microsoft", "procedure" = "procédure"  
-- If the context contains information about the same topic/concept in any language, use it to provide a helpful answer
-- Only respond with "I'm sorry, I don't have information about this in my knowledge base." if the context is about completely different topics (e.g., asking about "cooking recipes" but context is about "software development")
-- When documents are in a different language, acknowledge this and provide the information: "Based on the available documentation (which includes French language procedures), here's how to..."
-
-Sources to include when answering:
 {sources_text}"""
-
-            # 🔍 CRITICAL DEBUG: Log the exact prompt being sent to AI
-            logger.info(f"🤖 [PROMPT DEBUG] === FULL PROMPT SENT TO AI MODEL ===")
-            logger.info(f"🤖 [PROMPT DEBUG] User Query: '{user_query}'")
-            logger.info(f"🤖 [PROMPT DEBUG] Context Length: {len(context)} chars")
-            logger.info(f"🤖 [PROMPT DEBUG] System Instructions Length: {len(system_instructions)} chars")
-            logger.info(f"🤖 [PROMPT DEBUG] Selected Docs Count: {len(selected_docs)}")
-            logger.info(f"🤖 [PROMPT DEBUG] === PROMPT PREVIEW (first 500 chars) ===")
-            logger.info(f"🤖 [PROMPT DEBUG] {prompt[:500]}...")
-            logger.info(f"🤖 [PROMPT DEBUG] === END PROMPT DEBUG ===")
-            
-            # Log specific keywords in the full prompt
-            prompt_lower = prompt.lower()
-            key_terms = ['microsoft', 'incident', 'support', 'ouvrir', 'procédure', 'ticket']
-            found_terms = [term for term in key_terms if term in prompt_lower]
-            logger.info(f"🔍 [PROMPT KEYWORDS] Found in prompt: {found_terms}")
-            
-            if 'microsoft' in prompt_lower and ('incident' in prompt_lower or 'support' in prompt_lower):
-                logger.info(f"✅ [PROMPT VALIDATION] Microsoft + incident/support keywords found - should work!")
+                
+                logger.info(f"✅ [RELEVANCE] High relevance ({relevance_score:.3f}) - using direct answer approach")
             else:
-                logger.warning(f"⚠️ [PROMPT VALIDATION] Microsoft incident keywords NOT found in prompt - this may cause issues!")
+                # Lower relevance, but still let AI decide with more flexible approach
+                prompt = f"""{system_instructions}
+
+Context:
+{context}
+
+User Question: {user_query}
+
+Please answer based on the available context if it's relevant to the question. If you provide an answer using the context, always include the source references at the end.
+
+{sources_text}"""
+                
+                logger.info(f"⚠️ [RELEVANCE] Lower relevance ({relevance_score:.3f}) - using flexible approach")
+
+            # Log key information for debugging
+            logger.info(f"🤖 [PROMPT] Query: '{user_query}', Context: {len(context)} chars, Docs: {len(selected_docs)}")
         else:
             # No meaningful content found in documents
             logger.warning("Documents retrieved but no meaningful content found")

@@ -1,32 +1,30 @@
+import json  # Import JSON module for parsing and generating JSON data
+import os  # Import OS module for interacting with the operating system
+import boto3  # Import Boto3, the AWS SDK for Python, to interact with AWS services
+import logging  # Import logging module to log messages
+from botocore.exceptions import ClientError  # Import specific exceptions from BotoCore
 
-
-import os
-import json
-import boto3
-from botocore.config import Config
-from boto3.dynamodb.conditions import Attr
-import logging
-from botocore.exceptions import ClientError
+# Import custom helper modules for API responses, response construction, schema validation, WebSocket communication, and event information extraction
 from src.helpers.api_responses import Responses
 from src.helpers.construct_response import construct_response
-from src.helpers.schema_validation import validate_request_datas_schema_pydantic
+from src.helpers.schema_validation import validate_request_datas_schema
 from src.handler_websocket.handler import send_to_client
 from src.helpers.event_utils import extract_event_info
-from src.helpers.decimal_converter import convert_decimal_to_json_serializable as decimal_to_json_serializable
-from src.helpers.auth_middleware import authenticate_websocket, get_authenticated_user, get_user_email
-
+from src.helpers.decimal_converter import convert_decimal_to_json_serializable as decimal_to_json_serializable  # Custom helper to convert Decimal objects
+from src.helpers.auth_middleware import authenticate_websocket, get_user_email, get_authenticated_user  # Cognito authentication
+from src.helpers.scope_manager import require_resource_permission  # Scope validation
 
 """
 /**
  * @asyncapi
  * channels:
- *   chatGetAssistant:
- *     description: Channel for retrieving a specific chat by assistant ID.
+ *   chatGetAssistantResponse:
+ *     description: Channel for retrieving a specific template by ID.
  *     publish:
- *       operationId: chatGetAssistant
- *       summary: Get a specific chat by assistant ID.
+ *       operationId: chatGetAssistantResponse
+ *       summary: Get a specific template.
  *       message:
- *         messageId: chatGetAssistant
+ *         messageId: chatGetAssistantResponse
  *         contentType: application/json
  *         payload:
  *           type: object
@@ -37,7 +35,7 @@ from src.helpers.auth_middleware import authenticate_websocket, get_authenticate
  *             action:
  *               type: string
  *               description: The action to perform.
- *               example: getassistant
+ *               example: get
  *             datas:
  *               type: object
  *               required:
@@ -45,34 +43,43 @@ from src.helpers.auth_middleware import authenticate_websocket, get_authenticate
  *               properties:
  *                 id:
  *                   type: string
- *                   description: The unique identifier of the chat to retrieve.
- *                   example: 184cf8da-b821-4ff4-bd6c-cdafa166e2e0
+ *                   description: The unique identifier of the template to retrieve.
+ *                   example: 123e4567-e89b-12d3-a456-426614174000
  *     subscribe:
  *       operationId: chatGetAssistantResponse
- *       summary: Receive response for the retrieved chat.
+ *       summary: Receive response for the retrieved template.
  *       message:
  *         $ref: '#/components/messages/chatGetAssistantResponse'
  */
 """
 
+# Configure the logger for the module
 logger = logging.getLogger(__name__)
-logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))
+logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))  # Set the log level based on environment variable or default to 'INFO'
 
-@authenticate_websocket()
-# @require_resource_permission('CHATKBBEDROCKCDKWEBSOCKET', 'READ')
-def getassistant(event, context):
+@authenticate_websocket()  # Require authentication for this handler
+# @require_resource_permission('PYTHONTEMPLATECDKWEBSOCKET', 'READ')  # Require READ permission for this resource
+def get(event, context):
     """
-    Retrieves chat items from DynamoDB by assistantId, filtered by authenticated user.
-    Sends response via WebSocket.
+    Handles the retrieval of a template item from a DynamoDB table based on the provided ID.
+    
+    This function processes incoming WebSocket events, validates the request data, 
+    interacts with DynamoDB to retrieve the item, and sends the response back to the client.
+    
+    :param event: The event data received from the WebSocket, containing the request details.
+    :param context: The context in which the function is executed, providing runtime information.
+    :return: A dictionary containing the HTTP status code and a message indicating the result of the operation.
     """
-    logger.debug('Event: %s', event)
-    logger.info('Inside getassistant function')
+    logger.debug('Event: %s', event)  # Log the incoming event for debugging purposes
+    logger.info('Inside get function')  # Log entry into the function
 
+    # Define HTTP status codes for various outcomes
     STATUS_ERROR = 500
     STATUS_UNPROCESSABLE_ENTITY = 422
     STATUS_NOT_FOUND = 404
     STATUS_FOUND = 200
 
+    # Initialize DynamoDB resource and table
     table_name = os.getenv('TABLE')
     if not table_name:
         logger.error("TABLE environment variable is not set")
@@ -81,27 +88,24 @@ def getassistant(event, context):
             'statusCode': STATUS_ERROR,
             'body': json.dumps('Configuration error')
         }
+    
+    dynamodb = boto3.resource('dynamodb')
+    table = dynamodb.Table(table_name)
 
-    # Use connection pooling for DynamoDB
-    config = Config(
-        max_pool_connections=50,
-        retries={'max_attempts': 3, 'mode': 'adaptive'},
-        connect_timeout=5,
-        read_timeout=30
-    )
-    dynamodb_resource = boto3.resource('dynamodb', config=config)
-    table = dynamodb_resource.Table(table_name)
-
+    # Extract necessary information from the event, such as URL and connection ID
     try:
         event_info = extract_event_info(event)
         url = event_info.get('url')
         connectionId = event_info.get('connectionId')
+        
+        # Validate that we have a connection ID for WebSocket communication
         if not connectionId:
             logger.error("Connection ID not found in event")
             return {
                 'statusCode': STATUS_ERROR,
                 'body': json.dumps('Connection ID not found in event')
             }
+        
         if not url:
             logger.error("WebSocket URL not found in event")
             return {
@@ -116,14 +120,21 @@ def getassistant(event, context):
         }
 
     try:
+        # Parse the body of the WebSocket event
         raw_body = event.get('body')
+        logger.debug(f"Raw body from event: {raw_body}")
+        logger.debug(f"Body type: {type(raw_body)}")
+        
         if raw_body is None:
+            logger.warning("No body found in event")
             body = {}
         elif isinstance(raw_body, str):
             try:
                 body = json.loads(raw_body)
+                logger.debug(f"Parsed body from string: {body}")
             except json.JSONDecodeError as e:
                 logger.error(f"Failed to parse JSON body: {e}")
+                logger.error(f"Raw body that failed to parse: {repr(raw_body)}")
                 response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Invalid JSON format in request body.')
                 send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
                 return {
@@ -132,7 +143,9 @@ def getassistant(event, context):
                 }
         elif isinstance(raw_body, dict):
             body = raw_body
+            logger.debug(f"Body is already a dict: {body}")
         else:
+            logger.error(f"Unexpected body type: {type(raw_body)}")
             response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Invalid body format.')
             send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
             return {
@@ -140,26 +153,41 @@ def getassistant(event, context):
                 'body': json.dumps('Invalid body format.')
             }
 
+        # Extract action and datas from the request body
         action = body.get('action')
         datas = body.get('datas')
+        logger.info(f"Processing action: {action} with datas: {datas}")
+
+        # Ensure datas is a dictionary
         if datas is None:
             datas = {}
-        assistant_id = datas.get('id') if isinstance(datas, dict) else None
-        if not assistant_id:
-            response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'assistantId (id) parameter is required in datas.')
+
+        # Extract the ID from datas
+        id = datas.get('id') if isinstance(datas, dict) else None
+        if not id:
+            # If 'id' is missing, send an error response to the client
+            logger.warning(f"Missing ID parameter in request. Datas: {datas}")
+            response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'ID parameter is required in datas.')
             send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
             return {
                 'statusCode': STATUS_UNPROCESSABLE_ENTITY,
-                'body': json.dumps('assistantId (id) parameter is required in datas.')
+                'body': json.dumps('ID parameter is required in datas.')
             }
 
+        logger.info(f"Extracted ID: {id}")
+        
+        # Get the authenticated user's email from the JWT token
         user_info = get_authenticated_user(event)
         email = get_user_email(event) or "system@example.com"
-        logger.info(f"GetAssistant operation performed by user: {user_info.get('username', '')} ({email})")
+        
+        logger.info(f"Get operation performed by user: {user_info.get('username')} ({email})")
 
-        # Validate request data
+        params = {'id': id}  # Prepare parameters for DynamoDB query
+        logger.info(f"Attempting to retrieve item with ID: {id}")
+
+        # Validate the request data against a predefined schema
         try:
-            validation_schema = validate_request_datas_schema_pydantic(action, datas, logger)
+            validation_schema = validate_request_datas_schema(action, datas)
         except Exception as validation_err:
             logger.error(f"Error during schema validation: {str(validation_err)}")
             response_result = Responses.result_response(STATUS_ERROR, False, 'Schema validation error.')
@@ -168,7 +196,10 @@ def getassistant(event, context):
                 'statusCode': STATUS_ERROR,
                 'body': json.dumps('Schema validation error')
             }
+        
         if not validation_schema['success']:
+            # If validation fails, send an error response to the client
+            logger.warning(f"Validation failed for action: {action}, datas: {datas}. Errors: {validation_schema}")
             response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Validation errors.', validation_schema)
             send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
             return {
@@ -176,34 +207,22 @@ def getassistant(event, context):
                 'body': json.dumps('Validation errors.')
             }
 
-        # Query DynamoDB for items with assistantId using paginated scan and correct FilterExpression
+        # Attempt to retrieve the item from DynamoDB using the provided ID
         try:
-            all_items = []
-            last_evaluated_key = None
-            while True:
-                scan_kwargs = {
-                    'FilterExpression': Attr('assistantId').eq(assistant_id)
-                }
-                if last_evaluated_key:
-                    scan_kwargs['ExclusiveStartKey'] = last_evaluated_key
-                response = table.scan(**scan_kwargs)
-                all_items.extend(response.get('Items', []))
-                last_evaluated_key = response.get('LastEvaluatedKey')
-                if not last_evaluated_key:
-                    break
-            # Filter items by createdBy == email
-            user_items = [item for item in all_items if item.get('createdBy', '').strip() == email.strip()]
-            logger.info(f"Found {len(user_items)} items for assistantId {assistant_id} and user {email}")
-            if user_items:
-                serializable_items = decimal_to_json_serializable(user_items)
-                result = {'items': serializable_items, 'count': len(user_items)}
-                response_result = Responses.result_response(STATUS_FOUND, True, f'Items for assistantId {assistant_id} found.', result)
-                status_code = STATUS_FOUND
+            existing_item = table.get_item(Key=params)
+            item = existing_item.get('Item')  # Extract the item from the response
+            if item is None:
+                # If item is not found, prepare a not found response
+                response_result = Responses.result_response(STATUS_NOT_FOUND, False, f'Item with ID {id} not found.')
+                status_code = STATUS_NOT_FOUND
             else:
-                result = {'items': [], 'count': 0}
-                response_result = Responses.result_response(STATUS_FOUND, True, f'No items found for assistantId {assistant_id}.', result)
+                # Convert Decimal objects to JSON-serializable types before creating response
+                serializable_item = decimal_to_json_serializable(item)
+                # If item is found, prepare a success response with the item data
+                response_result = Responses.result_response(STATUS_FOUND, True, f'Item with ID {id} found.', serializable_item)
                 status_code = STATUS_FOUND
         except ClientError as e:
+            # Log and handle DynamoDB client errors
             logger.error(f"DynamoDB ClientError: {e.response['Error']['Message']}")
             response_result = Responses.result_response(STATUS_ERROR, False, 'Error accessing DynamoDB.')
             status_code = STATUS_ERROR
@@ -212,6 +231,7 @@ def getassistant(event, context):
             response_result = Responses.result_response(STATUS_ERROR, False, 'Database error during operation.')
             status_code = STATUS_ERROR
     except Exception as err:
+        # Log and respond with an error for any unexpected exceptions
         logger.error(f"Unexpected error: {str(err)}", exc_info=True)
         response_result = Responses.result_response(STATUS_ERROR, False, f"Internal server error: {str(err)}")
         send_to_client(connectionId, json.dumps(construct_response(response_result)), url)

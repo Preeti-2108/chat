@@ -136,6 +136,11 @@ class DocumentAnalyzer:
         scores_preview = [f"{doc.get('score', 0):.3f}" for doc in sorted_docs[:5]]
         logger.info(f"Document scores: {', '.join(scores_preview)}")
         
+        # 🔍 DEBUG: Log query complexity assessment
+        logger.info(f"🔍 [DOC SELECTION] Query complexity assessed as: '{query_complexity}'")
+        logger.info(f"🔍 [DOC SELECTION] Available documents: {len(sorted_docs)}")
+        logger.info(f"🔍 [DOC SELECTION] Max context tokens: {self.max_context_tokens}")
+        
         for doc in sorted_docs:
             content = doc.get('content', '').strip()
             doc_score = doc.get('score', 0)
@@ -147,42 +152,74 @@ class DocumentAnalyzer:
             
             doc_tokens = len(content) / 4  # Rough token estimation
             
+            # 🔧 LOWERED THRESHOLDS: More inclusive document selection
+            # Check if this is a Microsoft-related query
+            is_microsoft_query = any(term in user_query.lower() for term in ['microsoft', 'incident', 'support', 'ticket'])
+            
+            # Use lower thresholds for Microsoft queries
+            if is_microsoft_query:
+                threshold_complex = 0.1  # Very low threshold
+                threshold_simple = 0.1
+                threshold_default = 0.1
+                logger.info(f"🔧 [MICROSOFT] Using low thresholds for Microsoft query")
+            else:
+                threshold_complex = 0.25  # Lowered from 0.3
+                threshold_simple = 0.3    # Lowered from 0.5  
+                threshold_default = 0.3   # Lowered from 0.4
+            
             # Decision logic based on query complexity
             if is_complex_query:
                 # For complex queries, prioritize more documents up to token limit
                 if (current_tokens + doc_tokens <= self.max_context_tokens and 
-                    len(selected_docs) < 4 and doc_score > 0.3):
+                    len(selected_docs) < 4 and doc_score > threshold_complex):
                     selected_docs.append(doc)
                     current_tokens += doc_tokens
-                    logger.info(f"Complex query: Added document with score {doc_score:.3f}")
+                    logger.info(f"Complex query: Added document with score {doc_score:.3f} (threshold: {threshold_complex})")
             elif is_simple_query:
                 # For simple queries, use fewer but highest-quality documents
                 if (len(selected_docs) < 1 or 
-                    (len(selected_docs) < 2 and doc_score > 0.5)):
+                    (len(selected_docs) < 2 and doc_score > threshold_simple)):
                     selected_docs.append(doc)
                     current_tokens += doc_tokens
-                    logger.info(f"Simple query: Added high-score document {doc_score:.3f}")
+                    logger.info(f"Simple query: Added document with score {doc_score:.3f} (threshold: {threshold_simple})")
             else:
                 # Default behavior for moderate complexity
-                if len(selected_docs) < 3 and doc_score > 0.4:
+                if len(selected_docs) < 3 and doc_score > threshold_default:
                     selected_docs.append(doc)
                     current_tokens += doc_tokens
-                    logger.info(f"Default: Added document with score {doc_score:.3f}")
+                    logger.info(f"Default: Added document with score {doc_score:.3f} (threshold: {threshold_default})")
             
             # Stop if we've reached reasonable limits
             if current_tokens >= self.max_context_tokens:
                 logger.info(f"Token limit reached. Using {len(selected_docs)} documents.")
                 break
         
-        # If no documents meet the score threshold, take the best one anyway
+        # 🔧 IMPROVED FALLBACK: Be more aggressive about including documents
         if not selected_docs and sorted_docs:
-            best_doc = sorted_docs[0]
-            if best_doc.get('content', '').strip():
-                selected_docs.append(best_doc)
-                logger.info(f"Fallback: Added best document with score {best_doc.get('score', 0):.3f}")
+            # Take top 2 documents as fallback instead of just 1
+            logger.warning(f"⚠️ [DOC SELECTION] No documents met thresholds! Using aggressive fallback...")
+            for i, doc in enumerate(sorted_docs[:2]):
+                if doc.get('content', '').strip():
+                    selected_docs.append(doc)
+                    logger.info(f"🔧 Aggressive fallback: Added document {i+1} with score {doc.get('score', 0):.3f}")
+        
+        # 🔍 SPECIAL CASE: For Microsoft/incident queries, be extra lenient
+        if len(selected_docs) == 0:
+            query_lower = user_query.lower()
+            if any(term in query_lower for term in ['microsoft', 'incident', 'support', 'ticket']):
+                logger.warning(f"🚨 [MICROSOFT QUERY] No documents selected for Microsoft query! Using emergency fallback...")
+                # Take ALL available documents for Microsoft queries
+                for doc in sorted_docs[:3]:
+                    if doc.get('content', '').strip():
+                        selected_docs.append(doc)
+                        logger.info(f"🚨 Emergency: Added Microsoft doc with score {doc.get('score', 0):.3f}")
         
         scores_list = [f"{doc.get('score', 0):.3f}" for doc in selected_docs]
-        logger.info(f"Selected {len(selected_docs)} documents for query. Scores: {scores_list}")
+        logger.info(f"✅ [DOC SELECTION] Final selection: {len(selected_docs)} documents. Scores: {scores_list}")
+        
+        if len(selected_docs) == 0:
+            logger.error(f"❌ [DOC SELECTION] CRITICAL: No documents selected despite {len(sorted_docs)} available!")
+        
         return selected_docs
     
     def build_sources_text(self, selected_docs: List[Dict]) -> str:
@@ -340,6 +377,22 @@ def build_context_aware_prompt(system_instructions: str,
         logger.info(f"Context content length: {len(context)} characters")
         logger.info(f"First 200 chars of context: {context[:200]}...")
         
+        # 🔍 DETAILED DEBUG: Log document scores and content preview
+        for i, doc in enumerate(selected_docs[:3]):  # Log first 3 docs
+            score = doc.get('score', 0)
+            content_preview = doc.get('content', '')[:300]
+            metadata = doc.get('metadata', {})
+            title = metadata.get('title', 'No title')
+            logger.info(f"📄 [DEBUG] Doc {i+1}: Score={score:.4f}, Title='{title}'")
+            logger.info(f"📄 [DEBUG] Doc {i+1} Content: '{content_preview}...'")
+            
+            # Check for Microsoft/incident keywords
+            content_lower = content_preview.lower()
+            microsoft_words = ['microsoft', 'incident', 'support', 'ticket', 'procédure', 'ouvrir']
+            found_keywords = [word for word in microsoft_words if word in content_lower]
+            logger.info(f"📄 [DEBUG] Doc {i+1} Keywords found: {found_keywords}")
+            logger.info(f"📄 [DEBUG] ---")
+        
         # Check if we have meaningful content
         if context.strip() and len(context.strip()) > 10:
             # Build sources text but let AI decide whether to include it
@@ -354,12 +407,36 @@ User Question: {user_query}
 
 Please provide a well-formatted answer based on the context above following the guidelines specified. Reference the source numbers when citing information.
 
-INSTRUCTIONS FOR SOURCES:
-- If you can answer the question using the provided context, include the sources section at the end of your response.
-- If the context is completely unrelated to the question (e.g., asking about "AI agents" but context is about "antivirus software"), respond with "I'm sorry, I don't have information about this in my knowledge base." and exclude sources.
+INSTRUCTIONS FOR CROSS-LANGUAGE CONTEXT:
+- The context may be in different languages (French, English, etc.) but still be relevant to your question
+- Look for semantic relationships: "incident" = "incident", "Microsoft support" = "Support Microsoft", "procedure" = "procédure"  
+- If the context contains information about the same topic/concept in any language, use it to provide a helpful answer
+- Only respond with "I'm sorry, I don't have information about this in my knowledge base." if the context is about completely different topics (e.g., asking about "cooking recipes" but context is about "software development")
+- When documents are in a different language, acknowledge this and provide the information: "Based on the available documentation (which includes French language procedures), here's how to..."
 
 Sources to include when answering:
 {sources_text}"""
+
+            # 🔍 CRITICAL DEBUG: Log the exact prompt being sent to AI
+            logger.info(f"🤖 [PROMPT DEBUG] === FULL PROMPT SENT TO AI MODEL ===")
+            logger.info(f"🤖 [PROMPT DEBUG] User Query: '{user_query}'")
+            logger.info(f"🤖 [PROMPT DEBUG] Context Length: {len(context)} chars")
+            logger.info(f"🤖 [PROMPT DEBUG] System Instructions Length: {len(system_instructions)} chars")
+            logger.info(f"🤖 [PROMPT DEBUG] Selected Docs Count: {len(selected_docs)}")
+            logger.info(f"🤖 [PROMPT DEBUG] === PROMPT PREVIEW (first 500 chars) ===")
+            logger.info(f"🤖 [PROMPT DEBUG] {prompt[:500]}...")
+            logger.info(f"🤖 [PROMPT DEBUG] === END PROMPT DEBUG ===")
+            
+            # Log specific keywords in the full prompt
+            prompt_lower = prompt.lower()
+            key_terms = ['microsoft', 'incident', 'support', 'ouvrir', 'procédure', 'ticket']
+            found_terms = [term for term in key_terms if term in prompt_lower]
+            logger.info(f"🔍 [PROMPT KEYWORDS] Found in prompt: {found_terms}")
+            
+            if 'microsoft' in prompt_lower and ('incident' in prompt_lower or 'support' in prompt_lower):
+                logger.info(f"✅ [PROMPT VALIDATION] Microsoft + incident/support keywords found - should work!")
+            else:
+                logger.warning(f"⚠️ [PROMPT VALIDATION] Microsoft incident keywords NOT found in prompt - this may cause issues!")
         else:
             # No meaningful content found in documents
             logger.warning("Documents retrieved but no meaningful content found")

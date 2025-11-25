@@ -13,8 +13,8 @@
  *       contentType: application/json
  *       payload:
  *         $ref: '#/components/schemas/CHATINTERNAL'
- *     chatGetResponse:
- *       messageId: chatGetResponse
+ *     chatGetAssistantResponse:
+ *       messageId: chatGetAssistantResponse
  *       contentType: application/json
  *       payload:
  *         $ref: '#/components/schemas/CHATINTERNAL'

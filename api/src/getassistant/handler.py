@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))
 
 @authenticate_websocket()
+# @require_resource_permission('CHATKBBEDROCKCDKWEBSOCKET', 'READ')
 def getassistant(event, context):
     """
     Retrieves chat items from DynamoDB by assistantId, filtered by authenticated user.

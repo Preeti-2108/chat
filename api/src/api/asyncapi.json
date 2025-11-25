@@ -110,13 +110,6 @@
             }
           }
         }
-      },
-      "subscribe": {
-        "operationId": "chatGetAssistantResponse",
-        "summary": "Receive response for the retrieved chat.",
-        "message": {
-          "$ref": "#/components/messages/chatGetAssistantResponse"
-        }
       }
     },
     "create": {
@@ -246,13 +239,6 @@
       },
       "chatGetResponse": {
         "messageId": "chatGetResponse",
-        "contentType": "application/json",
-        "payload": {
-          "$ref": "#/components/schemas/CHATINTERNAL"
-        }
-      },
-      "chatGetAssistantResponse": {
-        "messageId": "chatGetAssistantResponse",
         "contentType": "application/json",
         "payload": {
           "$ref": "#/components/schemas/CHATINTERNAL"

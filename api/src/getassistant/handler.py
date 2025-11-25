@@ -18,13 +18,13 @@ from src.helpers.scope_manager import require_resource_permission  # Scope valid
 /**
  * @asyncapi
  * channels:
- *   chatGetAssistantResponse:
- *     description: Channel for retrieving a specific template by ID.
+ *   chatGetAssistant:
+ *     description: Channel for retrieving a specific chat by assistant ID.
  *     publish:
- *       operationId: chatGetAssistantResponse
- *       summary: Get a specific template.
+ *       operationId: chatGetAssistant
+ *       summary: Get a specific chat by assistant ID.
  *       message:
- *         messageId: chatGetAssistantResponse
+ *         messageId: chatGetAssistant
  *         contentType: application/json
  *         payload:
  *           type: object
@@ -35,7 +35,7 @@ from src.helpers.scope_manager import require_resource_permission  # Scope valid
  *             action:
  *               type: string
  *               description: The action to perform.
- *               example: get
+ *               example: getassistant
  *             datas:
  *               type: object
  *               required:
@@ -43,11 +43,11 @@ from src.helpers.scope_manager import require_resource_permission  # Scope valid
  *               properties:
  *                 id:
  *                   type: string
- *                   description: The unique identifier of the template to retrieve.
- *                   example: 123e4567-e89b-12d3-a456-426614174000
+ *                   description: The unique identifier of the chat to retrieve.
+ *                   example: 184cf8da-b821-4ff4-bd6c-cdafa166e2e0
  *     subscribe:
  *       operationId: chatGetAssistantResponse
- *       summary: Receive response for the retrieved template.
+ *       summary: Receive response for the retrieved chat.
  *       message:
  *         $ref: '#/components/messages/chatGetAssistantResponse'
  */

@@ -87,7 +87,7 @@ class LambdasStack(Stack):
             "delete": "src.delete.handler.delete",
             "get": "src.get.handler.get",
             "list": "src.list.handler.list",
-            "getassistant": "src.get.handler.getassistant",
+            "getassistant": "src.get.handler.getassistant"
         }
 
         lambdas = {}
@@ -224,6 +224,14 @@ class LambdasStack(Stack):
             route_key="get",
             integration=integrations_alpha.WebSocketLambdaIntegration(
                 "GetIntegration", lambdas["get"]
+            )
+        )
+        apigwv2_alpha.WebSocketRoute(
+            self, "GetAssistantRoute",
+            web_socket_api=ws_api,
+            route_key="getassistant",
+            integration=integrations_alpha.WebSocketLambdaIntegration(
+                "GetAssistantIntegration", lambdas["getassistant"]
             )
         )
         apigwv2_alpha.WebSocketRoute(

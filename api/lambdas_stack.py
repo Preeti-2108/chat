@@ -87,6 +87,7 @@ class LambdasStack(Stack):
             "delete": "src.delete.handler.delete",
             "get": "src.get.handler.get",
             "list": "src.list.handler.list",
+            "getassistant": "src.get.handler.getassistant",
         }
 
         lambdas = {}

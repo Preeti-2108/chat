@@ -70,7 +70,7 @@
         "operationId": "getResponse",
         "summary": "Receive response for the retrieved template.",
         "message": {
-          "$ref": "#/components/messages/chatGetResponse"
+          "$ref": "#/components/messages/chatGetAssistantResponse"
         }
       }
     },
@@ -215,8 +215,8 @@
           "$ref": "#/components/schemas/CHATINTERNAL"
         }
       },
-      "chatGetResponse": {
-        "messageId": "chatGetResponse",
+      "chatGetAssistantResponse": {
+        "messageId": "chatGetAssistantResponse",
         "contentType": "application/json",
         "payload": {
           "$ref": "#/components/schemas/CHATINTERNAL"

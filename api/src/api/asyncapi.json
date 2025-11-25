@@ -197,6 +197,61 @@
           "$ref": "#/components/messages/chatUpdateResponse"
         }
       }
+    },
+    "chatGetAssistantResponse": {
+      "description": "Channel for retrieving chat assistant response by conversation or message ID.",
+      "publish": {
+        "operationId": "chatGetAssistantResponse",
+        "summary": "Get chat assistant response.",
+        "message": {
+          "messageId": "chatGetAssistantResponse",
+          "contentType": "application/json",
+          "payload": {
+            "type": "object",
+            "required": [
+              "action",
+              "datas"
+            ],
+            "properties": {
+              "action": {
+                "type": "string",
+                "description": "The action to perform.",
+                "example": "chatGetAssistantResponse"
+              },
+              "datas": {
+                "type": "object",
+                "required": [
+                  "assistantId"
+                ],
+                "properties": {
+                  "assistantId": {
+                    "type": "string",
+                    "description": "The ID of the chat assistant.",
+                    "example": "184CF8DA-B821-4FF4-BD6C-CDAFA166E2E0"
+                  },
+                  "conversationId": {
+                    "type": "string",
+                    "description": "Optional: The ID of the conversation to retrieve.",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                  },
+                  "messageId": {
+                    "type": "string",
+                    "description": "Optional: Specific message ID to retrieve.",
+                    "example": "msg-123e4567-e89b-12d3-a456-426614174000"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "subscribe": {
+        "operationId": "chatGetAssistantResponseResult",
+        "summary": "Receive the chat assistant response data.",
+        "message": {
+          "$ref": "#/components/messages/chatGetAssistantResponse"
+        }
+      }
     }
   },
   "components": {
@@ -216,7 +271,7 @@
         }
       },
       "chatGetResponse": {
-        "messageId": "chatGetResponse",
+        "messageId": "getResponse",
         "contentType": "application/json",
         "payload": {
           "$ref": "#/components/schemas/CHATINTERNAL"

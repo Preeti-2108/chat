@@ -872,7 +872,7 @@ def start_chat(event, context):
                 if workflow_result.get('success', False):
                     # Use helper to build success case data structure
                     validation_schema['datas'] = conversation_builder.build_success_case_data(
-                        workflow_result, user_query, user_email
+                        workflow_result, user_query, user_email, llm=bedrock_workflow.chat_model
                     )
                     logger.info("✅ [POST HANDLER] LangGraph workflow completed successfully")
                     # Check if streaming was actually used

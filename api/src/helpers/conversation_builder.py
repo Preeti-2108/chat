@@ -43,7 +43,8 @@ class ConversationDataBuilder:
                                    model_used: str = 'AZURE_OPENAI_GPT_4O',
                                    context_used: bool = False,
                                    sources_count: int = 0,
-                                   sources_info: List = None) -> Dict[str, Any]:
+                                   sources_info: List = None,
+                                   llm=None) -> Dict[str, Any]:
         """
         Build the validation_schema['datas'] structure used throughout the application.
         
@@ -85,7 +86,7 @@ class ConversationDataBuilder:
         
         return data_structure
     
-    def build_success_case_data(self, workflow_result: Dict[str, Any], user_query: str, user_email: str) -> Dict[str, Any]:
+    def build_success_case_data(self, workflow_result: Dict[str, Any], user_query: str, user_email: str, llm=None) -> Dict[str, Any]:
         """Build data structure for successful workflow execution."""
         return self.build_validation_schema_data(
             user_query=user_query,
@@ -95,7 +96,8 @@ class ConversationDataBuilder:
             model_used=workflow_result.get('model_used', 'AZURE_OPENAI_GPT_4O'),
             context_used=workflow_result.get('context_used', False),
             sources_count=workflow_result.get('sources_count', 0),
-            sources_info=workflow_result.get('sources_info', [])
+            sources_info=workflow_result.get('sources_info', []),
+            llm=llm
         )
     
     def build_failure_case_data(self, user_query: str, conversation_id: str, user_email: str) -> Dict[str, Any]:

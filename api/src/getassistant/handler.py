@@ -3,6 +3,7 @@ import os  # Import OS module for interacting with the operating system
 import boto3  # Import Boto3, the AWS SDK for Python, to interact with AWS services
 import logging  # Import logging module to log messages
 from botocore.exceptions import ClientError  # Import specific exceptions from BotoCore
+from boto3.dynamodb.conditions import Attr
 
 # Import custom helper modules for API responses, response construction, schema validation, WebSocket communication, and event information extraction
 from src.helpers.api_responses import Responses
@@ -85,80 +86,73 @@ def getassistant(event, context):
         logger.error("TABLE environment variable is not set")
         response_result = Responses.result_response(STATUS_ERROR, False, 'Configuration error: TABLE environment variable not set.')
         return {
-            'statusCode': STATUS_ERROR,
-            'body': json.dumps('Configuration error')
-        }
-    
-    dynamodb = boto3.resource('dynamodb')
-    table = dynamodb.Table(table_name)
 
-    # Extract necessary information from the event, such as URL and connection ID
-    try:
-        event_info = extract_event_info(event)
-        url = event_info.get('url')
-        connectionId = event_info.get('connectionId')
-        
-        # Validate that we have a connection ID for WebSocket communication
-        if not connectionId:
-            logger.error("Connection ID not found in event")
-            return {
-                'statusCode': STATUS_ERROR,
-                'body': json.dumps('Connection ID not found in event')
-            }
-        
-        if not url:
-            logger.error("WebSocket URL not found in event")
-            return {
-                'statusCode': STATUS_ERROR,
-                'body': json.dumps({'error': 'WebSocket URL not found in event'})
-            }
-    except Exception as event_err:
-        logger.error(f"Error extracting event info: {str(event_err)}")
-        return {
-            'statusCode': STATUS_ERROR,
-            'body': json.dumps('Error processing event')
-        }
-
-    try:
-        # Parse the body of the WebSocket event
-        raw_body = event.get('body')
-        logger.debug(f"Raw body from event: {raw_body}")
-        logger.debug(f"Body type: {type(raw_body)}")
-        
-        if raw_body is None:
-            logger.warning("No body found in event")
-            body = {}
-        elif isinstance(raw_body, str):
+            from boto3.dynamodb.conditions import Attr
             try:
-                body = json.loads(raw_body)
-                logger.debug(f"Parsed body from string: {body}")
-            except json.JSONDecodeError as e:
-                logger.error(f"Failed to parse JSON body: {e}")
-                logger.error(f"Raw body that failed to parse: {repr(raw_body)}")
-                response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Invalid JSON format in request body.')
-                send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
-                return {
-                    'statusCode': STATUS_UNPROCESSABLE_ENTITY,
-                    'body': json.dumps('Invalid JSON format in request body.')
-                }
-        elif isinstance(raw_body, dict):
-            body = raw_body
-            logger.debug(f"Body is already a dict: {body}")
-        else:
-            logger.error(f"Unexpected body type: {type(raw_body)}")
-            response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Invalid body format.')
-            send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
-            return {
-                'statusCode': STATUS_UNPROCESSABLE_ENTITY,
-                'body': json.dumps('Invalid body format.')
-            }
+                id = validation_schema['datas'].get('id')
+                logger.info("assistant id: %s", id)
 
-        # Extract action and datas from the request body
-        action = body.get('action')
-        datas = body.get('datas')
-        logger.info(f"Processing action: {action} with datas: {datas}")
+                # Paginated scan for items with assistantId
+                all_items = []
+                last_evaluated_key = None
+                while True:
+                    scan_kwargs = {
+                        'FilterExpression': Attr('assistantId').eq(id)
+                    }
+                    if last_evaluated_key:
+                        scan_kwargs['ExclusiveStartKey'] = last_evaluated_key
+                    response = table.scan(**scan_kwargs)
+                    all_items.extend(response.get('Items', []))
+                    last_evaluated_key = response.get('LastEvaluatedKey')
+                    if not last_evaluated_key:
+                        break
+                logger.info(f"Paginated scan response: Found {len(all_items)} items with assistantId {id}")
 
-        # Ensure datas is a dictionary
+                # If no items at all
+                if not all_items:
+                    response_result = Responses.result_response(404, False, f'Assistant with ID {id} not found.')
+                    logger.info("response: %s", response_result)
+                    send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+                    return {
+                        'statusCode': 404,
+                        'body': json.dumps(construct_response(response_result))
+                    }
+
+                # Filter items owned by the current user
+                email_clean = email.strip()
+                user_items = [item for item in all_items if item.get("createdBy", "").strip() == email_clean]
+                logger.info(f"Items after createdBy filter: {len(user_items)}")
+
+                if user_items:
+                    formatted_items = []
+                    for item in user_items:
+                        conversation = {
+                            "conversationId": item.get("conversationId"),
+                            "title": item.get("title", ""),
+                            "createdAt": item.get("createdAt", ""),
+                            "updatedAt": item.get("updatedAt", ""),
+                            "assistantId": item.get("assistantId", ""),
+                            "status": item.get("status", "active")
+                        }
+                        formatted_items.append(conversation)
+                    formatted_items.sort(key=lambda x: x["createdAt"], reverse=True)
+                    serializable_items = decimal_to_json_serializable(formatted_items)
+                    formatted_result = {"item": serializable_items, "count": len(user_items)}
+                    response_result = Responses.result_response(200, True, f'Item with ID {id} found.', formatted_result)
+                    send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+                    return {
+                        'statusCode': 200,
+                        'body': json.dumps(construct_response(response_result))
+                    }
+                else:
+                    empty_result = {"item": [], "count": 0}
+                    response_result = Responses.result_response(200, True, f'No items found for assistant ID {id}.', empty_result)
+                    logger.info("Items found but none owned by user, returning empty response: %s", response_result)
+                    send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+                    return {
+                        'statusCode': 200,
+                        'body': json.dumps(construct_response(response_result))
+                    }
         if datas is None:
             datas = {}
 

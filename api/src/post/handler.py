@@ -880,6 +880,13 @@ def start_chat(event, context):
                     if streaming_used:
                         logger.info("📡 [POST HANDLER] Streaming response already sent during workflow execution")
                         logger.info("🔄 [POST HANDLER] Skipping duplicate WebSocket response to maintain streaming integrity")
+                        # Schedule async LLM title update using clean helper
+                        from src.helpers.title_update_service import schedule_title_update
+                        schedule_title_update(
+                            workflow_result.get('conversation_id', conversation_id),
+                            user_query,
+                            bedrock_workflow.chat_model
+                        )
                     else:
                         logger.warning("⚠️ [POST HANDLER] Streaming may have failed - sending fallback WebSocket response")
                         # Send fallback WebSocket response if streaming didn't work

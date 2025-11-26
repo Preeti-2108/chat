@@ -8,7 +8,7 @@ from botocore.config import Config  # Import Config to customize Boto3 client co
 # Import custom helper modules for API responses, response construction, schema validation, WebSocket communication, and event information extraction
 from src.helpers.api_responses import Responses
 from src.helpers.construct_response import construct_response
-from src.helpers.schema_validation import validate_request_datas_schema
+from src.helpers.schema_validation import validate_request_datas_schema_pydantic
 from src.handler_websocket.handler import send_to_client
 from src.helpers.event_utils import extract_event_info
 from src.helpers.decimal_converter import convert_decimal_to_json_serializable as decimal_to_json_serializable  # Custom helper to convert Decimal objects
@@ -179,7 +179,7 @@ def get(event, context):
         }
 
     try:
-        validation_schema = validate_request_datas_schema(action, datas, logger)
+        validation_schema = validate_request_datas_schema_pydantic(action, datas, logger)
         if not validation_schema['success']:
             response_result = Responses.result_response(422, False, 'Validation errors.', validation_schema)
             logger.debug('Validation failed: %s', validation_schema)

@@ -187,7 +187,7 @@ def getassistant(event, context):
 
         # Validate the request data against a predefined schema
         try:
-            validation_schema = validate_request_datas_schema_pydantic(action, datas)
+            validation_schema = validate_request_datas_schema_pydantic(action, datas, logger)
         except Exception as validation_err:
             logger.error(f"Error during schema validation: {str(validation_err)}")
             response_result = Responses.result_response(STATUS_ERROR, False, 'Schema validation error.')

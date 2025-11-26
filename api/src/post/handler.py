@@ -387,13 +387,13 @@ class BedrockKnowledgeBaseWorkflow:
                 
                 # Get environment and vector_db parameters
                 env = os.getenv('ENV', 'dev')  # Default to 'dev' if not set
-                vector_db = "872051E8-E5C8-4AD1-83A8-ADB347D6C2CC"  # Use KB ID as fallback
-                
+                # vector_db = "872051E8-E5C8-4AD1-83A8-ADB347D6C2CC"  # Use KB ID as fallback
+                logger.info(f"🔍 Using vector DB from state: {state.get('vector_db')}")
                 # Use helper to get retrieval configuration
-                retrieval_config = document_analyzer.get_retrieval_config(retrieval_query, env, vector_db)
+                retrieval_config = document_analyzer.get_retrieval_config(retrieval_query, env, state.get('vector_db'))
                 
-                logger.info(f"🔍 Using filters - Environment: {env}, Vector DB: {vector_db}")
-                logger.info(f"🔍 S3 path filter: s3://docops-kb-{env}/{vector_db}/")
+                logger.info(f"🔍 Using filters - Environment: {env}, Vector DB: {state.get('vector_db')}")
+                logger.info(f"🔍 S3 path filter: s3://docops-kb-{env}/{state.get('vector_db')}/")
                 
                 response = self.bedrock_agent_client.retrieve(
                     knowledgeBaseId=KNOWLEDGE_BASE_ID,
@@ -851,10 +851,6 @@ def start_chat(event, context):
         # Process chat query using LangGraph workflow with Bedrock Knowledge Base
         user_query = validation_schema['datas'].get('query', '')
         assistant_id = validation_schema['datas'].get('assistantId')
-        logger.info(f"Assistant ID: '{assistant_id}'")
-        logger.info(f"Assistant Product Key: '{ASSISTANT_PRODUCT_KEY}'")
-        logger.info(f"Assistant Endpoint: '{ASSISTANT_ENDPOINT}'")
-        logger.info(f"access_token: '{access_token[:10]}...'")
         if assistant_id:
             fetched_db = fetch_vector_db(BASE_URL, ASSISTANT_ENDPOINT, ASSISTANT_PRODUCT_KEY, assistant_id, access_token)
             logger.info(f"Fetched vector DB for assistant '{assistant_id}': {fetched_db}")

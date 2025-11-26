@@ -59,8 +59,8 @@ class ConversationDataBuilder:
         # Create conversation data entry
         conversation_data = self.create_conversation_data(user_query, ai_response, conversation_id)
         
-        # Generate title from query
-        title = self._generate_title_from_query(user_query)
+            # Generate title from query using LLM if provided
+        title = self._generate_title_from_query(user_query, llm=llm)
         
         # Build the complete data structure
         data_structure = {
@@ -173,16 +173,34 @@ class ConversationDataBuilder:
             "status": status_code
         }
     
-    def _generate_title_from_query(self, user_query: str) -> str:
-        """Generate a title from the user query with appropriate truncation."""
+    # def _generate_title_from_query(self, user_query: str) -> str:
+    #     """Generate a title from the user query with appropriate truncation."""
+    #     if not user_query:
+    #         return "Empty Chat"
+        
+    #     if len(user_query) > 50:
+    #         return f"Chat - {user_query[:50]}..."
+    #     else:
+    #         return f"Chat - {user_query}"
+    
+    def _generate_title_from_query(self, user_query: str, llm=None) -> str:
+        """Generate a title from the user query, using LLM if provided."""
         if not user_query:
             return "Empty Chat"
-        
+        if llm:
+            try:
+                response = llm.invoke([{"role": "user", "content": f"Generate a concise chat title for: {user_query}"}])
+                title = response.content if hasattr(response, 'content') else str(response)
+                if not title:
+                    title = f"Chat - {user_query[:50]}..." if len(user_query) > 50 else f"Chat - {user_query}"
+                return title
+            except Exception as e:
+                logger.error(f"LLM title generation failed: {e}")
+                return f"Chat - {user_query[:50]}..." if len(user_query) > 50 else f"Chat - {user_query}"
         if len(user_query) > 50:
-            return f"Chat - {user_query[:50]}..."
+            return f"{user_query[:50]}..."
         else:
-            return f"Chat - {user_query}"
-    
+            return f"{user_query}"
     def construct_new_dynamodb_item(self, datas: Dict[str, Any]) -> Dict[str, Any]:
         """
         Construct a new DynamoDB item with the proper structure.
@@ -197,7 +215,7 @@ class ConversationDataBuilder:
         # No separate 'id' field needed - conversationId serves as the primary key
         item = {
             "conversationId": str(datas.get('conversationId', '')),
-            "assistantId": datas.get('assistantId', self.default_assistant_id),
+            "assistantId": datas.get('assistantId', ''),
             "title": datas.get('title', ''),
             "createdBy": datas.get('createdBy', ''),
             "updatedBy": datas.get('updatedBy', ''),

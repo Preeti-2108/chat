@@ -387,7 +387,6 @@ class BedrockKnowledgeBaseWorkflow:
                 
                 # Get environment and vector_db parameters
                 env = os.getenv('ENV', 'dev')  # Default to 'dev' if not set
-                # vector_db = "872051E8-E5C8-4AD1-83A8-ADB347D6C2CC"  # Use KB ID as fallback
                 logger.info(f"🔍 Using vector DB from state: {state.get('vector_db')}")
                 # Use helper to get retrieval configuration
                 retrieval_config = document_analyzer.get_retrieval_config(retrieval_query, env, state.get('vector_db'))
@@ -641,7 +640,7 @@ class BedrockKnowledgeBaseWorkflow:
                 "messages": existing_messages,  # Include existing conversation history
                 "ai_response": "",
                 "has_context": False,
-                "vector_db": vector_db or KNOWLEDGE_BASE_ID,
+                "vector_db": vector_db,
                 "websocket_connection": websocket_connection or {},
                 "is_simple_query": False,
                 "skip_rag": False,
@@ -1012,7 +1011,7 @@ def construct_new_item(datas):
     item = {
         "id": str(uuid.uuid4()),  # Generate a unique ID for the new item
         "conversationId": str(datas.get('conversationId', '')),
-        "assistantId": '268f80b4-61f4-470e-bd8d-e6091e09a3cb',
+        "assistantId": datas.get('assistantId', ''),
         "title": datas.get('title', ''),
         "createdBy": datas.get('createdBy', ''),
         "updatedBy": datas.get('updatedBy', ''),

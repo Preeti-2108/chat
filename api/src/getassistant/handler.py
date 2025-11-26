@@ -4,6 +4,7 @@ import boto3  # Import Boto3, the AWS SDK for Python, to interact with AWS servi
 import logging  # Import logging module to log messages
 from botocore.exceptions import ClientError  # Import specific exceptions from BotoCore
 from boto3.dynamodb.conditions import Attr
+from botocore.config import Config
 
 # Import custom helper modules for API responses, response construction, schema validation, WebSocket communication, and event information extraction
 from src.helpers.api_responses import Responses
@@ -58,6 +59,18 @@ from src.helpers.scope_manager import require_resource_permission  # Scope valid
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))  # Set the log level based on environment variable or default to 'INFO'
 
+
+config = Config(
+    max_pool_connections=50,
+    retries={'max_attempts': 3, 'mode': 'adaptive'},
+    connect_timeout=5,
+    read_timeout=30
+)
+
+# Initialize clients with connection pooling
+dynamodb_resource = boto3.resource('dynamodb', config=config)
+apigateway_client = boto3.client('apigatewaymanagementapi', config=config)
+
 @authenticate_websocket()  # Require authentication for this handler
 # @require_resource_permission('PYTHONTEMPLATECDKWEBSOCKET', 'READ')  # Require READ permission for this resource
 def getassistant(event, context):
@@ -71,93 +84,125 @@ def getassistant(event, context):
     :param context: The context in which the function is executed, providing runtime information.
     :return: A dictionary containing the HTTP status code and a message indicating the result of the operation.
     """
-    logger.debug('Event: %s', event)  # Log the incoming event for debugging purposes
-    logger.info('Inside get function')  # Log entry into the function
+    logger.debug('Event: %s', event)  
+    logger.info('Inside getassistant function')  
 
-    # Define HTTP status codes for various outcomes
-    STATUS_ERROR = 500
-    STATUS_UNPROCESSABLE_ENTITY = 422
-    STATUS_NOT_FOUND = 404
-    STATUS_FOUND = 200
-
-    # Initialize DynamoDB resource and table
     table_name = os.getenv('TABLE')
     if not table_name:
         logger.error("TABLE environment variable is not set")
-        response_result = Responses.result_response(STATUS_ERROR, False, 'Configuration error: TABLE environment variable not set.')
+        response_result = Responses.result_response(500, False, 'Configuration error: TABLE environment variable not set.')
         return {
-            'statusCode': STATUS_ERROR,
-            'body': json.dumps(construct_response(response_result))
+            'statusCode': 500,
+            'body': json.dumps('Configuration error')
         }
 
-    # Extract connectionId and url early for error handling
-    connectionId, url = None, None
-    try:
-        connectionId, url = extract_event_info(event)
-    except Exception:
-        pass
+    table = dynamodb_resource.Table(table_name)
+    logger.info("DynamoDB Table initialized: %s", table_name)
 
     try:
-        # Extract action and datas from event
-        action = event.get('action')
-        datas = event.get('datas')
-        logger.info(f"Action: {action}, Datas: {datas}")
-        if datas is None:
-            datas = {}
+        event_info = extract_event_info(event)
 
-        # Extract the ID from datas
-        id = datas.get('id') if isinstance(datas, dict) else None
-        if not id:
-            logger.warning(f"Missing ID parameter in request. Datas: {datas}")
-            response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'ID parameter is required in datas.')
-            if connectionId and url:
-                send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+        url = event_info.get("url")
+        connectionId = event_info.get("connectionId")
+        if not connectionId:
+            logger.error("No connection ID found in event. Connection ID is required")
             return {
-                'statusCode': STATUS_UNPROCESSABLE_ENTITY,
-                'body': json.dumps('ID parameter is required in datas.')
+                'statusCode': 400,
+                'body': json.dumps('Missing !!! Connection ID is required')
             }
+    except Exception as event_err:
+        logger.error(f"Error extracting event info: {str(event_err)}")
+        return {
+            'statusCode': 400,
+            'body': json.dumps('Error processing event')
+        }
 
-        logger.info(f"Extracted ID: {id}")
-        user_info = get_authenticated_user(event)
-        email = get_user_email(event) or "system@example.com"
-        logger.info(f"Get operation performed by user: {user_info.get('username')} ({email})")
+    user_info = event.get('auth', {}).get('user_info', {})
+    if not user_info or user_info is None:
+        logger.error("No user info found in event.")
+        response_result = Responses.result_response(401, False, message="Unauthorized: No user info found")
+        send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+        return {
+            'statusCode': 401,
+            'body': json.dumps('Unauthorized: No user info found')
+        }
+    else:
+        email = user_info.get('email', 'unknown@example.com')
+        username = user_info.get('username', 'unknown')
+        user_id = user_info.get('user_id', 'unknown')
 
-        # Validate the request data against a predefined schema
-        try:
-            validation_schema = validate_request_datas_schema_pydantic(action, datas, logger)
-        except Exception as validation_err:
-            logger.error(f"Error during schema validation: {str(validation_err)}")
-            response_result = Responses.result_response(STATUS_ERROR, False, 'Schema validation error.')
-            if connectionId and url:
-                send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+    logger.info(f"Retrieving item for authenticated user: {email} (ID: {user_id})")
+
+    try:
+        body = json.loads(event.get("body", "{}"))
+        if body is None:
+            logger.error("Request body is None")
+            response_result = Responses.result_response(400, False, message="Request body cannot be empty")
+            send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
             return {
-                'statusCode': STATUS_ERROR,
-                'body': json.dumps('Schema validation error')
+                'statusCode': 400,
+                'body': json.dumps("Request body cannot be empty")
             }
+        else:
+            action = body.get("action")
+            datas = body.get("datas", {})
+            if not action:
+                logger.error("No action found in request body.")
+                response_result = Responses.result_response(400, False, message="Missing action")
+                send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+                return {
+                    'statusCode': 400,
+                    'body': json.dumps("Missing action")
+                }
+            if not datas and datas is None:
+                logger.error("No datas found in request body.")
+                response_result = Responses.result_response(400, False, message="Missing datas")
+                send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+                return {
+                    'statusCode': 400,
+                    'body': json.dumps("Missing datas")
+                }
+    except json.JSONDecodeError as e:
+        logger.error(f"Error parsing JSON body: {str(e)}")
+        response_result = Responses.result_response(400, False, message="Invalid JSON payload")
+        send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+        return {
+            'statusCode': response_result['status_code'],
+            'body': response_result['body']
+        }
 
+    try:
+        validation_schema = validate_request_datas_schema_pydantic(action, datas, logger)
         if not validation_schema['success']:
-            logger.warning(f"Validation failed for action: {action}, datas: {datas}. Errors: {validation_schema}")
-            response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Validation errors.', validation_schema)
-            if connectionId and url:
-                send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+            response_result = Responses.result_response(422, False, 'Validation errors.', validation_schema)
+            logger.debug('Validation failed: %s', validation_schema)
+            send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
             return {
-                'statusCode': STATUS_UNPROCESSABLE_ENTITY,
-                'body': json.dumps('Validation errors.')
+                'statusCode': 422,
+                'body': json.dumps('Validation failed')
             }
+    except Exception as validation_err:
+        logger.error(f"Error during schema validation: {str(validation_err)}")
+        response_result = Responses.result_response(500, False, 'Schema validation error.')
+        send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+        return {
+            'statusCode': 500,
+            'body': json.dumps('Schema validation error')
+        }
 
-        # Initialize DynamoDB resource and table
-        dynamodb = boto3.resource('dynamodb')
-        table = dynamodb.Table(table_name)
+    try:
+        id = validation_schema['datas'].get('id')
+        logger.info("assistant id: %s", id)
 
-        # Paginated scan for items with assistantId
         all_items = []
         last_evaluated_key = None
         while True:
             scan_kwargs = {
-                'FilterExpression': Attr('assistantId').eq(id)
+                "FilterExpression": "assistantId = :assistant_id",
+                "ExpressionAttributeValues": {":assistant_id": id}
             }
             if last_evaluated_key:
-                scan_kwargs['ExclusiveStartKey'] = last_evaluated_key
+                scan_kwargs["ExclusiveStartKey"] = last_evaluated_key
             response = table.scan(**scan_kwargs)
             all_items.extend(response.get('Items', []))
             last_evaluated_key = response.get('LastEvaluatedKey')
@@ -165,62 +210,68 @@ def getassistant(event, context):
                 break
         logger.info(f"Paginated scan response: Found {len(all_items)} items with assistantId {id}")
 
-        # If no items at all
-        if not all_items:
-            response_result = Responses.result_response(STATUS_NOT_FOUND, False, f'Assistant with ID {id} not found.')
-            logger.info("response: %s", response_result)
-            if connectionId and url:
-                send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
-            return {
-                'statusCode': STATUS_NOT_FOUND,
-                'body': json.dumps(construct_response(response_result))
-            }
-
-        # Filter items owned by the current user
-        email_clean = email.strip()
-        user_items = [item for item in all_items if item.get("createdBy", "").strip() == email_clean]
-        logger.info(f"Items after createdBy filter: {len(user_items)}")
-
-        if user_items:
+        if len(all_items) > 0:
             formatted_items = []
-            for item in user_items:
-                conversation = {
-                    "conversationId": item.get("conversationId"),
-                    "title": item.get("title", ""),
-                    "createdAt": item.get("createdAt", ""),
-                    "updatedAt": item.get("updatedAt", ""),
-                    "assistantId": item.get("assistantId", ""),
-                    "status": item.get("status", "active")
+
+            # Find items owned by the current user with robust filtering
+            email_clean = email.strip()
+            user_items = [item for item in all_items if item.get("createdBy", "").strip() == email_clean]
+
+            logger.info(f"Items after createdBy filter: {len(user_items)}")
+
+            if user_items:
+                for item in user_items:
+                    conversation = {
+                        "conversationId": item.get("conversationId"),
+                        "title": item.get("title", ""),
+                        "createdAt": item.get("createdAt", ""),
+                        "updatedAt": item.get("updatedAt", ""),
+                        "assistantId": item.get("assistantId", ""),
+                        "status": item.get("status", "active")
+                    }
+                    formatted_items.append(conversation)
+                formatted_items.sort(key=lambda x: x["createdAt"], reverse=True)
+                serializable_items = decimal_to_json_serializable(formatted_items)
+                formatted_result = {"item": serializable_items, "count": len(user_items)}
+
+                response_result = Responses.result_response(200, True, f'Item with ID {id} found.', formatted_result)
+                send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+                return {
+                    'statusCode': 200,
+                    'body': json.dumps(construct_response(response_result))
                 }
-                formatted_items.append(conversation)
-            formatted_items.sort(key=lambda x: x["createdAt"], reverse=True)
-            serializable_items = decimal_to_json_serializable(formatted_items)
-            formatted_result = {"item": serializable_items, "count": len(user_items)}
-            response_result = Responses.result_response(STATUS_FOUND, True, f'Item with ID {id} found.', formatted_result)
-            if connectionId and url:
+            else:
+                empty_result = {"item": [], "count": 0}
+                response_result = Responses.result_response(200, True, f'No items found for assistant ID {id}.', empty_result)
+                logger.info("Items found but none owned by user, returning empty response: %s", response_result)
                 send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
-            return {
-                'statusCode': STATUS_FOUND,
-                'body': json.dumps(construct_response(response_result))
-            }
+                return {
+                    'statusCode': 200,
+                    'body': json.dumps(construct_response(response_result))
+                }
         else:
-            empty_result = {"item": [], "count": 0}
-            response_result = Responses.result_response(STATUS_FOUND, True, f'No items found for assistant ID {id}.', empty_result)
-            logger.info("Items found but none owned by user, returning empty response: %s", response_result)
-            if connectionId and url:
-                send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+            response_result = Responses.result_response(404, False, f'Assistant with ID {id} not found.')
+            logger.info("response: %s", response_result)
+            send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
             return {
-                'statusCode': STATUS_FOUND,
+                'statusCode': 404,
                 'body': json.dumps(construct_response(response_result))
             }
-    except Exception as err:
-        logger.error(f"Unexpected error: {str(err)}", exc_info=True)
-        response_result = Responses.result_response(STATUS_ERROR, False, f"Internal server error: {str(err)}")
-        if connectionId and url:
-            send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+
+    except ClientError as e:
+        logger.error(f"DynamoDB ClientError: {e.response['Error']['Message']}")
+        response_result = Responses.result_response(500, False, 'Error accessing DynamoDB.')
+        send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
         return {
-            'statusCode': STATUS_ERROR,
-            'body': json.dumps('Internal server error')
+            'statusCode': 500,
+            'body': json.dumps('Error accessing DynamoDB')
         }
 
-    # ...existing code ends here...
+    except Exception as err:
+        logger.error(f"Unexpected error: {str(err)}", exc_info=True)
+        response_result = Responses.result_response(500, False, f"Internal server error: {str(err)}")
+        send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+        return {
+            'statusCode': 500,
+            'body': json.dumps('Internal server error')
+        }

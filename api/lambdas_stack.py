@@ -46,6 +46,8 @@ class LambdasStack(Stack):
         azure_openai_temperature: str = None,
         azure_openai_max_tokens: str = None,
         base_url: str = None,
+        assistant_endpoint: str = None,
+        assistant_product_key: str = None,
         **kwargs
     ):
         super().__init__(scope, id, **kwargs)
@@ -65,7 +67,9 @@ class LambdasStack(Stack):
             "AZURE_OPENAI_API_KEY": azure_openai_api_key,
             "AZURE_OPENAI_TEMPERATURE": azure_openai_temperature,
             "AZURE_OPENAI_MAX_TOKENS": azure_openai_max_tokens,
-            "BASE_URL": base_url
+            "BASE_URL": base_url,
+            "ASSISTANT_ENDPOINT": assistant_endpoint,
+            "ASSISTANT_PRODUCT_KEY": assistant_product_key
         }
         
         # Add connections table environment variable if provided

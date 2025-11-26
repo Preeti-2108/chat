@@ -30,6 +30,7 @@ from src.helpers.document_analyzer import document_analyzer, build_context_aware
 from src.helpers.system_instructions import get_default_system_instructions, get_error_response_templates
 from src.helpers.intent_detector import is_simple_query, get_simple_response, create_mock_streaming_response
 from src.helpers.query_rewriter import build_query_rewriter, safe_rewrite_query
+from src.helpers.assistant_api import fetch_vector_db
 
 """
 /**
@@ -95,6 +96,8 @@ AZURE_OPENAI_API_KEY = os.getenv('AZURE_OPENAI_API_KEY')
 AZURE_OPENAI_TEMPERATURE = float(os.getenv('AZURE_OPENAI_TEMPERATURE'))
 AZURE_OPENAI_MAX_TOKENS = int(os.getenv('AZURE_OPENAI_MAX_TOKENS'))
 ENABLE_WEBSOCKET_STREAMING = os.getenv('ENABLE_WEBSOCKET_STREAMING', 'true').lower() == 'true'
+ASSISTANT_ENDPOINT = os.getenv('ASSISTANT_ENDPOINT')
+ASSISTANT_PRODUCT_KEY = os.getenv('ASSISTANT_PRODUCT_KEY')
 
 logger.info(f"AWS Region: {AWS_REGION}")
 logger.info(f"Knowledge Base ID: {KNOWLEDGE_BASE_ID}")
@@ -773,6 +776,7 @@ def start_chat(event, context):
         event_info = extract_event_info(event)
         url = event_info.get('url')
         connectionId = event_info.get('connectionId')
+        access_token = event_info.get("access_token")
         
         if not connectionId:
             logger.error("No connection ID found in event")
@@ -846,33 +850,36 @@ def start_chat(event, context):
         
         # Process chat query using LangGraph workflow with Bedrock Knowledge Base
         user_query = validation_schema['datas'].get('query', '')
-        vector_db = validation_schema['datas'].get('vectorDb', KNOWLEDGE_BASE_ID)  # Get vector DB parameter
-        
+        assistant_id = validation_schema['datas'].get('assistantId')
+        logger.info(f"Assistant ID: '{assistant_id}'")
+        logger.info(f"Assistant Product Key: '{ASSISTANT_PRODUCT_KEY}'")
+        logger.info(f"Assistant Endpoint: '{ASSISTANT_ENDPOINT}'")
+        logger.info(f"access_token: '{access_token[:10]}...'")
+        if assistant_id:
+            fetched_db = fetch_vector_db(BASE_URL, ASSISTANT_ENDPOINT, ASSISTANT_PRODUCT_KEY, assistant_id, access_token)
+            logger.info(f"Fetched vector DB for assistant '{assistant_id}': {fetched_db}")
+            if fetched_db:
+                vector_db = fetched_db
+
         # Extract user email using helper
         user_email = extract_user_email_from_event(event)
-        
         if user_query:
             logger.info(f"Processing chat query with LangGraph workflow: {user_query[:100]}...")
             logger.info(f"Using vector DB: {vector_db}")
-            
             try:
                 # Prepare WebSocket connection info for streaming
                 websocket_connection = {
                     "connectionId": connectionId,
                     "url": url
                 }
-                
                 # Execute LangGraph workflow with vector DB filter and WebSocket streaming
                 workflow_result = bedrock_workflow.process_chat_query(user_query, conversation_id, vector_db, websocket_connection)
-                
                 if workflow_result.get('success', False):
                     # Use helper to build success case data structure
                     validation_schema['datas'] = conversation_builder.build_success_case_data(
                         workflow_result, user_query, user_email
                     )
-                    
                     logger.info("✅ [POST HANDLER] LangGraph workflow completed successfully")
-                    
                     # Check if streaming was actually used
                     streaming_used = workflow_result.get('streaming_used', False)
                     if streaming_used:
@@ -880,7 +887,6 @@ def start_chat(event, context):
                         logger.info("🔄 [POST HANDLER] Skipping duplicate WebSocket response to maintain streaming integrity")
                     else:
                         logger.warning("⚠️ [POST HANDLER] Streaming may have failed - sending fallback WebSocket response")
-                        
                         # Send fallback WebSocket response if streaming didn't work
                         websocket_response = conversation_builder.build_websocket_response(
                             user_email=user_email,
@@ -891,11 +897,9 @@ def start_chat(event, context):
                             context_used=workflow_result.get('context_used', False),
                             sources_count=workflow_result.get('sources_count', 0)
                         )
-                        
                         final_response = conversation_builder.build_final_websocket_response(websocket_response, 201)
                         send_to_client(connectionId, json.dumps(final_response), url)
                         logger.info("📡 [POST HANDLER] Fallback WebSocket response sent")
-                    
                 else:
                     # Workflow failed, but continue with regular processing
                     logger.warning(f"LangGraph workflow failed: {workflow_result.get('error', 'Unknown error')}")

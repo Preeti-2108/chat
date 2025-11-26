@@ -101,6 +101,7 @@ def getassistant(event, context):
         # Extract action and datas from event
         action = event.get('action')
         datas = event.get('datas')
+        logger.info(f"Action: {action}, Datas: {datas}")
         if datas is None:
             datas = {}
 
@@ -222,92 +223,4 @@ def getassistant(event, context):
             'body': json.dumps('Internal server error')
         }
 
-        # Extract the ID from datas
-        id = datas.get('id') if isinstance(datas, dict) else None
-        if not id:
-            # If 'id' is missing, send an error response to the client
-            logger.warning(f"Missing ID parameter in request. Datas: {datas}")
-            response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'ID parameter is required in datas.')
-            send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
-            return {
-                'statusCode': STATUS_UNPROCESSABLE_ENTITY,
-                'body': json.dumps('ID parameter is required in datas.')
-            }
-
-        logger.info(f"Extracted ID: {id}")
-        
-        # Get the authenticated user's email from the JWT token
-        user_info = get_authenticated_user(event)
-        email = get_user_email(event) or "system@example.com"
-        
-        logger.info(f"Get operation performed by user: {user_info.get('username')} ({email})")
-
-        params = {'id': id}  # Prepare parameters for DynamoDB query
-        logger.info(f"Attempting to retrieve item with ID: {id}")
-
-        # Validate the request data against a predefined schema
-        try:
-            validation_schema = validate_request_datas_schema_pydantic(action, datas, logger)
-        except Exception as validation_err:
-            logger.error(f"Error during schema validation: {str(validation_err)}")
-            response_result = Responses.result_response(STATUS_ERROR, False, 'Schema validation error.')
-            send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
-            return {
-                'statusCode': STATUS_ERROR,
-                'body': json.dumps('Schema validation error')
-            }
-        
-        if not validation_schema['success']:
-            # If validation fails, send an error response to the client
-            logger.warning(f"Validation failed for action: {action}, datas: {datas}. Errors: {validation_schema}")
-            response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Validation errors.', validation_schema)
-            send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
-            return {
-                'statusCode': STATUS_UNPROCESSABLE_ENTITY,
-                'body': json.dumps('Validation errors.')
-            }
-
-        # Attempt to retrieve the item from DynamoDB using the provided ID
-        try:
-            existing_item = table.get_item(Key=params)
-            item = existing_item.get('Item')  # Extract the item from the response
-            if item is None:
-                # If item is not found, prepare a not found response
-                response_result = Responses.result_response(STATUS_NOT_FOUND, False, f'Item with ID {id} not found.')
-                status_code = STATUS_NOT_FOUND
-            else:
-                # Convert Decimal objects to JSON-serializable types before creating response
-                serializable_item = decimal_to_json_serializable(item)
-                # If item is found, prepare a success response with the item data
-                response_result = Responses.result_response(STATUS_FOUND, True, f'Item with ID {id} found.', serializable_item)
-                status_code = STATUS_FOUND
-        except ClientError as e:
-            # Log and handle DynamoDB client errors
-            logger.error(f"DynamoDB ClientError: {e.response['Error']['Message']}")
-            response_result = Responses.result_response(STATUS_ERROR, False, 'Error accessing DynamoDB.')
-            status_code = STATUS_ERROR
-        except Exception as db_err:
-            logger.error(f"Database error: {str(db_err)}")
-            response_result = Responses.result_response(STATUS_ERROR, False, 'Database error during operation.')
-            status_code = STATUS_ERROR
-    except Exception as err:
-        # Log and respond with an error for any unexpected exceptions
-        logger.error(f"Unexpected error: {str(err)}", exc_info=True)
-        response_result = Responses.result_response(STATUS_ERROR, False, f"Internal server error: {str(err)}")
-        send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
-        return {
-            'statusCode': STATUS_ERROR,
-            'body': json.dumps('Internal server error')
-        }
-
-    # Send the response to the client via WebSocket
-    try:
-        send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
-    except Exception as websocket_err:
-        logger.error(f"Error sending response to client: {str(websocket_err)}")
-        # Don't return error here as the main operation might have succeeded
-
-    return {
-        'statusCode': status_code,
-        'body': json.dumps('Message sent successfully.')
-    }
+    # ...existing code ends here...

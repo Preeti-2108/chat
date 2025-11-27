@@ -6,9 +6,9 @@ import datetime
 import logging
 try:
     from langfuse import Langfuse, Trace
+    print("Langfuse import successful")
 except ImportError:
-    Langfuse = None
-    Trace = None
+    print("Langfuse import failed")
 
 logger = logging.getLogger(__name__)
 
@@ -18,12 +18,12 @@ LANGFUSE_SECRET_KEY = os.getenv("LANGFUSE_SECRET_KEY")
 LANGFUSE_HOST = os.getenv("LANGFUSE_HOST")
 LANGFUSE_ENVIRONMENT = os.getenv("LANGFUSE_ENVIRONMENT")
 
-print(f"LANGFUSE_PUBLIC_KEY: {LANGFUSE_PUBLIC_KEY}****")
-print(f"LANGFUSE_HOST: {LANGFUSE_HOST}+++")
-print(f"LANGFUSE_ENVIRONMENT: {LANGFUSE_ENVIRONMENT}---")
-print(f"LANGFUSE_SECRET_KEY: {LANGFUSE_SECRET_KEY}^^^^^^^^")
+print(f"LANGFUSE_PUBLIC_KEY: {LANGFUSE_PUBLIC_KEY}")
+print(f"LANGFUSE_HOST: {LANGFUSE_HOST}")
+print(f"LANGFUSE_ENVIRONMENT: {LANGFUSE_ENVIRONMENT}")
+print(f"LANGFUSE_SECRET_KEY: {LANGFUSE_SECRET_KEY}")
 
-langfuse = None
+
 if LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY and LANGFUSE_HOST:
     langfuse = Langfuse(
         public_key=LANGFUSE_PUBLIC_KEY,

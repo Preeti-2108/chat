@@ -48,6 +48,10 @@ class LambdasStack(Stack):
         base_url: str = None,
         assistant_endpoint: str = None,
         assistant_product_key: str = None,
+        langfuse_public_key: str = None,
+        langfuse_secret_key: str = None,
+        langfuse_host: str = None,
+        langfuse_environment: str = None,
         **kwargs
     ):
         super().__init__(scope, id, **kwargs)

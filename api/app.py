@@ -61,7 +61,7 @@ lambdas_stack = LambdasStack(
     langfuse_public_key=LANGFUSE_PUBLIC_KEY,
     langfuse_secret_key=LANGFUSE_SECRET_KEY,
     langfuse_host=LANGFUSE_HOST,
-    langfuse_environment=LANGFUSE_ENVIRONMENT,
+    langfuse_environment=LANGFUSE_ENVIRONMENT
 )
 
 app.synth()

@@ -35,7 +35,7 @@ def create_clean_trace(session_id, name, handler_name, metadata=None, user_id=No
     }
     if user_id:
         trace_kwargs["user_id"] = user_id
-    return langfuse.trace(**trace_kwargs)
+    return langfuse.trace_new(**trace_kwargs)
 
 def update_trace_input(trace, **kwargs):
     """

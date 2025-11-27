@@ -44,6 +44,7 @@ class ConversationDataBuilder:
                                    context_used: bool = False,
                                    sources_count: int = 0,
                                    sources_info: List = None,
+                                   llm=None
                                    ) -> Dict[str, Any]:
         """
         Build the validation_schema['datas'] structure used throughout the application.
@@ -61,7 +62,7 @@ class ConversationDataBuilder:
         conversation_data = self.create_conversation_data(user_query, ai_response, conversation_id)
         
             # Generate title from query using LLM if provided
-        title = self._generate_title_from_query(user_query)
+        title = self._generate_title_from_query(user_query, llm=llm)
         
         # Build the complete data structure
         data_structure = {
@@ -86,7 +87,7 @@ class ConversationDataBuilder:
         
         return data_structure
     
-    def build_success_case_data(self, workflow_result: Dict[str, Any], user_query: str, user_email: str) -> Dict[str, Any]:
+    def build_success_case_data(self, workflow_result: Dict[str, Any], user_query: str, user_email: str, llm=None) -> Dict[str, Any]:
         """Build data structure for successful workflow execution."""
         return self.build_validation_schema_data(
             user_query=user_query,
@@ -96,7 +97,8 @@ class ConversationDataBuilder:
             model_used=workflow_result.get('model_used', 'AZURE_OPENAI_GPT_4O'),
             context_used=workflow_result.get('context_used', False),
             sources_count=workflow_result.get('sources_count', 0),
-            sources_info=workflow_result.get('sources_info', [])
+            sources_info=workflow_result.get('sources_info', []),
+            llm=llm
         )
     
     def build_failure_case_data(self, user_query: str, conversation_id: str, user_email: str) -> Dict[str, Any]:
@@ -174,11 +176,22 @@ class ConversationDataBuilder:
             "status": status_code
         }
     
-    def _generate_title_from_query(self, user_query: str) -> str:
-        """Generate a title from the user query with appropriate truncation."""
+    def _generate_title_from_query(self, user_query: str, llm=None) -> str:
+        """Generate a title from the user query, using LLM if provided."""
         if not user_query:
             return "Empty Chat"
-        
+        if llm:
+            try:
+                response = llm.invoke([
+                    {"role": "user", "content": f"Generate a concise chat title for: {user_query}"}
+                ])
+                title = response.content if hasattr(response, 'content') else str(response)
+                if not title:
+                    title = f"Chat - {user_query[:50]}..." if len(user_query) > 50 else f"Chat - {user_query}"
+                return title
+            except Exception as e:
+                logger.error(f"LLM title generation failed: {e}")
+                return f"Chat - {user_query[:50]}..." if len(user_query) > 50 else f"Chat - {user_query}"
         if len(user_query) > 50:
             return f"{user_query[:50]}..."
         else:

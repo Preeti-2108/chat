@@ -99,9 +99,8 @@ def delete(event, context):
     logger.info("DynamoDB Table initialized: %s", table_name)
 
     try:
-        with monitor_operation("extract_event_info"):
-            event_info = extract_event_info(event)
-            logger.info("Event Info: %s", event_info)
+        event_info = extract_event_info(event)
+        logger.info("Event Info: %s", event_info)
 
         url = event_info.get("url")
         connectionId = event_info.get("connectionId")
@@ -139,37 +138,36 @@ def delete(event, context):
     logger.info(f"Retrieving item for authenticated user: {email} (ID: {user_id});");
 
     try:
-        with monitor_operation("parse_request_body"):
-            body = json.loads(event.get("body", "{}"))
-            if body is None:
-                logger.error("Request body is None")
-                response_result = Responses.result_response(400, False, message="Request body cannot be empty")
+        body = json.loads(event.get("body", "{}"))
+        if body is None:
+            logger.error("Request body is None")
+            response_result = Responses.result_response(400, False, message="Request body cannot be empty")
+            send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+            return {
+                'statusCode': 400,
+                'body': json.dumps("Request body cannot be empty")
+            }
+        else:
+            action = body.get("action")
+            logger.info("Action: %s", action)
+            datas = body.get("datas", {})
+            logger.info("Datas: %s", datas)
+            if not action:
+                logger.error("No action found in request body.")
+                response_result = Responses.result_response(400, False, message="Missing action")
                 send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
                 return {
                     'statusCode': 400,
-                    'body': json.dumps("Request body cannot be empty")
+                    'body': json.dumps("Missing action")
                 }
-            else:
-                action = body.get("action")
-                logger.info("Action: %s", action)
-                datas = body.get("datas", {})
-                logger.info("Datas: %s", datas)
-                if not action:
-                    logger.error("No action found in request body.")
-                    response_result = Responses.result_response(400, False, message="Missing action")
-                    send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
-                    return {
-                        'statusCode': 400,
-                        'body': json.dumps("Missing action")
-                    }
-                if not datas and datas is None:
-                    logger.error("No datas found in request body.")
-                    response_result = Responses.result_response(400, False, message="Missing datas")
-                    send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
-                    return {
-                        'statusCode': 400,
-                        'body': json.dumps("Missing datas")
-                    }
+            if not datas and datas is None:
+                logger.error("No datas found in request body.")
+                response_result = Responses.result_response(400, False, message="Missing datas")
+                send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+                return {
+                    'statusCode': 400,
+                    'body': json.dumps("Missing datas")
+                }
     except json.JSONDecodeError as e:
         logger.error(f"Error parsing JSON body: {str(e)}")
         response_result = Responses.result_response(400, False, message="Invalid JSON payload")
@@ -180,16 +178,15 @@ def delete(event, context):
         }
 
     try:
-        with monitor_operation("schema_validation"):
-            validation_schema = validate_request_datas_schema_pydantic(action, datas, logger)
-            if not validation_schema['success']:
-                response_result = Responses.result_response(422, False, 'Validation errors.', validation_schema)
-                logger.debug('Validation failed: %s', validation_schema)
-                send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
-                return {
-                    'statusCode': 422,
-                    'body': json.dumps('Validation failed')
-                }
+        validation_schema = validate_request_datas_schema_pydantic(action, datas, logger)
+        if not validation_schema['success']:
+            response_result = Responses.result_response(422, False, 'Validation errors.', validation_schema)
+            logger.debug('Validation failed: %s', validation_schema)
+            send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+            return {
+                'statusCode': 422,
+                'body': json.dumps('Validation failed')
+            }
     except Exception as validation_err:
         logger.error(f"Error during schema validation: {str(validation_err)}")
         response_result = Responses.result_response(500, False, 'Schema validation error.')
@@ -203,26 +200,25 @@ def delete(event, context):
         id = validation_schema['datas'].get('id')
         logger.info("conversation id: %s", id)
         
-        with monitor_operation("database_check_and_delete"):
-            existing_item = table.get_item(Key={"conversationId": id})
-            if 'Item' not in existing_item and existing_item['Item'] is None:
-                logger.error(f"Chat conversation with ID {id} not found.")
-                response_result = Responses.result_response(404, False, f'Chat conversation with ID {id} not found.')
-                logger.info("response: %s", response_result)
-                send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
-                return {
-                    'statusCode': 404,
-                    'body': json.dumps('Chat conversation with ID {id} not found.')
-                }
-            else:
-                table.delete_item(Key={"conversationId": id})
-                response_result = Responses.result_response(200, True, f'Chat conversation with ID {id} successfully deleted.')
-                logger.info("response: %s", response_result)
-                send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
-                return {
-                    'statusCode': 200,
-                    'body': json.dumps(construct_response(response_result))
-                }
+        existing_item = table.get_item(Key={"conversationId": id})
+        if 'Item' not in existing_item and existing_item['Item'] is None:
+            logger.error(f"Chat conversation with ID {id} not found.")
+            response_result = Responses.result_response(404, False, f'Chat conversation with ID {id} not found.')
+            logger.info("response: %s", response_result)
+            send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+            return {
+                'statusCode': 404,
+                'body': json.dumps('Chat conversation with ID {id} not found.')
+            }
+        else:
+            table.delete_item(Key={"conversationId": id})
+            response_result = Responses.result_response(200, True, f'Chat conversation with ID {id} successfully deleted.')
+            logger.info("response: %s", response_result)
+            send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+            return {
+                'statusCode': 200,
+                'body': json.dumps(construct_response(response_result))
+            }
 
     except ClientError as e:
         logger.error(f"DynamoDB ClientError: {e.response['Error']['Message']}")

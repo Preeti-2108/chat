@@ -7,7 +7,7 @@ from botocore.exceptions import ClientError  # Exception for AWS client errors
 from botocore.config import Config  # For configuring AWS clients
 from src.helpers.api_responses import Responses  # Custom response handling
 from src.helpers.construct_response import construct_response  # Helper to construct responses
-from src.helpers.schema_validation import validate_request_datas_schema  # Schema validation utility
+from src.helpers.schema_validation import validate_request_datas_schema_pydantic  # Schema validation utility
 from src.handler_websocket.handler import send_to_client  # WebSocket communication utility
 from src.helpers.event_utils import extract_event_info  # Utility to extract information from events
 from src.helpers.auth_middleware import authenticate_websocket, get_user_email, get_authenticated_user  # Cognito authentication

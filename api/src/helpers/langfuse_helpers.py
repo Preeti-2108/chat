@@ -1,5 +1,5 @@
 """
-Langfuse tracing helpers for structured, readable traces
+Langfuse tracing helpers for structured, readable traces.
 """
 import os
 import datetime

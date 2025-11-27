@@ -796,7 +796,7 @@ def start_chat(event, context):
             'body': json.dumps('Error processing event')
         }
 
-    try {
+    try:
         # Parse the body of the event
         try:
             body = json.loads(event.get('body', '{}'))

@@ -23,6 +23,11 @@
  *       contentType: application/json
  *       payload:
  *         $ref: '#/components/schemas/CHATINTERNAL'
+ *     chatDeleteResponse:
+ *       messageId: chatDeleteResponse
+ *       contentType: application/json
+ *       payload:
+ *         $ref: '#/components/schemas/CHATINTERNAL'
  *   schemas:
  *     CHATINTERNAL:
  *       type: object

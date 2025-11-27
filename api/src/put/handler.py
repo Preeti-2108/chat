@@ -339,7 +339,14 @@ def continue_chat(event, context):
                     final_response = conversation_builder.build_final_websocket_response(websocket_response, 200)
                     send_to_client(connectionId, json.dumps(final_response), url)
                     response_result = Responses.result_response(STATUS_UPDATED, True, 'Chat continued successfully.', websocket_response)
-                    update_trace_output(trace, response_data=workflow_result, status="success")
+                    # Remove unnecessary fields before updating trace output
+                    wf_result_clean = dict(workflow_result)
+                    for k in [
+                        "context_used", "sources_count", "sources_info", "model_used",
+                        "processing_method", "cost_optimized", "memory_enabled", "thread_id", "streaming_used"
+                    ]:
+                        wf_result_clean.pop(k, None)
+                    update_trace_output(trace, response_data=wf_result_clean, status="success")
                     flush_trace(trace)
                 else:
                     logger.warning(f"Chat continuation workflow failed: {workflow_result.get('error', 'Unknown error')}")

@@ -892,7 +892,14 @@ def start_chat(event, context):
                     )
                     logger.info("✅ [POST HANDLER] LangGraph workflow completed successfully")
                     # --- Langfuse Trace Output Update ---
-                    update_trace_output(trace, response_data=workflow_result, status="success")
+                    # Remove unnecessary fields before updating trace output
+                    wf_result_clean = dict(workflow_result)
+                    for k in [
+                        "context_used", "sources_count", "sources_info", "model_used",
+                        "processing_method", "cost_optimized", "memory_enabled", "thread_id", "streaming_used"
+                    ]:
+                        wf_result_clean.pop(k, None)
+                    update_trace_output(trace, response_data=wf_result_clean, status="success")
                     flush_trace(trace)
                     # Check if streaming was actually used
                     streaming_used = workflow_result.get('streaming_used', False)

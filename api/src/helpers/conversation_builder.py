@@ -186,6 +186,9 @@ class ConversationDataBuilder:
                     {"role": "user", "content": f"Generate a concise chat title for: {user_query}"}
                 ])
                 title = response.content if hasattr(response, 'content') else str(response)
+                if title:
+                    # Strip leading/trailing quotes and whitespace
+                    title = title.strip().strip('"').strip("'")
                 if not title:
                     title = f"Chat - {user_query[:50]}..." if len(user_query) > 50 else f"Chat - {user_query}"
                 return title

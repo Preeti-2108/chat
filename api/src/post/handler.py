@@ -4,6 +4,13 @@ import uuid  # Provides immutable UUID objects (universally unique identifiers)
 import boto3  # AWS SDK for Python to interact with AWS services
 import logging  # Provides a way to configure and use loggers
 from datetime import datetime  # Provides classes for manipulating dates and times.
+from src.helpers.langfuse_helpers import (
+    create_websocket_trace,
+    update_trace_input_structured,
+    update_trace_output,
+    update_trace_error,
+    flush_trace,
+)
 from typing import Dict, Any, List
 
 # LangGraph and LangChain imports for workflow orchestration
@@ -840,16 +847,29 @@ def start_chat(event, context):
         user_info = event.get('auth', {}).get('user_info', {})
         email = user_info.get('email') or user_info.get('username', 'unknown@example.com')
         user_id = user_info.get('user_id', 'unknown')
-        
         logger.info(f"Creating item for authenticated user: {email} (ID: {user_id})")
-        
+
+        # Generate session_id and create trace
+        session_id = str(uuid.uuid4())
+        trace = create_websocket_trace(session_id)
+        trace_id = str(trace.trace_id)
+        conversation_id = session_id
+
         # SEND IMMEDIATE STREAMING SIGNALS - BEFORE ANY PROCESSING
-        conversation_id = validation_schema['datas'].get('conversationId', str(uuid.uuid4()))
         send_immediate_streaming_signals(connectionId, url, conversation_id)
-        
-        # Process chat query using LangGraph workflow with Bedrock Knowledge Base
+
+        # --- Langfuse Trace Input Update ---
         user_query = validation_schema['datas'].get('query', '')
         assistant_id = validation_schema['datas'].get('assistantId')
+        update_trace_input_structured(
+            trace,
+            query=user_query,
+            chat_history=None,
+            internal_response=None,
+            external_response=None,
+            assistantId=assistant_id,
+            user_id=email
+        )
         if assistant_id:
             fetched_db = fetch_vector_db(BASE_URL, ASSISTANT_ENDPOINT, ASSISTANT_PRODUCT_KEY, assistant_id, access_token)
             logger.info(f"Fetched vector DB for assistant '{assistant_id}': {fetched_db}")
@@ -875,6 +895,9 @@ def start_chat(event, context):
                         workflow_result, user_query, user_email, llm=bedrock_workflow.chat_model
                     )
                     logger.info("✅ [POST HANDLER] LangGraph workflow completed successfully")
+                    # --- Langfuse Trace Output Update ---
+                    update_trace_output(trace, response_data=workflow_result, status="success")
+                    flush_trace(trace)
                     # Check if streaming was actually used
                     streaming_used = workflow_result.get('streaming_used', False)
                     if streaming_used:
@@ -898,17 +921,20 @@ def start_chat(event, context):
                 else:
                     # Workflow failed, but continue with regular processing
                     logger.warning(f"LangGraph workflow failed: {workflow_result.get('error', 'Unknown error')}")
-                    
+                    # --- Langfuse Trace Error Update ---
+                    update_trace_error(trace, error_type="WorkflowError", error_message=workflow_result.get('error', 'Unknown error'))
+                    flush_trace(trace)
                     # Use helper to build failure case data structure
                     validation_schema['datas'] = conversation_builder.build_failure_case_data(
                         user_query=user_query,
                         conversation_id=conversation_id,
                         user_email=user_email
                     )
-                    
             except Exception as workflow_err:
                 logger.error(f"LangGraph workflow execution error: {workflow_err}")
-                
+                # --- Langfuse Trace Error Update ---
+                update_trace_error(trace, error_type=type(workflow_err).__name__, error_message=str(workflow_err))
+                flush_trace(trace)
                 # Use helper to build error case data structure  
                 validation_schema['datas'] = conversation_builder.build_error_case_data(
                     user_query=user_query,
@@ -917,7 +943,9 @@ def start_chat(event, context):
                 )
         else:
             logger.warning("No query provided for AI processing")
-            
+            # --- Langfuse Trace Error Update ---
+            update_trace_error(trace, error_type="NoQuery", error_message="No query provided for AI processing")
+            flush_trace(trace)
             # Use helper to build no query case data structure
             validation_schema['datas'] = conversation_builder.build_no_query_case_data(
                 conversation_id=conversation_id,

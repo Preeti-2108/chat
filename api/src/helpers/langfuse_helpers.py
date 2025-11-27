@@ -176,7 +176,7 @@ def create_websocket_trace(session_id, conversation_id=None, user_id=None):
         metadata["conversationId"] = conversation_id
     return create_clean_trace(
         session_id=session_id,
-        name="Post Chat - Internal KB (Create)",
+        name="Post Chat - Bedrock KB (Create)",
         handler_name="post_chat_handler",
         metadata=metadata,
         user_id=user_id
@@ -186,7 +186,7 @@ def create_query_trace(session_id):
     """Create a trace for query operations"""
     return create_clean_trace(
         session_id=session_id,
-        name="Internal KB - Query API",
+        name="Internal KB -Bedrock Query API",
         handler_name="query API",
         metadata={"request_type": "query"}
     )
@@ -198,7 +198,7 @@ def create_update_trace(session_id, conversation_id=None):
         metadata["conversationId"] = conversation_id
     return create_clean_trace(
         session_id=session_id,
-        name="Update Chat - Internal KB",
+        name="Update Chat - Bedrock KB",
         handler_name="put_chat API",
         metadata=metadata
     )

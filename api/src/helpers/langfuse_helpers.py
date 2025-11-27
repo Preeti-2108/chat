@@ -7,8 +7,10 @@ import logging
 try:
     from langfuse import Langfuse, Trace
     print("Langfuse import successful")
-except ImportError:
-    print("Langfuse import failed")
+except ImportError as e:
+    Langfuse = None
+    Trace = None
+    print(f"Langfuse import failed: {e}")
 
 logger = logging.getLogger(__name__)
 

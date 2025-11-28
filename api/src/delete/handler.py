@@ -201,18 +201,23 @@ def delete(event, context):
         logger.info("conversation id: %s", id)
         
         existing_item = table.get_item(Key={"conversationId": id})
-        if 'Item' not in existing_item and existing_item['Item'] is None:
+        if 'Item' not in existing_item or existing_item['Item'] is None:
             logger.error(f"Chat conversation with ID {id} not found.")
             response_result = Responses.result_response(404, False, f'Chat conversation with ID {id} not found.')
             logger.info("response: %s", response_result)
             send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
             return {
                 'statusCode': 404,
-                'body': json.dumps('Chat conversation with ID {id} not found.')
+                'body': json.dumps(f'Chat conversation with ID {id} not found.')
             }
         else:
-            table.delete_item(Key={"conversationId": id})
-            response_result = Responses.result_response(200, True, f'Chat conversation with ID {id} successfully deleted.')
+            # Soft delete: set isActive to False
+            table.update_item(
+                Key={"conversationId": id},
+                UpdateExpression="SET isActive = :inactive",
+                ExpressionAttributeValues={":inactive": False}
+            )
+            response_result = Responses.result_response(200, True, f'Chat conversation with ID {id} successfully marked as inactive.')
             logger.info("response: %s", response_result)
             send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
             return {

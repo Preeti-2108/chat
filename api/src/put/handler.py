@@ -121,7 +121,7 @@ logger.info(f"Azure OpenAI Max Tokens: {AZURE_OPENAI_MAX_TOKENS}")
 logger.info(f"🧠 [PUT INIT] Using shared workflow instance with memory from POST handler")
 
 @authenticate_websocket()
-# @require_resource_permission('CHATKBBEDROCKCDKWEBSOCKET', 'UPDATE')
+@require_resource_permission('CHATKBBEDROCKCDKWEBSOCKET', 'UPDATE')
 def continue_chat(event, context):
     """
     Main function to handle the continuation of an existing chat conversation.

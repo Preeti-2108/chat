@@ -52,6 +52,7 @@ class LambdasStack(Stack):
         langfuse_secret_key: str = None,
         langfuse_host: str = None,
         langfuse_environment: str = None,
+        env: str = "dev",
         **kwargs
     ):
         super().__init__(scope, id, **kwargs)
@@ -73,7 +74,8 @@ class LambdasStack(Stack):
             "AZURE_OPENAI_MAX_TOKENS": azure_openai_max_tokens,
             "BASE_URL": base_url,
             "ASSISTANT_ENDPOINT": assistant_endpoint,
-            "ASSISTANT_PRODUCT_KEY": assistant_product_key
+            "ASSISTANT_PRODUCT_KEY": assistant_product_key,
+            "ENV": env
         }
         
         # Add connections table environment variable if provided

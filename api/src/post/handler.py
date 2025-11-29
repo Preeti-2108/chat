@@ -742,7 +742,7 @@ bedrock_workflow = BedrockKnowledgeBaseWorkflow()
 logger.info(f"🧠 [POST INIT] Initialized workflow with memory checkpointer")
 
 @authenticate_websocket()
-@require_resource_permission('CHATKBBEDROCKCDKWEBSOCKET', 'CREATE')
+@require_resource_permission('CHAT', 'CREATE')
 def start_chat(event, context):
     """
     Main function to handle the creation of a new item.

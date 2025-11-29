@@ -136,6 +136,11 @@ class DocumentAnalyzer:
         scores_preview = [f"{doc.get('score', 0):.3f}" for doc in sorted_docs[:5]]
         logger.info(f"Document scores: {', '.join(scores_preview)}")
         
+        # 🔍 DEBUG: Log query complexity assessment
+        logger.info(f"🔍 [DOC SELECTION] Query complexity assessed as: '{query_complexity}'")
+        logger.info(f"🔍 [DOC SELECTION] Available documents: {len(sorted_docs)}")
+        logger.info(f"🔍 [DOC SELECTION] Max context tokens: {self.max_context_tokens}")
+        
         for doc in sorted_docs:
             content = doc.get('content', '').strip()
             doc_score = doc.get('score', 0)
@@ -147,43 +152,140 @@ class DocumentAnalyzer:
             
             doc_tokens = len(content) / 4  # Rough token estimation
             
+            # 🔧 LOWERED THRESHOLDS: More inclusive document selection
+            # Check if this is a Microsoft-related query
+            is_microsoft_query = any(term in user_query.lower() for term in ['microsoft', 'incident', 'support', 'ticket'])
+            
+            # Use lower thresholds for Microsoft queries
+            if is_microsoft_query:
+                threshold_complex = 0.1  # Very low threshold
+                threshold_simple = 0.1
+                threshold_default = 0.1
+                logger.info(f"🔧 [MICROSOFT] Using low thresholds for Microsoft query")
+            else:
+                threshold_complex = 0.25  # Lowered from 0.3
+                threshold_simple = 0.3    # Lowered from 0.5  
+                threshold_default = 0.3   # Lowered from 0.4
+            
             # Decision logic based on query complexity
             if is_complex_query:
                 # For complex queries, prioritize more documents up to token limit
                 if (current_tokens + doc_tokens <= self.max_context_tokens and 
-                    len(selected_docs) < 4 and doc_score > 0.3):
+                    len(selected_docs) < 4 and doc_score > threshold_complex):
                     selected_docs.append(doc)
                     current_tokens += doc_tokens
-                    logger.info(f"Complex query: Added document with score {doc_score:.3f}")
+                    logger.info(f"Complex query: Added document with score {doc_score:.3f} (threshold: {threshold_complex})")
             elif is_simple_query:
                 # For simple queries, use fewer but highest-quality documents
                 if (len(selected_docs) < 1 or 
-                    (len(selected_docs) < 2 and doc_score > 0.5)):
+                    (len(selected_docs) < 2 and doc_score > threshold_simple)):
                     selected_docs.append(doc)
                     current_tokens += doc_tokens
-                    logger.info(f"Simple query: Added high-score document {doc_score:.3f}")
+                    logger.info(f"Simple query: Added document with score {doc_score:.3f} (threshold: {threshold_simple})")
             else:
                 # Default behavior for moderate complexity
-                if len(selected_docs) < 3 and doc_score > 0.4:
+                if len(selected_docs) < 3 and doc_score > threshold_default:
                     selected_docs.append(doc)
                     current_tokens += doc_tokens
-                    logger.info(f"Default: Added document with score {doc_score:.3f}")
+                    logger.info(f"Default: Added document with score {doc_score:.3f} (threshold: {threshold_default})")
             
             # Stop if we've reached reasonable limits
             if current_tokens >= self.max_context_tokens:
                 logger.info(f"Token limit reached. Using {len(selected_docs)} documents.")
                 break
         
-        # If no documents meet the score threshold, take the best one anyway
+        # 🔧 IMPROVED FALLBACK: Be more aggressive about including documents
         if not selected_docs and sorted_docs:
-            best_doc = sorted_docs[0]
-            if best_doc.get('content', '').strip():
-                selected_docs.append(best_doc)
-                logger.info(f"Fallback: Added best document with score {best_doc.get('score', 0):.3f}")
+            # Take top 2 documents as fallback instead of just 1
+            logger.warning(f"⚠️ [DOC SELECTION] No documents met thresholds! Using aggressive fallback...")
+            for i, doc in enumerate(sorted_docs[:2]):
+                if doc.get('content', '').strip():
+                    selected_docs.append(doc)
+                    logger.info(f"🔧 Aggressive fallback: Added document {i+1} with score {doc.get('score', 0):.3f}")
+        
+        # 🔍 SPECIAL CASE: For Microsoft/incident queries, be extra lenient
+        if len(selected_docs) == 0:
+            query_lower = user_query.lower()
+            if any(term in query_lower for term in ['microsoft', 'incident', 'support', 'ticket']):
+                logger.warning(f"🚨 [MICROSOFT QUERY] No documents selected for Microsoft query! Using emergency fallback...")
+                # Take ALL available documents for Microsoft queries
+                for doc in sorted_docs[:3]:
+                    if doc.get('content', '').strip():
+                        selected_docs.append(doc)
+                        logger.info(f"🚨 Emergency: Added Microsoft doc with score {doc.get('score', 0):.3f}")
         
         scores_list = [f"{doc.get('score', 0):.3f}" for doc in selected_docs]
-        logger.info(f"Selected {len(selected_docs)} documents for query. Scores: {scores_list}")
+        logger.info(f"✅ [DOC SELECTION] Final selection: {len(selected_docs)} documents. Scores: {scores_list}")
+        
+        if len(selected_docs) == 0:
+            logger.error(f"❌ [DOC SELECTION] CRITICAL: No documents selected despite {len(sorted_docs)} available!")
+        
         return selected_docs
+    
+    def assess_context_relevance(self, user_query: str, selected_docs: List[Dict]) -> float:
+        """
+        Assess if the selected documents are relevant to the user's query using semantic matching.
+        
+        Args:
+            user_query: The user's question
+            selected_docs: List of selected document dictionaries
+            
+        Returns:
+            Relevance score between 0.0 and 1.0
+        """
+        if not selected_docs or not user_query:
+            return 0.0
+        
+        query_lower = user_query.lower()
+        
+        # Extract key concepts from the query
+        query_keywords = set()
+        
+        # Common synonyms and cross-language mappings
+        concept_mappings = {
+            'incident': ['incident', 'ticket', 'support', 'problem', 'issue'],
+            'microsoft': ['microsoft', 'ms', 'office', 'windows', 'azure'],
+            'open': ['open', 'create', 'ouvrir', 'créer', 'new', 'submit'],
+            'support': ['support', 'help', 'aide', 'assistance', 'service'],
+            'procedure': ['procedure', 'procédure', 'process', 'steps', 'how'],
+            'licence': ['license', 'licence', 'licensing', 'activation', 'key']
+        }
+        
+        # Find concepts in query
+        for concept, synonyms in concept_mappings.items():
+            if any(synonym in query_lower for synonym in synonyms):
+                query_keywords.add(concept)
+        
+        # Score documents based on concept overlap
+        total_score = 0.0
+        max_possible_score = 0.0
+        
+        for doc in selected_docs:
+            content = doc.get('content', '').lower()
+            doc_score = doc.get('score', 0.0)
+            
+            # Count concept matches in document
+            concept_matches = 0
+            for concept, synonyms in concept_mappings.items():
+                if concept in query_keywords:
+                    max_possible_score += 1.0
+                    if any(synonym in content for synonym in synonyms):
+                        concept_matches += 1
+            
+            # Weighted by document score from Bedrock
+            document_relevance = (concept_matches / max(len(query_keywords), 1)) * doc_score
+            total_score += document_relevance
+        
+        # Normalize score
+        if max_possible_score > 0:
+            final_score = min(total_score / max_possible_score, 1.0)
+        else:
+            final_score = 0.0
+        
+        logger.info(f"🎯 [RELEVANCE] Query concepts: {query_keywords}")
+        logger.info(f"🎯 [RELEVANCE] Relevance score: {final_score:.3f}")
+        
+        return final_score
     
     def build_sources_text(self, selected_docs: List[Dict]) -> str:
         """
@@ -198,7 +300,7 @@ class DocumentAnalyzer:
         if not selected_docs:
             return ""
         
-        sources_lines = ["\n\n**Source[s]:**"]
+        sources_lines = ["", "---", "**Sources:**"]
         
         for i, doc in enumerate(selected_docs, 1):
             metadata = doc.get('metadata', {})
@@ -214,7 +316,11 @@ class DocumentAnalyzer:
             
             sources_lines.append(source_line)
         
-        return "\n".join(sources_lines)
+        # Add instruction for AI to include these sources
+        sources_text = "\n".join(sources_lines)
+        sources_text += "\n\n**INSTRUCTION: Include the above sources at the end of your response when answering based on the provided context.**"
+        
+        return sources_text
     
     def build_context_string(self, selected_docs: List[Dict]) -> str:
         """
@@ -418,26 +524,46 @@ def build_context_aware_prompt(system_instructions: str,
         logger.info(f"Context content length: {len(context)} characters")
         logger.info(f"First 200 chars of context: {context[:200]}...")
         
+
+        
         # Check if we have meaningful content
         if context.strip() and len(context.strip()) > 10:
-            # Build sources text but let AI decide whether to include it
+            # 🎯 SMART RELEVANCE CHECK: Assess if context is actually relevant
+            relevance_score = analyzer.assess_context_relevance(user_query, selected_docs)
+            
+            # Build sources text
             sources_text = analyzer.build_sources_text(selected_docs)
             
-            prompt = f"""{system_instructions}
+            if relevance_score >= 0.3:  # Context seems relevant
+                prompt = f"""{system_instructions}
 
 Context:
 {context}
 
 User Question: {user_query}
 
-Please provide a well-formatted answer based on the context above following the guidelines specified. Reference the source numbers when citing information.
+Please provide a comprehensive answer based on the context above following the system guidelines. Always include the source references at the end of your response.
 
-INSTRUCTIONS FOR SOURCES:
-- If you can answer the question using the provided context, include the sources section at the end of your response.
-- If the context is completely unrelated to the question (e.g., asking about "AI agents" but context is about "antivirus software"), respond with "I'm sorry, I don't have information about this in my knowledge base." and exclude sources.
-
-Sources to include when answering:
 {sources_text}"""
+                
+                logger.info(f"✅ [RELEVANCE] High relevance ({relevance_score:.3f}) - using direct answer approach")
+            else:
+                # Lower relevance, but still let AI decide with more flexible approach
+                prompt = f"""{system_instructions}
+
+Context:
+{context}
+
+User Question: {user_query}
+
+Please answer based on the available context if it's relevant to the question. If you provide an answer using the context, always include the source references at the end.
+
+{sources_text}"""
+                
+                logger.info(f"⚠️ [RELEVANCE] Lower relevance ({relevance_score:.3f}) - using flexible approach")
+
+            # Log key information for debugging
+            logger.info(f"🤖 [PROMPT] Query: '{user_query}', Context: {len(context)} chars, Docs: {len(selected_docs)}")
         else:
             # No meaningful content found in documents
             logger.warning("Documents retrieved but no meaningful content found")

@@ -31,8 +31,16 @@ from src.helpers.conversation_builder import conversation_builder, extract_user_
 from src.helpers.document_analyzer import document_analyzer, build_context_aware_prompt
 from src.helpers.system_instructions import get_default_system_instructions, get_error_response_templates
 
-# Import workflow from POST handler to avoid duplication
-from src.post.handler import BedrockKnowledgeBaseWorkflow
+# Import shared workflow instance from POST handler for memory continuity
+from src.post.handler import bedrock_workflow
+
+from src.helpers.langfuse_helpers import (
+            create_update_trace,
+            update_trace_input,
+            update_trace_output,
+            update_trace_error,
+            flush_trace,
+        )
 
 """
 /**
@@ -101,94 +109,19 @@ logger.info(f"Azure OpenAI Endpoint configured: {AZURE_OPENAI_API_ENDPOINT}")
 logger.info(f"Azure OpenAI Temperature: {AZURE_OPENAI_TEMPERATURE}")
 logger.info(f"Azure OpenAI Max Tokens: {AZURE_OPENAI_MAX_TOKENS}")
 
-# State interface for LangGraph workflow
-class State(Dict[str, Any]):
-    """State object for LangGraph workflow"""
-    messages: List[Any]
-    user_query: str
-    context_documents: List[str]
-    conversation_id: str
-    ai_response: str
-    has_context: bool
-    chat_history: List[Dict[str, Any]]
+# No local state or workflow classes needed - using shared workflow from POST handler
+# The bedrock_workflow imported above contains:
+# - BedrockKnowledgeBaseWorkflow class with MemorySaver
+# - Memory methods: get_memory_checkpoints(), get_conversation_context()
+# - All workflow nodes and LangGraph logic
+# This ensures conversation continuity between POST and PUT operations
 
-# Reusing BedrockKnowledgeBaseWorkflow from POST handler to eliminate duplicate code
-    
-    def retrieve_conversation_history(self, conversation_id: str) -> List[Dict[str, Any]]:
-        """Retrieve existing conversation history from DynamoDB"""
-        try:
-            table_name = os.getenv('TABLE')
-            if not table_name:
-                logger.error("TABLE environment variable not set")
-                return []
-            
-            dynamodb = boto3.resource('dynamodb')
-            table = dynamodb.Table(table_name)
-            
-            # Query for existing conversation using conversationId as primary key
-            response = table.get_item(
-                Key={'conversationId': conversation_id}
-            )
-            
-            if 'Item' in response:
-                item = response['Item']
-                chat_history = item.get('chatHistory', [])
-                logger.info(f"Retrieved {len(chat_history)} messages from conversation {conversation_id}")
-                return chat_history
-            else:
-                logger.warning(f"No existing conversation found with conversationId: {conversation_id}")
-                return []
-                
-        except Exception as e:
-            logger.error(f"Error retrieving conversation history: {e}")
-            return []
-    
-    def process_continuation_query(self, user_query: str, conversation_id: str, vector_db: str = None) -> Dict[str, Any]:
-        """
-        Process a continuation query with conversation context
-        """
-        try:
-            # Retrieve existing conversation history
-            chat_history = self.retrieve_conversation_history(conversation_id)
-            
-            # For now, return a mock response since we can't use the full workflow
-            # In production, this would use the full LangGraph workflow
-            
-            mock_response = f"Continuing conversation {conversation_id}. Your query: '{user_query}'. This is a continuation of our previous discussion."
-            
-            if chat_history:
-                last_message = chat_history[-1] if chat_history else {}
-                mock_response += f" Previously, we discussed: '{last_message.get('user', 'N/A')}'"
-            
-            return {
-                "success": True,
-                "ai_response": mock_response,
-                "context_used": False,
-                "sources_count": 0,
-                "conversation_id": conversation_id,
-                "model_used": AZURE_OPENAI_MODEL or "AZURE_OPENAI_GPT_4O",
-                "timestamp": datetime.now().isoformat(),
-                "chat_history": chat_history
-            }
-            
-        except Exception as e:
-            logger.error(f"Continuation workflow execution failed: {e}")
-            return {
-                "success": False,
-                "error": "Failed to process continuation query",
-                "ai_response": "I apologize, but I encountered an error processing your continuation request.",
-                "context_used": False,
-                "sources_count": 0,
-                "conversation_id": conversation_id,
-                "timestamp": datetime.now().isoformat(),
-                "chat_history": []
-            }
-
-# Initialize global workflow instance (reuse from POST handler)
-bedrock_workflow = BedrockKnowledgeBaseWorkflow()
+# Use shared workflow instance from POST handler for memory continuity
+# bedrock_workflow is imported from src.post.handler above
+logger.info(f"🧠 [PUT INIT] Using shared workflow instance with memory from POST handler")
 
 @authenticate_websocket()
-# @require_resource_permission('CHATKBBEDROCKCDKWEBSOCKET', 'UPDATE')
+@require_resource_permission('CHATKBBEDROCKCDKWEBSOCKET', 'UPDATE')
 def continue_chat(event, context):
     """
     Main function to handle the continuation of an existing chat conversation.
@@ -275,6 +208,12 @@ def continue_chat(event, context):
         
         action = body.get('action')
         datas = body.get('datas')
+        
+        # DEBUG: Log PUT handler usage for conversation continuation
+        logger.info(f"🔄 [PUT HANDLER] Processing conversation continuation - action: '{action}'")
+        logger.info(f"🔄 [PUT HANDLER] Request datas keys: {list(datas.keys()) if datas else 'None'}")
+        if datas and datas.get('id'):
+            logger.info(f"🔄 [PUT HANDLER] Continuing conversation_id: {datas.get('id')}")
 
         # Validate the request data schema using pydantic (similar to POST)
         try:
@@ -335,72 +274,20 @@ def continue_chat(event, context):
             logger.info(f"Processing chat continuation with LangGraph workflow: {user_query[:100]}...")
             logger.info(f"Conversation ID: {conversation_id}")
             logger.info(f"Using vector DB: {vector_db}")
-            
+
             try:
                 # FIRST: Check if conversation exists before calling workflow
                 # Retrieve existing conversation from DynamoDB using conversationId field
                 existing_conversation = None
                 try:
-                    # Ensure conversation_id is string for proper comparison
                     conversation_id_str = str(conversation_id)
-                    logger.info(f"PRE-WORKFLOW: Looking for conversation with conversationId: '{conversation_id_str}'")
-                    
-                    # Debug: First let's see what conversations exist in the database
-                    logger.info("DEBUG: Scanning all conversations in the database...")
-                    all_conversations_response = table.scan()
-                    all_conversations = all_conversations_response.get('Items', [])
-                    logger.info(f"DEBUG: Total conversations in database: {len(all_conversations)}")
-                    
-                    # Show detailed info about conversations that might match
-                    matching_conversations = []
-                    for conv in all_conversations:
-                        conv_id = conv.get('conversationId')
-                        if conv_id:
-                            logger.info(f"DEBUG: Conversation - conversationId: '{conv_id}' (type: {type(conv_id)}), title: '{conv.get('title', 'N/A')}'")
-                            if str(conv_id) == conversation_id_str:
-                                matching_conversations.append(conv)
-                        else:
-                            logger.info(f"DEBUG: Conversation - conversationId: MISSING, title: '{conv.get('title', 'N/A')}'")
-                    
-                    logger.info(f"DEBUG: Found {len(matching_conversations)} conversations with matching conversationId")
-                    
-                    # Primary method: Direct lookup by conversationId as primary key
-                    response = table.get_item(
-                        Key={'conversationId': conversation_id_str}
-                    )
-                    
+                    response = table.get_item(Key={'conversationId': conversation_id_str})
                     if 'Item' in response:
                         existing_conversation = response['Item']
-                        logger.info(f"PRE-WORKFLOW: Found conversation with conversationId: {existing_conversation.get('conversationId')}")
-                    else:
-                        existing_conversation = None
-                        logger.warning(f"PRE-WORKFLOW: No conversation found with conversationId {conversation_id}")
-                        
-                        # Fallback: Try scan method in case table structure is different
-                        scan_response = table.scan(
-                            FilterExpression=boto3.dynamodb.conditions.Attr('conversationId').eq(conversation_id_str)
-                        )
-                        existing_conversations = scan_response.get('Items', [])
-                        logger.info(f"PRE-WORKFLOW: DynamoDB scan fallback found {len(existing_conversations)} conversations with conversationId {conversation_id}")
-                        
-                        if existing_conversations:
-                            existing_conversation = existing_conversations[0]
-                            logger.info(f"PRE-WORKFLOW: Found conversation via scan: conversationId={existing_conversation.get('conversationId')}")
-                    
-                    if not existing_conversation:
-                        logger.warning(f"PRE-WORKFLOW: No conversation found with conversationId {conversation_id}")
-                        
-                        # Debug: Show what conversations actually exist
-                        logger.info("DEBUG: Showing actual conversations in database for debugging...")
-                        debug_response = table.scan(Limit=5)
-                        debug_items = debug_response.get('Items', [])
-                        for i, item in enumerate(debug_items):
-                            logger.info(f"DEBUG Conv {i}: conversationId='{item.get('conversationId')}', title='{item.get('title', 'N/A')}', createdBy='{item.get('createdBy', 'N/A')}'")
-                
                 except Exception as scan_err:
                     logger.error(f"Error scanning for conversation: {scan_err}")
                     existing_conversation = None
-                
+
                 if not existing_conversation:
                     logger.error(f"Conversation {conversation_id} not found. PUT operation requires existing conversation.")
                     response_result = Responses.result_response(STATUS_ERROR, False, f'Conversation {conversation_id} not found. Use POST to create a new conversation.')
@@ -409,32 +296,25 @@ def continue_chat(event, context):
                         'statusCode': STATUS_ERROR,
                         'body': json.dumps('Conversation not found')
                     }
-                
+
+                # --- Langfuse Trace Creation ---
+                trace = create_update_trace(session_id=str(uuid.uuid4()), conversation_id=conversation_id)
+                update_trace_input(trace, query=user_query, user_id=email)
+
                 # Conversation exists, now execute the AI workflow
-                logger.info(f"PRE-WORKFLOW: Conversation found, proceeding with AI workflow")
-                
-                # Execute chat continuation workflow  
-                # Create websocket connection info for the workflow
                 websocket_connection = {
                     "connectionId": connectionId,
                     "url": url
                 }
-                logger.info(f"Calling bedrock_workflow.process_chat_query with: user_query='{user_query}', conversation_id='{conversation_id}', vector_db='{vector_db}'")
                 workflow_result = bedrock_workflow.process_chat_query(user_query, conversation_id, vector_db, websocket_connection)
-                logger.info(f"Workflow result keys: {list(workflow_result.keys()) if isinstance(workflow_result, dict) else type(workflow_result)}")
-                
+
                 if workflow_result.get('success', False):
                     # Update existing conversation with AI response
                     existing_chat_history = existing_conversation.get('chatHistory', [])
-                    
-                    # Add new chat entry using helper
                     new_chat_entry = conversation_builder.create_conversation_data(
                         user_query, workflow_result.get('ai_response', ''), conversation_id
                     )
-                    
                     updated_chat_history = existing_chat_history + [new_chat_entry]
-                    
-                    # Update the conversation in DynamoDB using conversationId as primary key
                     table.update_item(
                         Key={'conversationId': conversation_id_str},
                         UpdateExpression='SET chatHistory = :history, memoryHistory = :memoryHistory, updatedBy = :updatedBy, updatedAt = :updatedAt',
@@ -445,10 +325,7 @@ def continue_chat(event, context):
                             ':updatedAt': datetime.now().isoformat()
                         }
                     )
-                    
                     logger.info("Chat continuation workflow completed successfully")
-                    
-                    # Send immediate AI response to client via WebSocket using helper
                     websocket_response = conversation_builder.build_websocket_response(
                         user_email=email,
                         conversation_id=conversation_id,
@@ -458,25 +335,29 @@ def continue_chat(event, context):
                         context_used=workflow_result.get('context_used', False),
                         sources_count=workflow_result.get('sources_count', 0)
                     )
-                    
-                    # Update the websocket response with the full chat history
                     websocket_response['chatHistory'] = updated_chat_history
-                    
                     final_response = conversation_builder.build_final_websocket_response(websocket_response, 200)
-                    
                     send_to_client(connectionId, json.dumps(final_response), url)
-                    
-                    # Prepare success response for return
                     response_result = Responses.result_response(STATUS_UPDATED, True, 'Chat continued successfully.', websocket_response)
-                    
+                    # Remove unnecessary fields before updating trace output
+                    wf_result_clean = dict(workflow_result)
+                    for k in [
+                        "context_used", "sources_count", "sources_info", "model_used",
+                        "processing_method", "cost_optimized", "memory_enabled", "thread_id", "streaming_used"
+                    ]:
+                        wf_result_clean.pop(k, None)
+                    update_trace_output(trace, response_data=wf_result_clean, status="success")
+                    flush_trace(trace)
                 else:
-                    # Workflow failed
                     logger.warning(f"Chat continuation workflow failed: {workflow_result.get('error', 'Unknown error')}")
                     response_result = Responses.result_response(STATUS_ERROR, False, 'AI processing temporarily unavailable')
-                    
+                    update_trace_error(trace, error_type="WorkflowError", error_message=workflow_result.get('error', 'Unknown error'))
+                    flush_trace(trace)
             except Exception as workflow_err:
                 logger.error(f"Chat continuation workflow execution error: {workflow_err}")
                 response_result = Responses.result_response(STATUS_ERROR, False, 'AI processing encountered an error')
+                update_trace_error(trace, error_type=type(workflow_err).__name__, error_message=str(workflow_err))
+                flush_trace(trace)
         else:
             logger.warning("No query provided for AI processing")
             response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Query is required for chat continuation.')

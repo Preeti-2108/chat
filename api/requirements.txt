@@ -19,4 +19,7 @@ zipp>=3.19.1
 ##Langchain and LangGraph requirements
 langchain-core>=0.2.0,<0.3.0
 langchain-openai>=0.1.0,<0.2.0
+langchain>=0.2.0,<0.3.0
 langgraph>=0.1.0,<0.2.0
+# langfuse>=2.17.0
+langfuse==2.59.2

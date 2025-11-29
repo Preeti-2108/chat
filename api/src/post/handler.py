@@ -3,7 +3,14 @@ import json  # Provides methods to work with JSON data
 import uuid  # Provides immutable UUID objects (universally unique identifiers)
 import boto3  # AWS SDK for Python to interact with AWS services
 import logging  # Provides a way to configure and use loggers
-from datetime import datetime  # Provides classes for manipulating dates and times
+from datetime import datetime  # Provides classes for manipulating dates and times.
+from src.helpers.langfuse_helpers import (
+    create_websocket_trace,
+    update_trace_input,
+    update_trace_output,
+    update_trace_error,
+    flush_trace,
+)
 from typing import Dict, Any, List
 
 # LangGraph and LangChain imports for workflow orchestration
@@ -11,6 +18,7 @@ from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_openai import AzureChatOpenAI
+from langgraph.checkpoint.memory import MemorySaver
 from botocore.config import Config
 
 from src.helpers.api_responses import Responses  # Custom helper for API responses
@@ -25,11 +33,11 @@ from src.helpers.queue_helper import send_message_to_queue  # Helper function to
 ## New organized helpers to reduce redundancy
 from src.helpers.streaming_handler import WordLevelStreamingHandler, send_immediate_streaming_signals
 from src.helpers.conversation_builder import conversation_builder, extract_user_email_from_event
-from src.helpers.document_analyzer import document_analyzer, build_context_aware_prompt, multi_query_analyzer
+from src.helpers.document_analyzer import document_analyzer, build_context_aware_prompt
 from src.helpers.system_instructions import get_default_system_instructions, get_error_response_templates
 from src.helpers.intent_detector import is_simple_query, get_simple_response, create_mock_streaming_response
-from src.helpers.query_rewriter import query_rewriter, rewrite_query_for_better_similarity
-from src.helpers.bedrock_tuner import bedrock_tuner
+from src.helpers.query_rewriter import build_query_rewriter, safe_rewrite_query
+from src.helpers.assistant_api import fetch_vector_db
 
 """
 /**
@@ -95,6 +103,8 @@ AZURE_OPENAI_API_KEY = os.getenv('AZURE_OPENAI_API_KEY')
 AZURE_OPENAI_TEMPERATURE = float(os.getenv('AZURE_OPENAI_TEMPERATURE'))
 AZURE_OPENAI_MAX_TOKENS = int(os.getenv('AZURE_OPENAI_MAX_TOKENS'))
 ENABLE_WEBSOCKET_STREAMING = os.getenv('ENABLE_WEBSOCKET_STREAMING', 'true').lower() == 'true'
+ASSISTANT_ENDPOINT = os.getenv('ASSISTANT_ENDPOINT')
+ASSISTANT_PRODUCT_KEY = os.getenv('ASSISTANT_PRODUCT_KEY')
 
 logger.info(f"AWS Region: {AWS_REGION}")
 logger.info(f"Knowledge Base ID: {KNOWLEDGE_BASE_ID}")
@@ -110,10 +120,9 @@ class State(Dict[str, Any]):
     """State object for LangGraph workflow"""
     messages: List[Any]
     user_query: str
-    query_variations: List[str]  # NEW: Multiple query variations for better retrieval
+    rewritten_query: str
     context_documents: List[str]
     conversation_id: str
-    conversation_memory: List[Dict[str, Any]]  # NEW: Previous conversation context
     ai_response: str
     has_context: bool
     websocket_connection: Dict[str, Any]
@@ -134,6 +143,10 @@ class BedrockKnowledgeBaseWorkflow:
     def __init__(self):
         self.bedrock_agent_client = self._setup_bedrock_agent()
         self.chat_model = self._setup_chat_model()
+        # Initialize dynamic query rewriter
+        self.query_rewriter = build_query_rewriter(self.chat_model)
+        # Initialize memory for conversation continuity (following reference pattern)
+        self.memory = MemorySaver()
         self.workflow = self._create_workflow()
     
     def _setup_bedrock_agent(self):
@@ -188,10 +201,9 @@ class BedrockKnowledgeBaseWorkflow:
         """Create the LangGraph workflow with nodes and edges"""
         workflow = StateGraph(State)
         
-        # Add nodes
+        # Add nodes  
         workflow.add_node("detect_intent", self.detect_query_intent)
-        workflow.add_node("load_conversation_memory", self.load_conversation_memory)  # NEW
-        workflow.add_node("rewrite_query", self.rewrite_query_for_similarity)  # NEW
+        workflow.add_node("rewrite_query", self.rewrite_query_node)
         workflow.add_node("retrieve_from_kb", self.retrieve_from_knowledge_base)  
         workflow.add_node("generate_response", self.generate_chat_response)
         workflow.add_node("handle_simple_query", self.handle_simple_query)
@@ -205,18 +217,22 @@ class BedrockKnowledgeBaseWorkflow:
             self.route_based_on_intent,
             {
                 "simple": "handle_simple_query",
-                "complex": "load_conversation_memory"  # Load memory before processing complex queries
+                "complex": "rewrite_query"
             }
         )
         
-        # Enhanced flow for complex queries with memory and query rewriting
-        workflow.add_edge("load_conversation_memory", "rewrite_query")
+        # After rewriting, proceed to retrieval
         workflow.add_edge("rewrite_query", "retrieve_from_kb")
         workflow.add_edge("retrieve_from_kb", "generate_response")
         workflow.add_edge("generate_response", END)
         workflow.add_edge("handle_simple_query", END)
         
-        return workflow.compile()
+        compiled_workflow = workflow.compile(checkpointer=self.memory)
+        logger.info(f"✅ [WORKFLOW DEBUG] LangGraph workflow compiled successfully with memory checkpointer")
+        logger.info(f"🔗 [WORKFLOW DEBUG] Workflow nodes: detect_intent, rewrite_query, retrieve_from_kb, generate_response, handle_simple_query")
+        logger.info(f"🔗 [WORKFLOW DEBUG] Conditional edges: detect_intent -> {{simple: handle_simple_query, complex: rewrite_query}}")
+        
+        return compiled_workflow
     
     def detect_query_intent(self, state: State) -> State:
         """
@@ -239,17 +255,42 @@ class BedrockKnowledgeBaseWorkflow:
         else:
             logger.info(f"🔄 Complex query - Proceeding with RAG + LLM: {skip_decision['reason']}")
         
+        logger.info(f"🔍 [WORKFLOW DEBUG] Final state after detect_intent: skip_rag={state.get('skip_rag')}, is_simple_query={state.get('is_simple_query')}")
+        
+        return state
+    
+    def rewrite_query_node(self, state: State) -> State:
+        """
+        Node: Dynamically rewrite query for better document retrieval
+        """
+        user_query = state.get("user_query", "")
+        logger.info(f"🔧 [REWRITE_QUERY_NODE] EXECUTING! Query: '{user_query[:50]}...'")
+        logger.info(f"🔧 [REWRITE_QUERY_NODE] State keys: {list(state.keys())}")
+        
+        # Use the dynamic query rewriter with safe fallback
+        rewritten_query = safe_rewrite_query(self.query_rewriter, user_query)
+        
+        if rewritten_query != user_query:
+            logger.info(f"✅ [REWRITE_QUERY_NODE] Query optimized: '{user_query}' → '{rewritten_query}'")
+        else:
+            logger.info(f"💡 [REWRITE_QUERY_NODE] Query unchanged: '{user_query}'")
+            
+        state["rewritten_query"] = rewritten_query
+        logger.info(f"🔧 [REWRITE_QUERY_NODE] COMPLETED! Rewritten query set in state")
         return state
     
     def route_based_on_intent(self, state: State) -> str:
         """
         Conditional routing function to determine next node based on query complexity
         """
-        if state.get("skip_rag", False):
-            logger.info("🚀 Routing to simple query handler (skipping RAG + LLM)")
+        skip_rag = state.get("skip_rag", False)
+        user_query = state.get("user_query", "")
+        
+        if skip_rag:
+            logger.info(f"🚀 Routing to SIMPLE query handler for: '{user_query[:30]}...'")
             return "simple"
         else:
-            logger.info("🔍 Routing to knowledge base retrieval (complex query)")
+            logger.info(f"🔍 Routing to QUERY REWRITER for complex query: '{user_query[:30]}...'")
             return "complex"
     
     def handle_simple_query(self, state: State) -> State:
@@ -260,12 +301,20 @@ class BedrockKnowledgeBaseWorkflow:
         simple_response = state.get("simple_response", "")
         conversation_id = state.get("conversation_id", "")
         
-        logger.info(f"💬 Handling simple query with predefined response")
+        logger.info(f"💬 [HANDLE_SIMPLE_QUERY] Handling simple query with predefined response")
+        
+        # DEBUG: Log state keys to verify websocket_connection is present
+        logger.info(f"💬 [HANDLE_SIMPLE_QUERY] State keys: {list(state.keys())}")
         
         # Check if WebSocket streaming is available
         connection_info = state.get("websocket_connection", {})
         connection_id = connection_info.get("connectionId")
         url = connection_info.get("url")
+        
+        # DEBUG: Log WebSocket connection details for simple queries
+        logger.info(f"💬 [WEBSOCKET DEBUG] Simple query connection info: {connection_info}")
+        logger.info(f"💬 [WEBSOCKET DEBUG] Connection ID: {connection_id}")
+        logger.info(f"💬 [WEBSOCKET DEBUG] URL: {url}")
         
         if connection_id and url and ENABLE_WEBSOCKET_STREAMING:
             # Send simple response via WebSocket streaming for consistency
@@ -303,177 +352,97 @@ class BedrockKnowledgeBaseWorkflow:
         logger.info(f"✅ Simple query processed in ~50ms with $0 cost")
         return state
     
-    def load_conversation_memory(self, state: State) -> State:
-        """
-        NEW Node: Load conversation memory for context-aware processing
-        """
-        conversation_id = state.get("conversation_id", "")
-        logger.info(f"🧠 Loading conversation memory for: {conversation_id}")
-        
-        conversation_memory = []
-        
-        try:
-            # Import here to avoid circular dependencies
-            import boto3
-            table_name = os.getenv('TABLE')
-            
-            if table_name and conversation_id:
-                dynamodb = boto3.resource('dynamodb')
-                table = dynamodb.Table(table_name)
-                
-                # Get existing conversation
-                response = table.get_item(Key={'conversationId': conversation_id})
-                
-                if 'Item' in response:
-                    item = response['Item']
-                    chat_history = item.get('chatHistory', [])
-                    
-                    # Convert to memory format (last 3 exchanges for context)
-                    for entry in chat_history[-6:]:  # Last 3 Q&A pairs
-                        if isinstance(entry, dict):
-                            conversation_memory.append({
-                                "role": entry.get("role", "user"),
-                                "content": entry.get("content", ""),
-                                "timestamp": entry.get("timestamp", "")
-                            })
-                    
-                    logger.info(f"Loaded {len(conversation_memory)} previous messages")
-                else:
-                    logger.info("No previous conversation found - starting fresh")
-            
-        except Exception as e:
-            logger.error(f"Error loading conversation memory: {e}")
-            conversation_memory = []
-        
-        state["conversation_memory"] = conversation_memory
-        return state
-    
-    def rewrite_query_for_similarity(self, state: State) -> State:
-        """
-        NEW Node: Rewrite query for improved semantic similarity
-        """
-        user_query = state.get("user_query", "")
-        conversation_memory = state.get("conversation_memory", [])
-        
-        logger.info(f"🔧 Rewriting query for better similarity: '{user_query[:50]}...'")
-        
-        try:
-            # Assess query complexity for rewriting strategy
-            complexity = document_analyzer.assess_query_complexity(user_query)
-            
-            # Add conversation context to query if available
-            context_enhanced_query = user_query
-            if conversation_memory:
-                # Add context from recent conversation
-                recent_context = []
-                for msg in conversation_memory[-2:]:  # Last 2 messages for context
-                    if msg.get("role") == "assistant" and len(msg.get("content", "")) < 100:
-                        recent_context.append(msg.get("content", ""))
-                
-                if recent_context:
-                    context_enhanced_query = f"{user_query} (Context: {' '.join(recent_context)})"
-            
-            # Generate query variations for better retrieval
-            query_variations = rewrite_query_for_better_similarity(
-                context_enhanced_query, 
-                complexity, 
-                self.chat_model  # Use LLM for advanced rewriting when available
-            )
-            
-            state["query_variations"] = query_variations
-            
-            logger.info(f"Generated {len(query_variations)} query variations")
-            for i, variation in enumerate(query_variations[:3], 1):
-                logger.info(f"  {i}. {variation}")
-            
-        except Exception as e:
-            logger.error(f"Query rewriting failed: {e}")
-            # Fallback to original query
-            state["query_variations"] = [user_query]
-        
-        return state
-    
     def retrieve_from_knowledge_base(self, state: State) -> State:
         """
         Node 1: Retrieve relevant context from Bedrock Knowledge Base
         """
-        logger.info("Retrieving context from Bedrock Knowledge Base with Multi-Query RAG")
+        logger.info(f"📚 [RETRIEVE_FROM_KB] EXECUTING! Retrieving context from Bedrock Knowledge Base")
+        logger.info(f"📚 [RETRIEVE_FROM_KB] State keys: {list(state.keys())}")
         
-        user_query = state.get("user_query", "")
-        query_variations = state.get("query_variations", [user_query])
-        all_context_documents = []
+        # Use rewritten query for optimal retrieval, fallback to original
+        retrieval_query = state.get("rewritten_query") or state.get("user_query", "")
+        original_query = state.get("user_query", "")
         
-        if self.bedrock_agent_client and user_query and KNOWLEDGE_BASE_ID:
+        logger.info(f"🔍 [RETRIEVE_FROM_KB] QUERY ANALYSIS:")
+        logger.info(f"🔍   Original query: '{original_query}'")
+        logger.info(f"🔍   Retrieval query: '{retrieval_query}'")
+        logger.info(f"🔍   Query was rewritten: {retrieval_query != original_query}")
+        
+        if state.get("rewritten_query"):
+            logger.info(f"✅ [RETRIEVE_FROM_KB] Using REWRITTEN query for retrieval")
+        else:
+            logger.warning(f"⚠️ [RETRIEVE_FROM_KB] No rewritten_query found! Using original query")
+            logger.warning(f"⚠️ [RETRIEVE_FROM_KB] This suggests rewrite_query_node was SKIPPED!")
+        
+        # Test specific queries for debugging
+        test_queries = [
+            "Do you have any information about microsoft?",
+            "How to open an incident on microsoft?",
+            "Support Windows Microsoft",
+            "Windows license support",
+            "Support des Licences Windows"
+        ]
+        
+        if retrieval_query.lower() in [q.lower() for q in test_queries]:
+            logger.info(f"🔍 ⚠️  DEBUGGING KNOWN PROBLEMATIC QUERY: '{retrieval_query}'")
+        context_documents = []
+        
+        if self.bedrock_agent_client and retrieval_query and KNOWLEDGE_BASE_ID:
             
             try:
                 logger.info(f"🔍 Querying Knowledge Base ID: {KNOWLEDGE_BASE_ID}")
-                logger.info(f"🔄 Using {len(query_variations)} query variations for comprehensive retrieval")
                 
                 # Get environment and vector_db parameters
                 env = os.getenv('ENV', 'dev')  # Default to 'dev' if not set
-                vector_db = "872051E8-E5C8-4AD1-83A8-ADB347D6C2CC"  # Use KB ID as fallback
+                logger.info(f"🔍 Using vector DB from state: {state.get('vector_db')}")
+                # Use helper to get retrieval configuration
+                retrieval_config = document_analyzer.get_retrieval_config(retrieval_query, env, state.get('vector_db'))
                 
-                logger.info(f"🔍 Using filters - Environment: {env}, Vector DB: {vector_db}")
-                logger.info(f"🔍 S3 path filter: s3://docops-kb-{env}/{vector_db}/")
+                logger.info(f"🔍 Using filters - Environment: {env}, Vector DB: {state.get('vector_db')}")
+                logger.info(f"🔍 S3 path filter: s3://docops-kb-{env}/{state.get('vector_db')}/")
                 
-                # Multi-Query RAG: Search with each query variation
-                seen_documents = set()  # Track unique documents by content hash
-                
-                for i, query_variant in enumerate(query_variations[:3], 1):  # Limit to 3 variations
-                    logger.info(f"🔍 Query {i}: {query_variant[:60]}...")
-                    
-                    # Use Bedrock tuner to get optimized retrieval configuration for each variant
-                    retrieval_config = bedrock_tuner.get_optimized_retrieval_config(query_variant, env, vector_db)
-                    
-                    response = self.bedrock_agent_client.retrieve(
-                        knowledgeBaseId=KNOWLEDGE_BASE_ID,
-                        retrievalQuery={'text': query_variant},  # Use the query variation
-                        retrievalConfiguration=retrieval_config
-                    )
-                    
-                    # Use helper to process retrieval results for this variation
-                    variant_documents = document_analyzer.process_retrieval_results(response)
-                    
-                    # Add unique documents (avoid duplicates across query variations)
-                    for doc in variant_documents:
-                        doc_content = doc.get('content', '')[:100]  # Use content snippet as hash
-                        if doc_content and doc_content not in seen_documents:
-                            seen_documents.add(doc_content)
-                            # Add query variant info to document metadata
-                            doc['query_variant_used'] = query_variant
-                            doc['variant_index'] = i
-                            all_context_documents.append(doc)
-                
-                # Use Multi-Query RAG analyzer to combine and optimize documents
-                context_documents = multi_query_analyzer.combine_multi_query_results(
-                    documents_by_query=all_context_documents,
-                    original_query=user_query,
-                    max_documents=8
+                response = self.bedrock_agent_client.retrieve(
+                    knowledgeBaseId=KNOWLEDGE_BASE_ID,
+                    retrievalQuery={'text': retrieval_query},
+                    retrievalConfiguration=retrieval_config
                 )
                 
-                logger.info(f"📊 Multi-Query RAG Results:")
-                logger.info(f"  Total unique documents found: {len(all_context_documents)}")
-                logger.info(f"  Final selected documents: {len(context_documents)}")
+                # 🔍 DEBUG: Log detailed Bedrock response
+                logger.info(f"🔍 BEDROCK RESPONSE DEBUG:")
+                logger.info(f"🔍 Query used: '{retrieval_query}'")
                 
-                # Record performance metrics for bedrock tuner optimization
-                query_type = bedrock_tuner.classify_query_for_optimization(user_query)
-                retrieval_success = len(context_documents) > 0
-                avg_response_time = 1.5  # Placeholder - in real implementation, measure actual time
+                if 'retrievalResults' in response:
+                    results = response['retrievalResults']
+                    logger.info(f"🔍 Total results returned: {len(results)}")
+                    
+                    for i, result in enumerate(results[:5]):  # Log first 5 results
+                        score = result.get('score', 0)
+                        content = result.get('content', {}).get('text', '')[:200]  # First 200 chars
+                        location = result.get('location', {})
+                        uri = location.get('s3Location', {}).get('uri', 'No URI')
+                        
+                        logger.info(f"🔍 Result {i+1}: Score={score:.4f}")
+                        logger.info(f"🔍   URI: {uri}")
+                        logger.info(f"🔍   Content preview: '{content}...'")
+                        
+                        # Check for French content
+                        french_indicators = ['licence', 'support des', 'windows', 'microsoft']
+                        has_french = any(indicator in content.lower() for indicator in french_indicators)
+                        logger.info(f"🔍   Contains French indicators: {has_french}")
+                        logger.info(f"🔍   ---")
+                else:
+                    logger.warning(f"🔍 No retrievalResults in Bedrock response!")
+                    logger.info(f"🔍 Response keys: {list(response.keys())}")
                 
-                bedrock_tuner.record_query_performance(
-                    query=user_query,
-                    query_type=query_type, 
-                    response_time=avg_response_time,
-                    success=retrieval_success,
-                    documents_found=len(context_documents)
-                )
+                # Use helper to process retrieval results
+                context_documents = document_analyzer.process_retrieval_results(response)
                         
             except Exception as e:
                 logger.error(f"Error retrieving from Knowledge Base: {e}")
         elif not KNOWLEDGE_BASE_ID:
             logger.warning("⚠️  Knowledge Base retrieval skipped: KNOWLEDGE_BASE_ID not configured")
-        elif not user_query:
-            logger.warning("⚠️  Knowledge Base retrieval skipped: No user query provided")
+        elif not retrieval_query:
+            logger.warning("⚠️  Knowledge Base retrieval skipped: No query provided")
         elif not self.bedrock_agent_client:
             logger.warning("⚠️  Knowledge Base retrieval skipped: Bedrock agent client not available")
         
@@ -486,14 +455,31 @@ class BedrockKnowledgeBaseWorkflow:
         """
         Node 2: Generate response using Bedrock chat model with retrieved context
         """
-        logger.info("Generating chat response using Bedrock model")
+        logger.info("🤖 [GENERATE_CHAT_RESPONSE] Starting response generation")
         
         user_query = state.get("user_query", "")
         context_documents = state.get("context_documents", [])
         conversation_id = state.get("conversation_id", "")
         
-        # Use helper to build context-aware prompt
+        # DEBUG: Log state keys to verify websocket_connection is present
+        logger.info(f"🤖 [GENERATE_CHAT_RESPONSE] State keys: {list(state.keys())}")
+        
+        # Use helper to build context-aware prompt with conversation history
         system_instructions = get_default_system_instructions()
+        
+        # Build conversation history for the prompt
+        conversation_history = ""
+        messages = state.get("messages", [])
+        if messages:
+            conversation_history = "\n\nConversation History:\n"
+            for msg in messages:
+                if hasattr(msg, 'content'):
+                    role = "Human" if isinstance(msg, HumanMessage) else "AI Assistant"
+                    conversation_history += f"{role}: {msg.content}\n"
+            conversation_history += f"\nHuman: {user_query}\nAI Assistant: "
+            logger.info(f"🧠 [GENERATE_CHAT_RESPONSE] Including conversation history with {len(messages)} previous messages")
+        
+        # Build prompt with conversation context
         prompt = build_context_aware_prompt(
             system_instructions=system_instructions,
             context_documents=context_documents,
@@ -501,20 +487,33 @@ class BedrockKnowledgeBaseWorkflow:
             max_tokens=AZURE_OPENAI_MAX_TOKENS
         )
         
+        # Add conversation history to prompt for memory
+        if conversation_history:
+            prompt = system_instructions + conversation_history
+            logger.info(f"🧠 [GENERATE_CHAT_RESPONSE] Using conversation-aware prompt with history")
+        
         try:
             if self.chat_model:
                 # Create message for the chat model
                 messages = [HumanMessage(content=prompt)]
                 
-                logger.info("Starting Azure OpenAI streaming response...")
+                logger.info("🤖 [GENERATE_CHAT_RESPONSE] Starting Azure OpenAI streaming response...")
                 
                 # Check if WebSocket connection info is available in state
                 connection_info = state.get("websocket_connection", {})
                 connection_id = connection_info.get("connectionId")
                 url = connection_info.get("url")
                 
+                # DEBUG: Log WebSocket connection details
+                logger.info(f"🤖 [WEBSOCKET DEBUG] Connection info: {connection_info}")
+                logger.info(f"🤖 [WEBSOCKET DEBUG] Connection ID: {connection_id}")
+                logger.info(f"🤖 [WEBSOCKET DEBUG] URL: {url}")
+                logger.info(f"🤖 [WEBSOCKET DEBUG] ENABLE_WEBSOCKET_STREAMING: {ENABLE_WEBSOCKET_STREAMING}")
+                
                 if connection_id and url and ENABLE_WEBSOCKET_STREAMING:
                     # Use WordLevelStreamingHandler for advanced streaming
+                    logger.info(f"🤖 [STREAMING] Initializing WordLevelStreamingHandler with connection_id: {connection_id}")
+                    
                     streaming_handler = WordLevelStreamingHandler(
                         connection_id=connection_id,
                         websocket_url=url,
@@ -523,14 +522,16 @@ class BedrockKnowledgeBaseWorkflow:
                     )
                     
                     # Send start signal immediately
+                    logger.info("🤖 [STREAMING] Sending start signal...")
                     streaming_handler.send_start_signal()
                     
                     # Process streaming response
-                    logger.info("Using word-level streaming handler for response")
-                    logger.info(f"Messages sent to model: {messages}")
+                    logger.info("🤖 [STREAMING] Starting word-level streaming...")
+                    logger.info(f"🤖 [STREAMING] Messages sent to model: {[msg.content[:50] + '...' for msg in messages]}")
                     ai_response = streaming_handler.process_word_streaming(
                         self.chat_model.stream(messages)
                     )
+                    logger.info(f"🤖 [STREAMING] Streaming completed. Response length: {len(ai_response)}")
                 else:
                     # Fallback to regular invoke if no WebSocket info or streaming disabled
                     logger.info("Using regular invoke (streaming disabled or no WebSocket info)")
@@ -562,54 +563,91 @@ class BedrockKnowledgeBaseWorkflow:
         # Extract source information from context documents
         sources_info = []
         logger.info(f"Processing {len(context_documents)} context documents for source extraction")
-        
-        # for i, doc in enumerate(context_documents):
-        #     logger.info(f"Document {i+1} structure: {type(doc)}")
-        #     logger.info(f"Document {i+1} keys: {doc.keys() if isinstance(doc, dict) else 'Not a dict'}")
-            
-        #     if isinstance(doc, dict):
-        #         location = doc.get('location', {})
-        #         logger.info(f"Document {i+1} location: {location}")
-                
-        #         # Handle different possible location structures
-        #         uri = ''
-        #         if 's3Location' in location:
-        #             uri = location.get('s3Location', {}).get('uri', '')
-        #         elif 'uri' in location:
-        #             uri = location.get('uri', '')
-                
-        #         source_info = {
-        #             'uri': uri,
-        #             'score': doc.get('score', 0),
-        #             'type': location.get('type', 'unknown'),
-        #             'metadata': doc.get('metadata', {}),
-        #             'location_raw': location  # Include raw location for debugging
-        #         }
-        #         sources_info.append(source_info)
-        #         logger.info(f"Added source info: {source_info}")
-        
-        # logger.info(f"Final sources_info: {sources_info}")
-        # state["sources_info"] = sources_info
+
         return state
     
     # Document analysis methods moved to src/helpers/document_analyzer.py
+    
+    def get_memory_checkpoints(self, thread_id: str):
+        """
+        Get conversation memory checkpoints for a thread_id (following reference pattern)
+        Similar to process_checkpoints in reference code
+        """
+        try:
+            checkpoints = list(self.memory.list({"configurable": {"thread_id": thread_id}}))
+            logger.info(f"🧠 [MEMORY] Found {len(checkpoints)} checkpoints for thread_id: {thread_id}")
+            return checkpoints
+        except Exception as e:
+            logger.error(f"❌ [MEMORY] Error retrieving checkpoints: {e}")
+            return []
+    
+    def get_conversation_context(self, thread_id: str) -> str:
+        """
+        Get conversation context summary for debugging (following reference pattern)
+        """
+        try:
+            checkpoints = self.get_memory_checkpoints(thread_id)
+            if not checkpoints:
+                return "No conversation history"
+                
+            # Get the latest checkpoint
+            latest_checkpoint = checkpoints[0].checkpoint if checkpoints else None
+            if not latest_checkpoint:
+                return "No checkpoint data"
+                
+            messages = latest_checkpoint["channel_values"].get("messages", [])
+            if not messages:
+                return "No messages in conversation"
+                
+            context_summary = []
+            for msg in messages[-5:]:  # Last 5 messages
+                if isinstance(msg, HumanMessage):
+                    context_summary.append(f"User: {msg.content[:100]}...")
+                elif isinstance(msg, AIMessage):
+                    context_summary.append(f"AI: {msg.content[:100]}...")
+                    
+            return "\n".join(context_summary)
+        except Exception as e:
+            return f"Error loading context: {e}"
     
     def process_chat_query(self, user_query: str, conversation_id: str = None, vector_db: str = None, websocket_connection: Dict = None) -> Dict[str, Any]:
         """
         Main method to process a chat query through the LangGraph workflow
         """
         try:
-            # Initialize state with new fields for enhanced RAG
+            # Load existing conversation history from DynamoDB for memory continuity
+            existing_messages = []
+            if conversation_id:
+                try:
+                    # Try to load conversation history from DynamoDB
+                    import boto3
+                    table_name = os.getenv('TABLE')
+                    if table_name:
+                        dynamodb = boto3.resource('dynamodb')
+                        table = dynamodb.Table(table_name)
+                        
+                        response = table.get_item(Key={'conversationId': conversation_id})
+                        if 'Item' in response:
+                            chat_history = response['Item'].get('chatHistory', [])
+                            # Convert DynamoDB chat history to LangGraph messages
+                            for entry in chat_history:
+                                if entry.get('user'):
+                                    existing_messages.append(HumanMessage(content=entry['user']))
+                                if entry.get('aiAssistant'):
+                                    existing_messages.append(AIMessage(content=entry['aiAssistant']))
+                            logger.info(f"🧠 [MEMORY LOAD] Loaded {len(existing_messages)} messages from DynamoDB for conversation {conversation_id}")
+                except Exception as db_err:
+                    logger.warning(f"⚠️ [MEMORY LOAD] Could not load DynamoDB history: {db_err}")
+            
+            # Initialize state with existing conversation history
             initial_state = {
                 "user_query": user_query,
-                "query_variations": [],  # NEW: Will be populated by rewrite_query node
                 "conversation_id": conversation_id or str(uuid.uuid4()),
-                "conversation_memory": [],  # NEW: Will be populated by load_conversation_memory node
                 "context_documents": [],
-                "messages": [],
+                "messages": existing_messages,  # Include existing conversation history
                 "ai_response": "",
                 "has_context": False,
-                "vector_db": vector_db or KNOWLEDGE_BASE_ID,
+                "vector_db": vector_db,
                 "websocket_connection": websocket_connection or {},
                 "is_simple_query": False,
                 "skip_rag": False,
@@ -617,10 +655,60 @@ class BedrockKnowledgeBaseWorkflow:
                 "simple_response": ""
             }
             
-            # Execute the workflow
-            final_state = self.workflow.invoke(initial_state)
+            # Execute the workflow with memory using stream pattern (following reference code)
+            # CRITICAL: Use conversation_id as thread_id for memory consistency across POST and PUT
+            thread_id = conversation_id or str(uuid.uuid4())
+            logger.info(f"🚀 [WORKFLOW DEBUG] Starting LangGraph execution with memory: thread_id={thread_id}, conversation_id={conversation_id}, user_query='{user_query[:30]}...'")
+            logger.info(f"🧠 [MEMORY CONSISTENCY] thread_id == conversation_id: {thread_id == conversation_id}")
             
-            # Return structured response
+            # Load existing conversation context for debugging
+            context = self.get_conversation_context(thread_id)
+            if context != "No conversation history":
+                logger.info(f"🧠 [MEMORY] Previous conversation context found for thread_id {thread_id}:")
+                logger.info(f"🧠 [MEMORY] {context}")
+            else:
+                logger.info(f"🧠 [MEMORY] No previous conversation context for thread_id: {thread_id}")
+            
+            # Also check memory checkpoints
+            checkpoints = self.get_memory_checkpoints(thread_id)
+            logger.info(f"🧠 [MEMORY] Found {len(checkpoints)} memory checkpoints for thread_id: {thread_id}")
+            
+            # Use stream with thread_id for memory persistence (following reference pattern)
+            final_state = None
+            for chunk in self.workflow.stream(
+                initial_state,  # Use initial_state instead of messages format
+                {"configurable": {"thread_id": thread_id}}
+            ):
+                logger.debug(f"🔄 [MEMORY STREAM] Processing chunk: {list(chunk.keys())}")
+                # Get the last node's output as final state
+                if chunk:
+                    for node_name, node_state in chunk.items():
+                        final_state = node_state
+            
+            # Fallback to invoke if stream didn't return any chunks
+            if final_state is None:
+                logger.warning("🔄 [MEMORY] Stream returned no chunks, falling back to invoke")
+                final_state = self.workflow.invoke(
+                    initial_state,
+                    {"configurable": {"thread_id": thread_id}}
+                )
+            
+            logger.info(f"✅ [WORKFLOW DEBUG] LangGraph execution completed with memory. Final state keys: {list(final_state.keys())}")
+            
+            # Update conversation_id to be the thread_id for consistency
+            if isinstance(final_state, dict):
+                final_state["conversation_id"] = thread_id
+                logger.info(f"🧠 [MEMORY CONSISTENCY] Updated final_state conversation_id to match thread_id: {thread_id}")
+            
+            # Check if streaming was used by examining WebSocket connection
+            streaming_used = bool(
+                websocket_connection and 
+                websocket_connection.get("connectionId") and 
+                websocket_connection.get("url") and
+                ENABLE_WEBSOCKET_STREAMING
+            )
+            
+            # Return structured response with memory status
             return {
                 "success": True,
                 "ai_response": final_state.get("ai_response", ""),
@@ -631,6 +719,9 @@ class BedrockKnowledgeBaseWorkflow:
                 "model_used": AZURE_OPENAI_MODEL if not final_state.get("is_simple_query", False) else "rule_based",
                 "processing_method": "simple_response" if final_state.get("is_simple_query", False) else "rag_llm",
                 "cost_optimized": final_state.get("is_simple_query", False),
+                "memory_enabled": True,  # Memory is now enabled following reference pattern
+                "thread_id": thread_id,  # Include thread_id for continuation
+                "streaming_used": streaming_used,  # Indicate whether streaming was used
                 "timestamp": datetime.now().isoformat()
             }
             
@@ -646,11 +737,12 @@ class BedrockKnowledgeBaseWorkflow:
                 "timestamp": datetime.now().isoformat()
             }
 
-# Initialize global workflow instance
+# Initialize global workflow instance with memory support
 bedrock_workflow = BedrockKnowledgeBaseWorkflow()
+logger.info(f"🧠 [POST INIT] Initialized workflow with memory checkpointer")
 
 @authenticate_websocket()
-# @require_resource_permission('CHATKBBEDROCKCDKWEBSOCKET', 'CREATE')
+@require_resource_permission('CHATKBBEDROCKCDKWEBSOCKET', 'CREATE')
 def start_chat(event, context):
     """
     Main function to handle the creation of a new item.
@@ -690,6 +782,7 @@ def start_chat(event, context):
         event_info = extract_event_info(event)
         url = event_info.get('url')
         connectionId = event_info.get('connectionId')
+        access_token = event_info.get("access_token")
         
         if not connectionId:
             logger.error("No connection ID found in event")
@@ -719,6 +812,14 @@ def start_chat(event, context):
         
         action = body.get('action')
         datas = body.get('datas')
+        
+        # DEBUG: Log the action and check for potential routing issues
+        logger.info(f"🔍 [POST HANDLER] Received action: '{action}' with datas keys: {list(datas.keys()) if datas else 'None'}")
+        
+        # Check if this should be a PUT operation instead
+        if datas and datas.get('id'):
+            logger.warning(f"⚠️ [POST HANDLER] Received 'id' in request - this might should be a PUT operation instead!")
+            logger.warning(f"⚠️ [POST HANDLER] conversation_id provided: {datas.get('id')}")
 
         # Validate the request data schema
         try:
@@ -746,70 +847,97 @@ def start_chat(event, context):
         user_info = event.get('auth', {}).get('user_info', {})
         email = user_info.get('email') or user_info.get('username', 'unknown@example.com')
         user_id = user_info.get('user_id', 'unknown')
-        
         logger.info(f"Creating item for authenticated user: {email} (ID: {user_id})")
-        
+
+        # Generate session_id and create clean trace
+        session_id = str(uuid.uuid4())
+        conversation_id = session_id
+        trace = create_websocket_trace(session_id, conversation_id=conversation_id, user_id=email)
+
         # SEND IMMEDIATE STREAMING SIGNALS - BEFORE ANY PROCESSING
-        conversation_id = validation_schema['datas'].get('conversationId', str(uuid.uuid4()))
         send_immediate_streaming_signals(connectionId, url, conversation_id)
-        
-        # Process chat query using LangGraph workflow with Bedrock Knowledge Base
+
+        # --- Langfuse Trace Input Update ---
         user_query = validation_schema['datas'].get('query', '')
-        vector_db = validation_schema['datas'].get('vectorDb', KNOWLEDGE_BASE_ID)  # Get vector DB parameter
-        
+        assistant_id = validation_schema['datas'].get('assistantId')
+        update_trace_input(
+            trace,
+            query=user_query,
+            assistantId=assistant_id,
+            user_id=email
+        )
+        if assistant_id:
+            fetched_db = fetch_vector_db(BASE_URL, ASSISTANT_ENDPOINT, ASSISTANT_PRODUCT_KEY, assistant_id, access_token)
+            logger.info(f"Fetched vector DB for assistant '{assistant_id}': {fetched_db}")
+            if fetched_db:
+                vector_db = fetched_db
+
         # Extract user email using helper
         user_email = extract_user_email_from_event(event)
-        
         if user_query:
             logger.info(f"Processing chat query with LangGraph workflow: {user_query[:100]}...")
             logger.info(f"Using vector DB: {vector_db}")
-            
             try:
                 # Prepare WebSocket connection info for streaming
                 websocket_connection = {
                     "connectionId": connectionId,
                     "url": url
                 }
-                
                 # Execute LangGraph workflow with vector DB filter and WebSocket streaming
                 workflow_result = bedrock_workflow.process_chat_query(user_query, conversation_id, vector_db, websocket_connection)
-                
                 if workflow_result.get('success', False):
                     # Use helper to build success case data structure
                     validation_schema['datas'] = conversation_builder.build_success_case_data(
-                        workflow_result, user_query, user_email
+                        workflow_result, user_query, user_email, llm=bedrock_workflow.chat_model
                     )
-                    
-                    logger.info("LangGraph workflow completed successfully")
-                    
-                    # Send immediate AI response to client via WebSocket using helper
-                    websocket_response = conversation_builder.build_websocket_response(
-                        user_email=user_email,
-                        conversation_id=workflow_result.get('conversation_id', conversation_id),
-                        user_query=user_query,
-                        ai_response=workflow_result.get('ai_response', ''),
-                        sources_info=workflow_result.get('sources_info', []),
-                        context_used=workflow_result.get('context_used', False),
-                        sources_count=workflow_result.get('sources_count', 0)
-                    )
-                    
-                    final_response = conversation_builder.build_final_websocket_response(websocket_response, 201)
-                    send_to_client(connectionId, json.dumps(final_response), url)
-                    
+                    logger.info("✅ [POST HANDLER] LangGraph workflow completed successfully")
+                    # --- Langfuse Trace Output Update ---
+                    # Remove unnecessary fields before updating trace output
+                    wf_result_clean = dict(workflow_result)
+                    for k in [
+                        "context_used", "sources_count", "sources_info", "model_used",
+                        "processing_method", "cost_optimized", "memory_enabled", "thread_id", "streaming_used"
+                    ]:
+                        wf_result_clean.pop(k, None)
+                    update_trace_output(trace, response_data=wf_result_clean, status="success")
+                    flush_trace(trace)
+                    # Check if streaming was actually used
+                    streaming_used = workflow_result.get('streaming_used', False)
+                    if streaming_used:
+                        logger.info("📡 [POST HANDLER] Streaming response already sent during workflow execution")
+                        logger.info("🔄 [POST HANDLER] Skipping duplicate WebSocket response to maintain streaming integrity")
+                    else:
+                        logger.warning("⚠️ [POST HANDLER] Streaming may have failed - sending fallback WebSocket response")
+                        # Send fallback WebSocket response if streaming didn't work
+                        websocket_response = conversation_builder.build_websocket_response(
+                            user_email=user_email,
+                            conversation_id=workflow_result.get('conversation_id', conversation_id),
+                            user_query=user_query,
+                            ai_response=workflow_result.get('ai_response', ''),
+                            sources_info=workflow_result.get('sources_info', []),
+                            context_used=workflow_result.get('context_used', False),
+                            sources_count=workflow_result.get('sources_count', 0)
+                        )
+                        final_response = conversation_builder.build_final_websocket_response(websocket_response, 201)
+                        send_to_client(connectionId, json.dumps(final_response), url)
+                        logger.info("📡 [POST HANDLER] Fallback WebSocket response sent")
                 else:
                     # Workflow failed, but continue with regular processing
                     logger.warning(f"LangGraph workflow failed: {workflow_result.get('error', 'Unknown error')}")
-                    
+                    # --- Langfuse Trace Error Update ---
+                    update_trace_error(trace, error_type="WorkflowError", error_message=workflow_result.get('error', 'Unknown error'))
+                    flush_trace(trace)
                     # Use helper to build failure case data structure
                     validation_schema['datas'] = conversation_builder.build_failure_case_data(
                         user_query=user_query,
                         conversation_id=conversation_id,
                         user_email=user_email
                     )
-                    
             except Exception as workflow_err:
                 logger.error(f"LangGraph workflow execution error: {workflow_err}")
-                
+                # --- Langfuse Trace Error Update ---
+                update_trace_error(trace, error_type=type(workflow_err).__name__, error_message=str(workflow_err))
+                flush_trace(trace)
                 # Use helper to build error case data structure  
                 validation_schema['datas'] = conversation_builder.build_error_case_data(
                     user_query=user_query,
@@ -818,7 +946,9 @@ def start_chat(event, context):
                 )
         else:
             logger.warning("No query provided for AI processing")
-            
+            # --- Langfuse Trace Error Update ---
+            update_trace_error(trace, error_type="NoQuery", error_message="No query provided for AI processing")
+            flush_trace(trace)
             # Use helper to build no query case data structure
             validation_schema['datas'] = conversation_builder.build_no_query_case_data(
                 conversation_id=conversation_id,
@@ -874,9 +1004,23 @@ def start_chat(event, context):
         logger.error(f"Error occurred: {str(err)}, Event: {json.dumps(event)}")
         response_result = Responses.result_response(STATUS_ERROR, False, 'Error during the execution.')
 
-    # Send the response to the client
+    # Send the response to the client only if streaming wasn't already handled
     try:
-        send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+        # Check if this is a successful workflow response (streaming already handled)
+        is_streaming_response = (
+            response_result and 
+            isinstance(response_result, dict) and 
+            response_result.get('success') and
+            user_query  # Only if there was a query to process
+        )
+        
+        if not is_streaming_response:
+            # Send non-streaming response (errors, validation failures, etc.)
+            logger.info("📡 [POST HANDLER] Sending non-streaming response (error/validation)")
+            send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+        else:
+            logger.info("📡 [POST HANDLER] Skipping final response - streaming already completed")
+            
     except Exception as websocket_err:
         logger.error(f"Error sending response to client: {str(websocket_err)}")
         # Don't return error here as the main operation might have succeeded
@@ -898,7 +1042,7 @@ def construct_new_item(datas):
     item = {
         "id": str(uuid.uuid4()),  # Generate a unique ID for the new item
         "conversationId": str(datas.get('conversationId', '')),
-        "assistantId": '268f80b4-61f4-470e-bd8d-e6091e09a3cb',
+        "assistantId": datas.get('assistantId', ''),
         "title": datas.get('title', ''),
         "createdBy": datas.get('createdBy', ''),
         "updatedBy": datas.get('updatedBy', ''),

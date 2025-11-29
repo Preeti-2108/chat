@@ -4,6 +4,7 @@ Handles basic queries without needing RAG or LLM processing for cost and speed o
 """
 
 import logging
+import re
 import time
 from typing import Dict, Any, Generator
 
@@ -24,7 +25,32 @@ def is_simple_query(text: str) -> bool:
         
     text = text.lower().strip()
     
-    # Simple greeting and conversation keywords
+    # IMPORTANT: Check for memory-related queries first and exclude them from simple queries
+    # These should go through full workflow with memory to access conversation history
+    
+    # Questions about previous conversation context - need memory to recall
+    memory_queries = [
+        "what is my name", "what's my name", "my name", "do you remember my name",
+        "who am i", "what did i tell you", "what did we discuss", "remember when",
+        "earlier i said", "i mentioned", "you said", "we talked about"
+    ]
+    
+    if any(memory_query in text for memory_query in memory_queries):
+        return False  # Force memory-related questions to use full workflow
+    
+    # Technical/informational queries that should NEVER be simple
+    technical_keywords = [
+        "microsoft", "incident", "support", "phone", "number", "contact",
+        "critical", "emergency", "ticket", "procedure", "process", "how to",
+        "which", "what is", "where", "when", "why", "explain", "tell me"
+    ]
+    
+    # If any technical keywords are present, this is NOT a simple query
+    for tech_kw in technical_keywords:
+        if re.search(r'\b' + re.escape(tech_kw) + r'\b', text):
+            return False  # Force technical questions to use RAG/LLM
+    
+    # Simple greeting and conversation keywords (excluding name introductions)
     simple_keywords = [
         # Greetings
         "hi", "hello", "hey", "good morning", "good evening", "good afternoon",
@@ -52,15 +78,10 @@ def is_simple_query(text: str) -> bool:
         "cool", "good job", "well done"
     ]
     
-    # Check for exact keyword matches (whole words only)
-    import re
-    text_words = re.findall(r'\b\w+\b', text.lower())
-    text_as_string = ' '.join(text_words)
-    
+    # Check for exact keyword matches using word boundaries to avoid false positives
     for kw in simple_keywords:
-        # Use word boundary matching to avoid substring matches
-        pattern = r'\b' + re.escape(kw) + r'\b'
-        if re.search(pattern, text_as_string):
+        # Use word boundary regex to ensure exact word matches only
+        if re.search(r'\b' + re.escape(kw) + r'\b', text):
             return True
     
     # Also treat very short messages as potentially simple

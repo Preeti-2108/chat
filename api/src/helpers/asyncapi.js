@@ -11,7 +11,7 @@ const asyncapiDefinition = {
     "id": "urn:templatepython:api", // Unique identifier for the API
     "defaultContentType": "application/json", // Default content type for messages
     "info": {
-      "title": "Python Template CDK Websocket", // Title of the API
+      "title": "DPS-WS-Chatinternal-KB-Bedrock", // Title of the API
       "version": "1.0.0", // Version of the API
       "description": "API for Template", // Brief description of the API
       "contact": {
@@ -108,40 +108,8 @@ async function generateAsyncAPIDocument(baseDir = './src') {
         components.messages = {};
     }
 
-    // Generate missing response messages
-    const missingMessages = [
-        'TemplateDeleteResponse',
-        'TemplateGetResponse',
-        'NewTemplateResponse',
-        'TemplateUpdateResponse',
-        'TemplateListResponse'
-    ];
-
-    missingMessages.forEach(messageName => {
-        if (!components.messages[messageName]) {
-            components.messages[messageName] = {
-                messageId: messageName,
-                contentType: "application/json",
-                payload: {
-                    type: "object",
-                    properties: {
-                        success: {
-                            type: "boolean",
-                            description: "Indicates if the operation was successful"
-                        },
-                        message: {
-                            type: "string",
-                            description: "Response message"
-                        },
-                        data: {
-                            type: "object",
-                            description: "Response data"
-                        }
-                    }
-                }
-            };
-        }
-    });
+    // Only generate components that are actually referenced in channels
+    // Remove unused template message components to fix validation issues
 
     let asyncAPIDocument = {
         ...asyncapiDefinition, // Spread the base AsyncAPI definition

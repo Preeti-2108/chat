@@ -1,20 +1,65 @@
-# Import necessary modules and packages
-import json  # For handling JSON data
-import os  # For accessing environment variables
-import boto3  # AWS SDK for Python to interact with AWS services
-import logging  # For logging information and errors
-from botocore.exceptions import ClientError  # Exception for AWS client errors
-from botocore.config import Config  # For configuring AWS clients
-from src.helpers.api_responses import Responses  # Custom response handling
-from src.helpers.construct_response import construct_response  # Helper to construct responses
-from src.helpers.schema_validation import validate_request_datas_schema_pydantic  # Schema validation utility
-from src.handler_websocket.handler import send_to_client  # WebSocket communication utility
-from src.helpers.event_utils import extract_event_info  # Utility to extract information from events
+import json  # Import JSON module for parsing and generating JSON data
+import os  # Import OS module for interacting with the operating system
+import boto3  # Import Boto3, the AWS SDK for Python, to interact with AWS services
+import logging  # Import logging module to log messages
+from botocore.exceptions import ClientError  # Import specific exceptions from BotoCore
+from boto3.dynamodb.conditions import Attr
+from botocore.config import Config
+
+# Import custom helper modules for API responses, response construction, schema validation, WebSocket communication, and event information extraction
+from src.helpers.api_responses import Responses
+from src.helpers.construct_response import construct_response
+from src.helpers.schema_validation import validate_request_datas_schema_pydantic
+from src.handler_websocket.handler import send_to_client
+from src.helpers.event_utils import extract_event_info
+from src.helpers.decimal_converter import convert_decimal_to_json_serializable as decimal_to_json_serializable  # Custom helper to convert Decimal objects
 from src.helpers.auth_middleware import authenticate_websocket, get_user_email, get_authenticated_user  # Cognito authentication
 from src.helpers.scope_manager import require_resource_permission  # Scope validation
-from src.helpers.queue_helper import send_message_to_queue
 
-# Configure connection pooling for better performance
+"""
+/**
+ * @asyncapi
+ * channels:
+ *   chatGetAssistant:
+ *     description: Channel for retrieving a specific chat by assistant ID.
+ *     publish:
+ *       operationId: chatGetAssistant
+ *       summary: Get a specific chat by assistant ID.
+ *       message:
+ *         messageId: chatGetAssistant
+ *         contentType: application/json
+ *         payload:
+ *           type: object
+ *           required:
+ *             - action
+ *             - datas
+ *           properties:
+ *             action:
+ *               type: string
+ *               description: The action to perform.
+ *               example: getassistant
+ *             datas:
+ *               type: object
+ *               required:
+ *                 - id
+ *               properties:
+ *                 id:
+ *                   type: string
+ *                   description: The unique identifier of the chat to retrieve.
+ *                   example: 184cf8da-b821-4ff4-bd6c-cdafa166e2e0
+ *     subscribe:
+ *       operationId: chatGetAssistantResponse
+ *       summary: Receive response for the retrieved chat.
+ *       message:
+ *         $ref: '#/components/messages/chatGetAssistantResponse'
+ */
+"""
+
+# Configure the logger for the module
+logger = logging.getLogger(__name__)
+logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))  # Set the log level based on environment variable or default to 'INFO'
+
+
 config = Config(
     max_pool_connections=50,
     retries={'max_attempts': 3, 'mode': 'adaptive'},
@@ -26,66 +71,22 @@ config = Config(
 dynamodb_resource = boto3.resource('dynamodb', config=config)
 apigateway_client = boto3.client('apigatewaymanagementapi', config=config)
 
-
-"""
-/**
- * @asyncapi
- * channels:
- *   chatDelete:
- *     description: Channel for deleting a specific chat by ID.
- *     publish:
- *       operationId: chatDelete
- *       summary: Delete a specific chat.
- *       message:
- *         messageId: chatDelete
- *         contentType: application/json
- *         payload:
- *           type: object
- *           required:
- *             - action
- *             - datas
- *           properties:
- *             action:
- *               type: string
- *               description: The action to perform.
- *               example: delete
- *             datas:
- *               type: object
- *               required:
- *                 - id
- *               properties:
- *                 id:
- *                   type: string
- *                   description: The unique identifier of the chat to delete.
- *                   example: 123e4567-e89b-12d3-a456-426614174000
- *     subscribe:
- *       operationId: chatDeleteResponse
- *       summary: Receive response for the deleted chat.
- *       message:
- *         $ref: '#/components/messages/chatDeleteResponse'
- */
-"""
-
-# Configure logger for the module
-logger = logging.getLogger(__name__)
-logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))  # Set log level based on environment variable
-
 @authenticate_websocket()  # Require authentication for this handler
-# @require_resource_permission('PYTHONTEMPLATECDKWEBSOCKET', 'DELETE')  # Require DELETE permission for this resource
-def delete(event, context):
+# @require_resource_permission('PYTHONTEMPLATECDKWEBSOCKET', 'READ')  # Require READ permission for this resource
+def getassistant(event, context):
     """
-    Handles the deletion of a template based on the provided event data.
+    Handles the retrieval of a template item from a DynamoDB table based on the provided ID.
     
-    Args:
-        event (dict): The event data containing information about the request.
-        context (object): The context in which the function is executed.
-
-    Returns:
-        dict: A response object with status code and message.
+    This function processes incoming WebSocket events, validates the request data, 
+    interacts with DynamoDB to retrieve the item, and sends the response back to the client.
+    
+    :param event: The event data received from the WebSocket, containing the request details.
+    :param context: The context in which the function is executed, providing runtime information.
+    :return: A dictionary containing the HTTP status code and a message indicating the result of the operation.
     """
     logger.debug('Event: %s', event)  
-    logger.info('Inside delete function') 
-        
+    logger.info('Inside getassistant function')  
+
     table_name = os.getenv('TABLE')
     if not table_name:
         logger.error("TABLE environment variable is not set")
@@ -94,19 +95,15 @@ def delete(event, context):
             'statusCode': 500,
             'body': json.dumps('Configuration error')
         }
-    
+
     table = dynamodb_resource.Table(table_name)
     logger.info("DynamoDB Table initialized: %s", table_name)
 
     try:
         event_info = extract_event_info(event)
-        logger.info("Event Info: %s", event_info)
 
         url = event_info.get("url")
         connectionId = event_info.get("connectionId")
-
-        logger.info("URL: %s", url)
-        logger.info("Connection ID: %s", connectionId)
         if not connectionId:
             logger.error("No connection ID found in event. Connection ID is required")
             return {
@@ -120,7 +117,6 @@ def delete(event, context):
             'body': json.dumps('Error processing event')
         }
 
-    # Get authenticated user info from the JWT token (added by auth middleware)
     user_info = event.get('auth', {}).get('user_info', {})
     if not user_info or user_info is None:
         logger.error("No user info found in event.")
@@ -135,7 +131,7 @@ def delete(event, context):
         username = user_info.get('username', 'unknown')
         user_id = user_info.get('user_id', 'unknown')
 
-    logger.info(f"Retrieving item for authenticated user: {email} (ID: {user_id});");
+    logger.info(f"Retrieving item for authenticated user: {email} (ID: {user_id})")
 
     try:
         body = json.loads(event.get("body", "{}"))
@@ -149,9 +145,7 @@ def delete(event, context):
             }
         else:
             action = body.get("action")
-            logger.info("Action: %s", action)
             datas = body.get("datas", {})
-            logger.info("Datas: %s", datas)
             if not action:
                 logger.error("No action found in request body.")
                 response_result = Responses.result_response(400, False, message="Missing action")
@@ -173,8 +167,8 @@ def delete(event, context):
         response_result = Responses.result_response(400, False, message="Invalid JSON payload")
         send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
         return {
-            'statusCode': 400,
-            'body': json.dumps("Invalid JSON payload")
+            'statusCode': response_result['status_code'],
+            'body': response_result['body']
         }
 
     try:
@@ -198,30 +192,69 @@ def delete(event, context):
 
     try:
         id = validation_schema['datas'].get('id')
-        logger.info("conversation id: %s", id)
-        
-        existing_item = table.get_item(Key={"conversationId": id})
-        if 'Item' not in existing_item or existing_item['Item'] is None:
-            logger.error(f"Chat conversation with ID {id} not found.")
-            response_result = Responses.result_response(404, False, f'Chat conversation with ID {id} not found.')
+        logger.info("assistant id: %s", id)
+
+        all_items = []
+        last_evaluated_key = None
+        while True:
+            scan_kwargs = {
+                "FilterExpression": "assistantId = :assistant_id",
+                "ExpressionAttributeValues": {":assistant_id": id}
+            }
+            if last_evaluated_key:
+                scan_kwargs["ExclusiveStartKey"] = last_evaluated_key
+            response = table.scan(**scan_kwargs)
+            all_items.extend(response.get('Items', []))
+            last_evaluated_key = response.get('LastEvaluatedKey')
+            if not last_evaluated_key:
+                break
+        logger.info(f"Paginated scan response: Found {len(all_items)} items with assistantId {id}")
+
+        if len(all_items) > 0:
+            formatted_items = []
+
+            # Find items owned by the current user with robust filtering
+            email_clean = email.strip()
+            user_items = [item for item in all_items if item.get("createdBy", "").strip() == email_clean]
+
+            logger.info(f"Items after createdBy filter: {len(user_items)}")
+
+            if user_items:
+                for item in user_items:
+                    conversation = {
+                        "conversationId": item.get("conversationId"),
+                        "title": item.get("title", ""),
+                        "createdAt": item.get("createdAt", ""),
+                        "updatedAt": item.get("updatedAt", ""),
+                        "assistantId": item.get("assistantId", ""),
+                        "status": item.get("status", "active")
+                    }
+                    formatted_items.append(conversation)
+                formatted_items.sort(key=lambda x: x["createdAt"], reverse=True)
+                serializable_items = decimal_to_json_serializable(formatted_items)
+                formatted_result = {"item": serializable_items, "count": len(user_items)}
+
+                response_result = Responses.result_response(200, True, f'Item with ID {id} found.', formatted_result)
+                send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+                return {
+                    'statusCode': 200,
+                    'body': json.dumps(construct_response(response_result))
+                }
+            else:
+                empty_result = {"item": [], "count": 0}
+                response_result = Responses.result_response(200, True, f'No items found for assistant ID {id}.', empty_result)
+                logger.info("Items found but none owned by user, returning empty response: %s", response_result)
+                send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
+                return {
+                    'statusCode': 200,
+                    'body': json.dumps(construct_response(response_result))
+                }
+        else:
+            response_result = Responses.result_response(404, False, f'Assistant with ID {id} not found.')
             logger.info("response: %s", response_result)
             send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
             return {
                 'statusCode': 404,
-                'body': json.dumps(f'Chat conversation with ID {id} not found.')
-            }
-        else:
-            # Soft delete: set isActive to False
-            table.update_item(
-                Key={"conversationId": id},
-                UpdateExpression="SET isActive = :inactive",
-                ExpressionAttributeValues={":inactive": False}
-            )
-            response_result = Responses.result_response(200, True, f'Chat conversation with ID {id} successfully marked as inactive.')
-            logger.info("response: %s", response_result)
-            send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
-            return {
-                'statusCode': 200,
                 'body': json.dumps(construct_response(response_result))
             }
 
@@ -233,14 +266,7 @@ def delete(event, context):
             'statusCode': 500,
             'body': json.dumps('Error accessing DynamoDB')
         }
-    except Exception as db_err:
-        logger.error(f"Database error: {str(db_err)}")
-        response_result = Responses.result_response(500, False, 'Database error during operation.')
-        send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
-        return {
-            'statusCode': 500,
-            'body': json.dumps('Database error during operation')
-        }
+
     except Exception as err:
         logger.error(f"Unexpected error: {str(err)}", exc_info=True)
         response_result = Responses.result_response(500, False, f"Internal server error: {str(err)}")

@@ -1,148 +1,137 @@
-# Import necessary libraries for UUID handling, date parsing, JSON schema validation, and string manipulation
-import uuid
-import dateutil.parser
-import jsonschema
-from jsonschema import validate, FormatChecker
-from jsonschema.exceptions import ValidationError
-from jsonschema.validators import Draft7Validator
+import json
+from pydantic import BaseModel, ValidationError, UUID4
+from typing import Dict, Any
 from text_unidecode import unidecode
-from datetime import datetime
 
-def validate_request_datas_schema(action, datas):
+class PostRequestModel(BaseModel):
+    query: str
+    modelName: str
+    assistantId: str
+
+class PutRequestModel(BaseModel):
+    id: str
+    query: str
+
+class DeleteRequestModel(BaseModel):
+    id: str
+
+class GetChatRequestModel(BaseModel):
+    id: str
+
+class GetCHATINTERNALRequestModel(BaseModel):
+    id: str
+
+class GetAllRequestModel(BaseModel):
+    pass
+
+def validate_and_load_request(event, logger):
     """
-    Validates the structure and content of request data based on the specified action.
-    
-    Parameters:
-    - action (str): The type of action being performed (e.g., 'create', 'update', 'delete', 'get', 'list' for WebSocket or 'POST', 'PUT', 'DELETE', 'GET' for HTTP).
-    - datas (dict): The data to be validated, structured as a dictionary.
-    
+    Legacy function for backward compatibility.
+    Validates and loads request data from event.
+
     Returns:
-    - dict: A dictionary indicating the success of the validation and any relevant messages or validated data.
+        tuple: (status_code, message, query, model, assistant_id)
     """
-    
-    # Map WebSocket actions to HTTP methods for validation
+    try:
+        body = event.get('body', '{}')
+        if isinstance(body, str):
+            body = json.loads(body)
+
+        datas = body.get('datas', {})
+        action = body.get('action', 'create')
+
+        # Use the main validation function
+        validation_result = validate_request_datas_schema_pydantic(action, datas, logger)
+
+        if not validation_result['success']:
+            return 400, validation_result['message'], None, None, None
+
+        validated_data = validation_result['datas']
+        query = validated_data.get('query', '')
+        model = validated_data.get('modelName', '')
+        assistant_id = validated_data.get('assistantId', '')
+
+        return 200, 'Validation successful', query, model, assistant_id
+
+    except Exception as e:
+        logger.error(f"Error in validate_and_load_request: {str(e)}")
+        return 500, str(e), None, None, None
+
+def validate_request_datas_schema_pydantic(action: str, datas: Dict[str, Any], logger):
+    """
+    Validate incoming payload based on action and return a normalized dict.
+
+    Returns a dict with shape:
+    {
+        'success': bool,
+        'message': str,
+        'datas': dict  # validated & normalized fields (may be empty on GET list)
+    }
+    """
+        
     action_mapping = {
         'create': 'POST',
-        'update': 'PUT', 
+        'update': 'PUT',
+        'continue': 'PUT',  # Continue chat also uses PUT validation
         'delete': 'DELETE',
-        'get': 'GET',
-        'list': 'GET'
+        'get': 'GET',      # Get specific chat by ID
+        'getassistant': 'GETASSISTANT',      # Get specific chat assistant by ID
+        'list': 'LIST',    # Get all chats for user
     }
-    
-    # Convert action to uppercase and map if needed
     original_action = action
     if isinstance(action, str):
-        # If it's a WebSocket action, map it to HTTP method
-        if action.lower() in action_mapping:
-            action = action_mapping[action.lower()]
-        else:
-            action = action.upper()  # Convert to uppercase for HTTP methods
-    
-    # Check if action is a string and datas is a dictionary
+        action = action_mapping.get(action.lower(), action.upper())
+
     if not isinstance(action, str):
-        return {'success': False, 'message': 'Action should be a string'}
+        logger.error('Action should be a string')
+        return {'success': False, 'message': 'Action should be a string', 'datas': {}}
     if not isinstance(datas, dict):
-        return {'success': False, 'message': 'Datas should be a dictionary'}
+        logger.error('Datas should be a dictionary')
+        return {'success': False, 'message': 'Datas should be a dictionary', 'datas': {}}
 
-    def is_uuid_format(instance):
-        """Check if the given instance is a valid UUID format."""
-        try:
-            uuid.UUID(instance)
-            return True
-        except:
-            return False
-
-    def is_date_time_format(instance):
-        """Check if the given instance is a valid date-time format."""
-        try:
-            dateutil.parser.parse(instance)
-            return True
-        except:
-            return False
-
-    # Initialize a format checker with custom UUID and date-time format checks
-    format_checker = FormatChecker()
-    format_checker.checks("uuid", raises=ValueError)(is_uuid_format)
-    format_checker.checks("date-time", raises=ValueError)(is_date_time_format)
-
-    # Define the JSON schema for validating the request data
-    schema = {
-        "type": "object",
-        "properties": {
-            "id": {"type": "string", "format": "uuid"},
-            "templateCompany": {"type": "string"},
-            "templateAgent": {"type": "string"},
-            "templateRootCause": {"type": "string"},
-            "templateStatus": {"type": "string"},
-            "templateAgentValidation": {"type": "boolean", "default": False},
-            "templateIntentFailed": {"type": "boolean", "default": False},
-            "templateActions": {"type": "array", "default": []},
-            "createdBy": {"type": "string"},
-            "updatedBy": {"type": "string"},
-            "createdAt": {"type": "string", "format": "date-time"},
-            "updatedAt": {"type": "string", "format": "date-time"},
-            "createdStart": {"type": "string", "format": "date-time"},
-            "createdEnd": {"type": "string", "format": "date-time"},
-            "updatedStart": {"type": "string", "format": "date-time"},
-            "updatedEnd": {"type": "string", "format": "date-time"},
-            "limit": {"type": "integer"},
-            "offset": {"type": "integer"}
-        },
-        # Require certain fields based on the action type
-        "required": ["templateCompany", "templateAgent"] if action == 'POST' else []
-    }
-    
-    verifiedDatas = {}  # Initialize a dictionary to store verified data
-    
-    # Handle validation for POST and PUT actions
-    if action == 'POST' or action == 'PUT':
-        for i in datas:
-            # Convert string booleans to actual boolean values
-            if datas[i] == 'true':
-                datas[i] = True
-            elif datas[i] == 'false':
-                datas[i] = False
-            # Normalize string data to uppercase and remove accents
-            if isinstance(datas[i], str):
-                verifiedDatas[i] = unidecode(datas[i].upper())
+    # Normalize string values
+    normalized_datas = {}
+    for k, v in datas.items():
+        if isinstance(v, str):
+            sv = v.strip()
+            if sv.lower() == 'true':
+                normalized_datas[k] = True
+            elif sv.lower() == 'false':
+                normalized_datas[k] = False
             else:
-                verifiedDatas[i] = datas[i]
+                normalized_datas[k] = unidecode(sv.lower())
+        else:
+            normalized_datas[k] = v
 
-        # Validate the verified data against the schema
-        validator = Draft7Validator(schema, format_checker=format_checker)
-        errors = sorted(validator.iter_errors(verifiedDatas), key=lambda e: e.path)
-        if errors:
-            # Return validation errors if any
-            return {'success': False, 'message': ', '.join(error.message for error in errors)}
-
-        return {'success': True, 'message': '', 'datas': verifiedDatas}
-    
-    # Handle validation for DELETE action
-    elif action == 'DELETE':
-        if 'id' not in datas:
-            return {'success': False, 'message': 'ID not provided in the request datas'}
-        try:
-            # Validate the presence and format of 'id' in the data
-            validate(instance={'id': datas['id']}, schema=schema, format_checker=format_checker)
-        except ValidationError as e:
-            return {'success': False, 'message': str(e)}
-    
-        return {'success': True}
-
-    # Handle validation for GET action
-    elif action == 'GET':
-        for i in datas:
-            verifiedDatas[i] = datas[i]
-
-        # Validate the verified data against the schema
-        validator = Draft7Validator(schema, format_checker=format_checker)
-        errors = sorted(validator.iter_errors(verifiedDatas), key=lambda e: e.path)
-        if errors:
-            # Return validation errors if any
-            return {'success': False, 'message': ', '.join(error.message for error in errors)}
-
-        return {'success': True}
-    
-    else:
-        # Return an error message for unsupported actions
-        return {'success': False, 'message': f'Invalid action: {original_action}. Valid actions are: create, update, delete, get, list'}
+    try:
+        if action == 'POST':
+            model = PostRequestModel(**normalized_datas)
+            return {'success': True, 'message': 'Validation successful', 'datas': model.dict()}
+        elif action == 'PUT':
+            model = PutRequestModel(**normalized_datas)
+            return {'success': True, 'message': 'Validation successful', 'datas': model.dict()}
+        elif action == 'DELETE':
+            model = DeleteRequestModel(**normalized_datas)
+            return {'success': True, 'message': 'Validation successful', 'datas': model.dict()}
+        elif action == 'GET':
+            model = GetChatRequestModel(**normalized_datas)
+            return {'success': True, 'message': 'Validation successful', 'datas': model.dict()}
+        elif action == 'GETASSISTANT':
+            model = GetCHATINTERNALRequestModel(**normalized_datas)
+            return {'success': True, 'message': 'Validation successful', 'datas': model.dict()}
+        elif action == 'LIST':
+            model = GetAllRequestModel()
+            return {'success': True, 'message': 'Validation successful', 'datas': {}}
+        else:
+            logger.error(f'Invalid action: {original_action}. Valid actions are: create, update, delete, get, list')
+            return {
+                'success': False,
+                'message': f'Invalid action: {original_action}. Valid actions are: create, update, delete, get, list',
+                'datas': {}
+            }
+    except ValidationError as e:
+        logger.error(f'Validation error: {e.errors()}')
+        return {'success': False, 'message': e.errors(), 'datas': {}}
+    except Exception as e:
+        logger.error(f'Unexpected error: {str(e)}')
+        return {'success': False, 'message': 'Unexpected error occurred', 'datas': {}}

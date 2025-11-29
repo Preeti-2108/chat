@@ -18,7 +18,20 @@ service_name = get_env_var("SERVICE_NAME")
 aws_account_id = get_env_var("AWS_ACCOUNT_ID")
 sqs_queue_name = os.getenv("SQS_QUEUE_NAME", "AUDIT_QUEUE")
 dead_letter_queue_name = os.getenv("DEAD_LETTER_QUEUE_NAME", "AUDIT_DLQ")
-var_example = get_env_var("VAR_EXAMPLE")
+KNOWLEDGE_BASE_ID = get_env_var("KNOWLEDGE_BASE_ID")
+AZURE_OPENAI_API_ENDPOINT = get_env_var("AZURE_OPENAI_API_ENDPOINT")
+AZURE_OPENAI_MODEL = os.getenv("AZURE_OPENAI_MODEL")
+AZURE_OPENAI_API_VERSION = os.getenv("AZURE_OPENAI_API_VERSION")
+AZURE_OPENAI_API_KEY = get_env_var("AZURE_OPENAI_API_KEY")
+AZURE_OPENAI_TEMPERATURE = os.getenv("AZURE_OPENAI_TEMPERATURE")
+AZURE_OPENAI_MAX_TOKENS = os.getenv("AZURE_OPENAI_MAX_TOKENS")
+BASE_URL = get_env_var("BASE_URL")
+ASSISTANT_ENDPOINT = get_env_var("ASSISTANT_ENDPOINT")
+ASSISTANT_PRODUCT_KEY = get_env_var("ASSISTANT_PRODUCT_KEY")
+LANGFUSE_PUBLIC_KEY = os.getenv("LANGFUSE_PUBLIC_KEY")
+LANGFUSE_SECRET_KEY = os.getenv("LANGFUSE_SECRET_KEY")
+LANGFUSE_HOST = os.getenv("LANGFUSE_HOST")
+LANGFUSE_ENVIRONMENT = os.getenv("LANGFUSE_ENVIRONMENT", "development")
 
 
 # Construct connections table name
@@ -35,7 +48,20 @@ lambdas_stack = LambdasStack(
     sqs_queue_name=sqs_queue_name,
     dead_letter_queue_name=dead_letter_queue_name,
     connections_table_name=connections_table_name,
-    var_example=var_example
+    knowledge_base_id=KNOWLEDGE_BASE_ID,
+    azure_openai_api_endpoint=AZURE_OPENAI_API_ENDPOINT,
+    azure_openai_model=AZURE_OPENAI_MODEL,
+    azure_openai_api_version=AZURE_OPENAI_API_VERSION,
+    azure_openai_api_key=AZURE_OPENAI_API_KEY,
+    azure_openai_temperature=AZURE_OPENAI_TEMPERATURE,
+    azure_openai_max_tokens=AZURE_OPENAI_MAX_TOKENS,
+    base_url=BASE_URL,
+    assistant_endpoint=ASSISTANT_ENDPOINT,
+    assistant_product_key=ASSISTANT_PRODUCT_KEY,
+    langfuse_public_key=LANGFUSE_PUBLIC_KEY,
+    langfuse_secret_key=LANGFUSE_SECRET_KEY,
+    langfuse_host=LANGFUSE_HOST,
+    langfuse_environment=LANGFUSE_ENVIRONMENT
 )
 
 app.synth()

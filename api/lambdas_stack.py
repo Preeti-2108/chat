@@ -38,7 +38,20 @@ class LambdasStack(Stack):
         sqs_queue_name: str,
         dead_letter_queue_name: str,
         connections_table_name: str = None,
-        var_example: str,
+        knowledge_base_id: str = None,
+        azure_openai_api_endpoint: str = None,
+        azure_openai_model: str = None,
+        azure_openai_api_version: str = None,
+        azure_openai_api_key: str = None,
+        azure_openai_temperature: str = None,
+        azure_openai_max_tokens: str = None,
+        base_url: str = None,
+        assistant_endpoint: str = None,
+        assistant_product_key: str = None,
+        langfuse_public_key: str = None,
+        langfuse_secret_key: str = None,
+        langfuse_host: str = None,
+        langfuse_environment: str = None,
         **kwargs
     ):
         super().__init__(scope, id, **kwargs)
@@ -51,7 +64,16 @@ class LambdasStack(Stack):
             "AWS_ACCOUNT_ID": aws_account_id,
             "SQS_QUEUE_NAME": sqs_queue_name,
             "DEAD_LETTER_QUEUE_NAME": dead_letter_queue_name,
-            "VAR_EXAMPLE": var_example
+            "KNOWLEDGE_BASE_ID": knowledge_base_id,
+            "AZURE_OPENAI_API_ENDPOINT": azure_openai_api_endpoint,
+            "AZURE_OPENAI_MODEL": azure_openai_model,
+            "AZURE_OPENAI_API_VERSION": azure_openai_api_version,
+            "AZURE_OPENAI_API_KEY": azure_openai_api_key,
+            "AZURE_OPENAI_TEMPERATURE": azure_openai_temperature,
+            "AZURE_OPENAI_MAX_TOKENS": azure_openai_max_tokens,
+            "BASE_URL": base_url,
+            "ASSISTANT_ENDPOINT": assistant_endpoint,
+            "ASSISTANT_PRODUCT_KEY": assistant_product_key
         }
         
         # Add connections table environment variable if provided
@@ -68,11 +90,12 @@ class LambdasStack(Stack):
             "disconnect": "src.disconnect.handler.disconnect",
             "default": "src.default.handler.default",
             "send_message": "src.send_message.handler.send_message",
-            "create": "src.post.handler.create",
-            "update": "src.put.handler.edit",
+            "create": "src.post.handler.start_chat",
+            "update": "src.put.handler.continue_chat",
             "delete": "src.delete.handler.delete",
             "get": "src.get.handler.get",
-            "list": "src.list.handler.list"
+            "list": "src.list.handler.list",
+            "getassistant": "src.getassistant.handler.getassistant"
         }
 
         lambdas = {}
@@ -139,6 +162,15 @@ class LambdasStack(Stack):
                 actions=["sqs:SendMessage"],
                 resources=["*"]  # As per your serverless configuration
             ))
+            
+            # Add Bedrock permissions for AI/ML functionality
+            lambdas[name].add_to_role_policy(iam.PolicyStatement(
+                actions=[
+                    "bedrock:Retrieve",
+                    "bedrock:RetrieveAndGenerate"
+                ],
+                resources=[f"arn:aws:bedrock:{self.region}:{self.account}:knowledge-base/*"]
+            ))
 
         # WebSocket API
         ws_api = apigwv2_alpha.WebSocketApi(
@@ -200,6 +232,14 @@ class LambdasStack(Stack):
             route_key="get",
             integration=integrations_alpha.WebSocketLambdaIntegration(
                 "GetIntegration", lambdas["get"]
+            )
+        )
+        apigwv2_alpha.WebSocketRoute(
+            self, "GetAssistantRoute",
+            web_socket_api=ws_api,
+            route_key="getassistant",
+            integration=integrations_alpha.WebSocketLambdaIntegration(
+                "GetAssistantIntegration", lambdas["getassistant"]
             )
         )
         apigwv2_alpha.WebSocketRoute(

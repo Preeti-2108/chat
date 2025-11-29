@@ -72,7 +72,7 @@ dynamodb_resource = boto3.resource('dynamodb', config=config)
 apigateway_client = boto3.client('apigatewaymanagementapi', config=config)
 
 @authenticate_websocket()  # Require authentication for this handler
-@require_resource_permission('CHATKBBEDROCKCDKWEBSOCKET', 'READ')  # Require READ permission for this resource
+@require_resource_permission('CHAT', 'READ')  # Require READ permission for this resource
 def getassistant(event, context):
     """
     Handles the retrieval of a template item from a DynamoDB table based on the provided ID.

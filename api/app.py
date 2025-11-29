@@ -32,6 +32,7 @@ LANGFUSE_PUBLIC_KEY = os.getenv("LANGFUSE_PUBLIC_KEY")
 LANGFUSE_SECRET_KEY = os.getenv("LANGFUSE_SECRET_KEY")
 LANGFUSE_HOST = os.getenv("LANGFUSE_HOST")
 LANGFUSE_ENVIRONMENT = os.getenv("LANGFUSE_ENVIRONMENT", "development")
+ENV = os.getenv("ENV", "dev")
 
 
 # Construct connections table name
@@ -61,7 +62,8 @@ lambdas_stack = LambdasStack(
     langfuse_public_key=LANGFUSE_PUBLIC_KEY,
     langfuse_secret_key=LANGFUSE_SECRET_KEY,
     langfuse_host=LANGFUSE_HOST,
-    langfuse_environment=LANGFUSE_ENVIRONMENT
+    langfuse_environment=LANGFUSE_ENVIRONMENT,
+    env=ENV
 )
 
 app.synth()

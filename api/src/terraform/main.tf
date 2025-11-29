@@ -126,7 +126,7 @@ resource "azurerm_api_management_api" "ics_api" {
     query  = "api-key"
   }
  
-  description = "Documentation (CTRL+clic for open in a new tab) : https://${azurerm_storage_account.ics_products_documentation.name}.blob.core.windows.net/${var.API_SYSTEM_NAME}/index.html"
+  description = "Documentation (CTRL+clic for open in a new tab) : https://${data.azurerm_storage_account.ics_products_documentation.name}.blob.core.windows.net/${var.API_SYSTEM_NAME}/index.html"
 
 }
 
@@ -137,24 +137,21 @@ resource "azurerm_api_management_product_api" "ics_product_api" {
   resource_group_name = var.APIM_RG
 }
 
-resource "azurerm_storage_account" "ics_products_documentation" {
-  name                     = "${lower(substr(replace(var.APIM_NAME, "-", ""), 0, 16))}${lower(substr(var.ENV, 0, 4))}doc"
-  resource_group_name      = var.APIM_RG
-  location                 = "francecentral"
-  account_tier            = "Standard"
-  account_replication_type = "LRS"
+data "azurerm_storage_account" "ics_products_documentation" {
+  name                = "${lower(substr(replace(var.APIM_NAME, "-", ""), 0, 16))}${lower(substr(var.ENV, 0, 4))}doc"
+  resource_group_name = var.APIM_RG
 }
 
 resource "azurerm_storage_container" "docs" {
   name                  = var.API_SYSTEM_NAME
-  storage_account_id = azurerm_storage_account.ics_products_documentation.id
+  storage_account_id = data.azurerm_storage_account.ics_products_documentation.id
   container_access_type = "blob"
 }
 
 resource "azurerm_storage_blob" "api_docs" {
   count                 = length(tolist(fileset("output", "*")))
   name                  = basename(tolist(fileset("output", "*"))[count.index])
-  storage_account_name  = azurerm_storage_account.ics_products_documentation.name
+  storage_account_name  = data.azurerm_storage_account.ics_products_documentation.name
   storage_container_name = azurerm_storage_container.docs.name
   type                  = "Block"
   source                = "output/${basename(tolist(fileset("output", "*"))[count.index])}"
@@ -164,7 +161,7 @@ resource "azurerm_storage_blob" "api_docs" {
 resource "azurerm_storage_blob" "api_docs_css" {
   count                 = length(tolist(fileset("output/css", "*")))
   name                  = "css/${basename(tolist(fileset("output/css", "*"))[count.index])}"
-  storage_account_name  = azurerm_storage_account.ics_products_documentation.name
+  storage_account_name  = data.azurerm_storage_account.ics_products_documentation.name
   storage_container_name = azurerm_storage_container.docs.name
   type                  = "Block"
   source                = "output/css/${basename(tolist(fileset("output/css", "*"))[count.index])}"
@@ -174,7 +171,7 @@ resource "azurerm_storage_blob" "api_docs_css" {
 resource "azurerm_storage_blob" "api_docs_js" {
   count                 = length(tolist(fileset("output/js", "*")))
   name                  = "js/${basename(tolist(fileset("output/js", "*"))[count.index])}"
-  storage_account_name  = azurerm_storage_account.ics_products_documentation.name
+  storage_account_name  = data.azurerm_storage_account.ics_products_documentation.name
   storage_container_name = azurerm_storage_container.docs.name
   type                  = "Block"
   source                = "output/js/${basename(tolist(fileset("output/js", "*"))[count.index])}"

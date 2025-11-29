@@ -7,7 +7,7 @@ from text_unidecode import unidecode  # Provides a way to remove accents from ch
 from urllib.parse import parse_qs  # Provides methods to parse query strings
 from src.helpers.api_responses import Responses  # Custom helper for API responses
 from src.helpers.construct_response import construct_response  # Custom helper to construct responses
-from src.helpers.schema_validation import validate_request_datas_schema  # Custom helper to validate request data schema
+from src.helpers.schema_validation import validate_request_datas_schema_pydantic  # Custom helper to validate request data schema
 from src.handler_websocket.handler import send_to_client  # Custom helper to send data to a client via WebSocket
 from src.helpers.event_utils import extract_event_info  # Custom helper to extract necessary information from the event
 from src.helpers.decimal_converter import convert_decimal_to_json_serializable  # Custom helper to convert Decimal objects
@@ -139,7 +139,7 @@ def list(event, context):
 
         # Validate the request and retrieve validation errors
         try:
-            validation_schema = validate_request_datas_schema(action, datas)
+            validation_schema = validate_request_datas_schema_pydantic(action, datas)
         except Exception as validation_err:
             logger.error(f"Error during schema validation: {str(validation_err)}")
             response_result = Responses.result_response(STATUS_ERROR, False, 'Schema validation error.')

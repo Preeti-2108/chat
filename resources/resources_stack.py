@@ -41,9 +41,7 @@ class ResourcesStack(Stack):
                 table_name=table_name,
                 partition_key=dynamodb.Attribute(name="id", type=dynamodb.AttributeType.STRING),
                 removal_policy=RemovalPolicy.RETAIN,
-                billing_mode=dynamodb.BillingMode.PROVISIONED,
-                read_capacity=1,
-                write_capacity=1
+                billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
             )
         else:
             self.table = dynamodb.Table.from_table_name(

@@ -287,7 +287,16 @@ def construct_params(datas):
                 params['ExpressionAttributeNames'][filter['attribute']] = filter['name']
                 params['FilterExpression'] += f" AND {filter['attribute']} = :{filter['name']}" if params['FilterExpression'] else f"{filter['attribute']} = :{filter['name']}"
 
-    # If there's no filter expression, remove the related attributes from the parameters
+    # Always add isActive filter to only show active items
+    if params['FilterExpression']:
+        params['FilterExpression'] += " AND #isActive = :isActive"
+    else:
+        params['FilterExpression'] = "#isActive = :isActive"
+    
+    params['ExpressionAttributeValues'][':isActive'] = True
+    params['ExpressionAttributeNames']['#isActive'] = 'isActive'
+
+    # If there's no filter expression after isActive is added, remove the related attributes from the parameters
     if not params['FilterExpression']:
         del params['ExpressionAttributeValues']
         del params['ExpressionAttributeNames']

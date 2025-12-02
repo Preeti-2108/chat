@@ -160,6 +160,7 @@ def list(event, context):
 
         # Construct parameters for DynamoDB scan
         params = construct_params(datas)
+        logger.info(f"DynamoDB scan parameters: {params}")
         templates = table.scan(**params)  # Execute the scan operation
         items = format_results(templates, datas)  # Format the results based on offset and limit
         
@@ -288,11 +289,11 @@ def construct_params(datas):
                 params['FilterExpression'] += f" AND {filter['attribute']} = :{filter['name']}" if params['FilterExpression'] else f"{filter['attribute']} = :{filter['name']}"
 
     # Always add isActive filter to only show active items
-    # Handle both cases: items with isActive=True and items without isActive field (considered active by default)
+    # Only show items where isActive explicitly equals True
     if params['FilterExpression']:
-        params['FilterExpression'] += " AND (NOT attribute_exists(#isActive) OR #isActive = :isActive)"
+        params['FilterExpression'] += " AND #isActive = :isActive"
     else:
-        params['FilterExpression'] = "(NOT attribute_exists(#isActive) OR #isActive = :isActive)"
+        params['FilterExpression'] = "#isActive = :isActive"
     
     params['ExpressionAttributeValues'][':isActive'] = True
     params['ExpressionAttributeNames']['#isActive'] = 'isActive'

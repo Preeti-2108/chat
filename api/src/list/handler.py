@@ -293,7 +293,7 @@ def construct_params(datas):
     else:
         params['FilterExpression'] = "#isActive = :isActive"
     
-    params['ExpressionAttributeValues'][':isActive'] = True
+    params['ExpressionAttributeValues'][':isActive'] = "true"
     params['ExpressionAttributeNames']['#isActive'] = 'isActive'
 
     # If there's no filter expression after isActive is added, remove the related attributes from the parameters

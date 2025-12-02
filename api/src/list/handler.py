@@ -288,19 +288,14 @@ def construct_params(datas):
                 params['FilterExpression'] += f" AND {filter['attribute']} = :{filter['name']}" if params['FilterExpression'] else f"{filter['attribute']} = :{filter['name']}"
 
     # Always add isActive filter to only show active items
+    # Handle both cases: items with isActive=True and items without isActive field (considered active by default)
     if params['FilterExpression']:
-        params['FilterExpression'] += " AND #isActive = :isActive"
+        params['FilterExpression'] += " AND (NOT attribute_exists(#isActive) OR #isActive = :isActive)"
     else:
-        params['FilterExpression'] = "#isActive = :isActive"
+        params['FilterExpression'] = "(NOT attribute_exists(#isActive) OR #isActive = :isActive)"
     
-    params['ExpressionAttributeValues'][':isActive'] = "true"
+    params['ExpressionAttributeValues'][':isActive'] = True
     params['ExpressionAttributeNames']['#isActive'] = 'isActive'
-
-    # If there's no filter expression after isActive is added, remove the related attributes from the parameters
-    if not params['FilterExpression']:
-        del params['ExpressionAttributeValues']
-        del params['ExpressionAttributeNames']
-        del params['FilterExpression']
 
     return params
 

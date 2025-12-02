@@ -198,8 +198,11 @@ def getassistant(event, context):
         last_evaluated_key = None
         while True:
             scan_kwargs = {
-                "FilterExpression": "assistantId = :assistant_id",
-                "ExpressionAttributeValues": {":assistant_id": id}
+                "FilterExpression": "assistantId = :assistant_id AND isActive = :is_active",
+                "ExpressionAttributeValues": {
+                    ":assistant_id": id,
+                    ":is_active": True
+                }
             }
             if last_evaluated_key:
                 scan_kwargs["ExclusiveStartKey"] = last_evaluated_key

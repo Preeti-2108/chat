@@ -196,19 +196,31 @@ def getassistant(event, context):
 
         all_items = []
         last_evaluated_key = None
+        scan_count = 0
         while True:
+            scan_count += 1
             scan_kwargs = {
-                "FilterExpression": "assistantId = :assistant_id",
-                "ExpressionAttributeValues": {":assistant_id": id}
+                "FilterExpression": "assistantId = :assistant_id AND isActive = :is_active",
+                "ExpressionAttributeValues": {
+                    ":assistant_id": id,
+                    ":is_active": True
+                },
+                "Limit": 1000  # Process in batches of 1000
             }
             if last_evaluated_key:
                 scan_kwargs["ExclusiveStartKey"] = last_evaluated_key
+            
             response = table.scan(**scan_kwargs)
-            all_items.extend(response.get('Items', []))
+            current_items = response.get('Items', [])
+            all_items.extend(current_items)
             last_evaluated_key = response.get('LastEvaluatedKey')
+            
+            logger.info(f"Scan batch {scan_count}: Found {len(current_items)} items, Total so far: {len(all_items)}")
+            
             if not last_evaluated_key:
                 break
-        logger.info(f"Paginated scan response: Found {len(all_items)} items with assistantId {id}")
+                
+        logger.info(f"Paginated scan complete: Found {len(all_items)} total items with assistantId {id} in {scan_count} batches")
 
         if len(all_items) > 0:
             formatted_items = []

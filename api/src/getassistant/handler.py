@@ -204,14 +204,16 @@ def getassistant(event, context):
                 "ExpressionAttributeValues": {
                     ":assistant_id": id,
                     ":is_active": True
-                },
-                "Limit": 1000  # Process in batches of 1000
+                }
             }
+
             if last_evaluated_key:
                 scan_kwargs["ExclusiveStartKey"] = last_evaluated_key
             
             response = table.scan(**scan_kwargs)
-            current_items = response.get('Items', [])
+            current_items = response.get('Items')
+            logger.info(f"Current items: len{current_items}")
+
             all_items.extend(current_items)
             last_evaluated_key = response.get('LastEvaluatedKey')
             
@@ -227,7 +229,7 @@ def getassistant(event, context):
 
             # Find items owned by the current user with robust filtering
             email_clean = email.strip()
-            user_items = [item for item in all_items if item.get("createdBy", "").strip() == email_clean]
+            user_items = [item for item in all_items if item.get("createdBy").strip() == email_clean]
 
             logger.info(f"Items after createdBy filter: {len(user_items)}")
 
@@ -235,16 +237,19 @@ def getassistant(event, context):
                 for item in user_items:
                     conversation = {
                         "conversationId": item.get("conversationId"),
-                        "title": item.get("title", ""),
-                        "createdAt": item.get("createdAt", ""),
-                        "updatedAt": item.get("updatedAt", ""),
-                        "assistantId": item.get("assistantId", ""),
-                        "status": item.get("status", "active")
+                        "title": item.get("title"),
+                        "createdAt": item.get("createdAt"),
+                        "updatedAt": item.get("updatedAt"),
+                        "assistantId": item.get("assistantId")
                     }
                     formatted_items.append(conversation)
+
                 formatted_items.sort(key=lambda x: x["createdAt"], reverse=True)
+                logger.info(f"Formatted items: {formatted_items}")
+
                 serializable_items = decimal_to_json_serializable(formatted_items)
                 formatted_result = {"item": serializable_items, "count": len(user_items)}
+                logger.info(f"Formatted result: {formatted_result}")
 
                 response_result = Responses.result_response(200, True, f'Item with ID {id} found.', formatted_result)
                 send_to_client(connectionId, json.dumps(construct_response(response_result)), url)

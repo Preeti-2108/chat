@@ -716,7 +716,7 @@ class BedrockKnowledgeBaseWorkflow:
                 "sources_count": len(final_state.get("context_documents", [])),
                 "sources_info": final_state.get("sources_info", []),
                 "conversation_id": final_state.get("conversation_id", ""),
-                "model_used": AZURE_OPENAI_MODEL if not final_state.get("is_simple_query", False) else "rule_based",
+                "model_used": AZURE_OPENAI_MODEL,
                 "processing_method": "simple_response" if final_state.get("is_simple_query", False) else "rag_llm",
                 "cost_optimized": final_state.get("is_simple_query", False),
                 "memory_enabled": True,  # Memory is now enabled following reference pattern

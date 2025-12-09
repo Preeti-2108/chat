@@ -40,7 +40,6 @@ class ConversationDataBuilder:
                                    ai_response: str, 
                                    conversation_id: str,
                                    user_email: str,
-                                   assistant_id: str = None,
                                    model_used: str = 'AZURE_OPENAI_GPT_4O',
                                    context_used: bool = False,
                                    sources_count: int = 0,
@@ -68,7 +67,6 @@ class ConversationDataBuilder:
         # Build the complete data structure
         data_structure = {
             "conversationId": str(conversation_id),
-            "assistantId": assistant_id or '',
             "title": title,
             "createdBy": user_email,
             "updatedBy": user_email,
@@ -88,14 +86,13 @@ class ConversationDataBuilder:
         
         return data_structure
     
-    def build_success_case_data(self, workflow_result: Dict[str, Any], user_query: str, user_email: str, assistant_id: str = None, llm=None) -> Dict[str, Any]:
+    def build_success_case_data(self, workflow_result: Dict[str, Any], user_query: str, user_email: str, llm=None) -> Dict[str, Any]:
         """Build data structure for successful workflow execution."""
         return self.build_validation_schema_data(
             user_query=user_query,
             ai_response=workflow_result.get('ai_response', ''),
             conversation_id=workflow_result.get('conversation_id', str(uuid.uuid4())),
             user_email=user_email,
-            assistant_id=assistant_id,
             model_used=workflow_result.get('model_used', 'AZURE_OPENAI_GPT_4O'),
             context_used=workflow_result.get('context_used', False),
             sources_count=workflow_result.get('sources_count', 0),

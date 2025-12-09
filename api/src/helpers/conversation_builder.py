@@ -1,7 +1,7 @@
 """
 Conversation Data Builder Helper
 Handles construction of conversation data structures and DynamoDB items.
-Reduces redundancy in data structure creation. 
+Reduces redundancy in data structure creation.
 """
 
 import uuid
@@ -15,7 +15,7 @@ class ConversationDataBuilder:
     """Builder class for creating standardized conversation data structures."""
     
     def __init__(self):
-        pass
+        self.default_assistant_id = '268f80b4-61f4-470e-bd8d-e6091e09a3cc'
     
     def create_conversation_data(self, user_query: str, ai_response: str, conversation_id: str) -> Dict[str, Any]:
         """
@@ -67,6 +67,7 @@ class ConversationDataBuilder:
         # Build the complete data structure
         data_structure = {
             "conversationId": str(conversation_id),
+            "assistantId": self.default_assistant_id,
             "title": title,
             "createdBy": user_email,
             "updatedBy": user_email,

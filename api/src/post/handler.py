@@ -958,7 +958,7 @@ def start_chat(event, context):
         # Construct the new item to be inserted using helper
         try:
             new_item = conversation_builder.construct_new_dynamodb_item(validation_schema['datas'])
-            logger.debug('New item to be inserted: %s', new_item)
+            logger.info('New item to be inserted: %s', new_item)
         except Exception as construct_err:
             logger.error(f"Error constructing new item: {str(construct_err)}")
             response_result = Responses.result_response(STATUS_ERROR, False, 'Error constructing item.')

@@ -106,15 +106,6 @@ ENABLE_WEBSOCKET_STREAMING = os.getenv('ENABLE_WEBSOCKET_STREAMING', 'true').low
 ASSISTANT_ENDPOINT = os.getenv('ASSISTANT_ENDPOINT')
 ASSISTANT_PRODUCT_KEY = os.getenv('ASSISTANT_PRODUCT_KEY')
 
-logger.info(f"AWS Region: {AWS_REGION}")
-logger.info(f"Knowledge Base ID: {KNOWLEDGE_BASE_ID}")
-logger.info(f"Azure OpenAI Model: {AZURE_OPENAI_MODEL}")
-logger.info(f"Base URL for Azure OpenAI: {BASE_URL}")
-logger.info(f"Azure OpenAI Endpoint configured: {AZURE_OPENAI_API_ENDPOINT}")
-logger.info("Azure OpenAI API Key configured: [REDACTED]")
-logger.info(f"Azure OpenAI Temperature: {AZURE_OPENAI_TEMPERATURE}")
-logger.info(f"Azure OpenAI Max Tokens: {AZURE_OPENAI_MAX_TOKENS}")
-
 # State interface for LangGraph workflow
 class State(Dict[str, Any]):
     """State object for LangGraph workflow"""

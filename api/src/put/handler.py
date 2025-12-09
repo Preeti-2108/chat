@@ -101,23 +101,7 @@ AZURE_OPENAI_API_KEY = os.getenv('AZURE_OPENAI_API_KEY')
 AZURE_OPENAI_TEMPERATURE = float(os.getenv('AZURE_OPENAI_TEMPERATURE', '0.7'))
 AZURE_OPENAI_MAX_TOKENS = int(os.getenv('AZURE_OPENAI_MAX_TOKENS', '4000'))
 
-logger.info(f"AWS Region: {AWS_REGION}")
-logger.info(f"Knowledge Base ID: {KNOWLEDGE_BASE_ID}")
-logger.info(f"Azure OpenAI Model: {AZURE_OPENAI_MODEL}")
-logger.info(f"Base URL for Azure OpenAI: {BASE_URL}")
-logger.info(f"Azure OpenAI Endpoint configured: {AZURE_OPENAI_API_ENDPOINT}")
-logger.info(f"Azure OpenAI Temperature: {AZURE_OPENAI_TEMPERATURE}")
-logger.info(f"Azure OpenAI Max Tokens: {AZURE_OPENAI_MAX_TOKENS}")
 
-# No local state or workflow classes needed - using shared workflow from POST handler
-# The bedrock_workflow imported above contains:
-# - BedrockKnowledgeBaseWorkflow class with MemorySaver
-# - Memory methods: get_memory_checkpoints(), get_conversation_context()
-# - All workflow nodes and LangGraph logic
-# This ensures conversation continuity between POST and PUT operations
-
-# Use shared workflow instance from POST handler for memory continuity
-# bedrock_workflow is imported from src.post.handler above
 logger.info(f"🧠 [PUT INIT] Using shared workflow instance with memory from POST handler")
 
 @authenticate_websocket()

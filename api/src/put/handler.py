@@ -135,7 +135,7 @@ def continue_chat(event, context):
     :param context: The context in which the function is executed.
     :return: A dictionary containing the status code and body message.
     """
-    logger.debug('logging event: %s', event)
+    # Event logged at debug level
     logger.info('Inside continue chat function')
 
     # Define status codes
@@ -156,7 +156,7 @@ def continue_chat(event, context):
     dynamodb = boto3.resource('dynamodb')
     table = dynamodb.Table(table_name)
 
-    logger.info(f"Event received: {event}")
+    logger.info("Event received for chat continuation")
 
     # Extract necessary information from the event
     try:
@@ -170,8 +170,8 @@ def continue_chat(event, context):
         conversation_id_from_body = body.get('datas', {}).get('id')
         
         logger.info("URL length: %s", len(url) if url else 0)
-        logger.info("WebSocket Connection ID: %s", connectionId)
-        logger.info("Conversation ID from body: %s", conversation_id_from_body)
+        # Connection ID extracted
+        # Conversation ID extracted from body
         
         if not connectionId:
             logger.error("No connection ID found in event")
@@ -210,10 +210,10 @@ def continue_chat(event, context):
         datas = body.get('datas')
         
         # DEBUG: Log PUT handler usage for conversation continuation
-        logger.info(f"🔄 [PUT HANDLER] Processing conversation continuation - action: '{action}'")
-        logger.info(f"🔄 [PUT HANDLER] Request datas keys: {list(datas.keys()) if datas else 'None'}")
+        logger.info("🔄 [PUT HANDLER] Processing conversation continuation")
+        logger.info("🔄 [PUT HANDLER] Request data received")
         if datas and datas.get('id'):
-            logger.info(f"🔄 [PUT HANDLER] Continuing conversation_id: {datas.get('id')}")
+            logger.info("🔄 [PUT HANDLER] Continuing existing conversation")
 
         # Validate the request data schema using pydantic (similar to POST)
         try:
@@ -229,7 +229,7 @@ def continue_chat(event, context):
 
         if not validation_schema['success']:
             response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Validation errors.', validation_schema)
-            logger.debug('Validation failed: %s', validation_schema)
+            logger.debug('Validation failed')
             send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
             return {
                 'statusCode': STATUS_UNPROCESSABLE_ENTITY,
@@ -241,7 +241,7 @@ def continue_chat(event, context):
         email = user_info.get('email') or user_info.get('username', 'unknown@example.com')
         user_id = user_info.get('user_id', 'unknown')
         
-        logger.info(f"Continuing chat for authenticated user: {email} (ID: {user_id})")
+        logger.info("Continuing chat for authenticated user")
         
         # Extract chat continuation parameters
         user_query = validation_schema['datas'].get('query', '')
@@ -249,14 +249,14 @@ def continue_chat(event, context):
         vector_db = validation_schema['datas'].get('vectorDb', KNOWLEDGE_BASE_ID)
         
         # Debug: Log the exact values being extracted
-        logger.info(f"DEBUG: From validation_schema - conversation_id: '{conversation_id}' (type: {type(conversation_id)})")
-        logger.info(f"DEBUG: From body directly - conversation_id_from_body: '{conversation_id_from_body}' (type: {type(conversation_id_from_body)})")
-        logger.info(f"DEBUG: Extracted user_query: '{user_query}'")
-        logger.info(f"DEBUG: Full validation_schema['datas']: {validation_schema['datas']}")
+        logger.debug("Conversation ID extracted from validation schema")
+        logger.debug("Conversation ID extracted from request body")
+        logger.debug("User query extracted")
+        logger.debug("Validation schema processed")
         
         # Use the conversation_id from validation (should be the same as conversation_id_from_body)
         if not conversation_id:
-            logger.error(f"No conversation ID found in validation_schema. Raw body conversation ID: {conversation_id_from_body}")
+            logger.error("No conversation ID found in validation schema")
             response_result = Responses.result_response(STATUS_UNPROCESSABLE_ENTITY, False, 'Conversation ID is required for continuing chat.')
             send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
             return {
@@ -266,14 +266,14 @@ def continue_chat(event, context):
         
         # Ensure both IDs match for consistency
         if conversation_id != conversation_id_from_body:
-            logger.warning(f"ID mismatch: validation_schema ID '{conversation_id}' != body ID '{conversation_id_from_body}'")
+            logger.warning("ID mismatch between validation schema and body")
             # Use the one from validation_schema as it's been validated
-            logger.info(f"Using conversation_id from validation_schema: '{conversation_id}'")
+            logger.info("Using conversation ID from validation schema")
         
         if user_query:
-            logger.info(f"Processing chat continuation with LangGraph workflow: {user_query[:100]}...")
-            logger.info(f"Conversation ID: {conversation_id}")
-            logger.info(f"Using vector DB: {vector_db}")
+            logger.info("Processing chat continuation with LangGraph workflow")
+            logger.info("Conversation ID validated")
+            logger.info("Vector DB configuration set")
 
             try:
                 # FIRST: Check if conversation exists before calling workflow
@@ -289,7 +289,7 @@ def continue_chat(event, context):
                     existing_conversation = None
 
                 if not existing_conversation:
-                    logger.error(f"Conversation {conversation_id} not found. PUT operation requires existing conversation.")
+                    logger.error("Conversation not found. PUT operation requires existing conversation")
                     response_result = Responses.result_response(STATUS_ERROR, False, f'Conversation {conversation_id} not found. Use POST to create a new conversation.')
                     send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
                     return {
@@ -364,7 +364,7 @@ def continue_chat(event, context):
 
     except Exception as err:
         # Handle general errors
-        logger.error(f"Error occurred: {str(err)}, Event: {json.dumps(event)}")
+        logger.error(f"Error occurred: {str(err)}")
         response_result = Responses.result_response(STATUS_ERROR, False, 'Error during the execution.')
 
     # Send the response to the client

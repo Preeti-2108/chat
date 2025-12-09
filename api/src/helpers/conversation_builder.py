@@ -63,6 +63,7 @@ class ConversationDataBuilder:
         title = self._generate_title_from_query(user_query, llm=llm)
         
         # Build the complete data structure
+        logger.info(f"Building conversation data for conversation ID: {conversation_id}")
         data_structure = {
             "conversationId": str(conversation_id),
             "assistantId": assistant_id or '',
@@ -180,6 +181,7 @@ class ConversationDataBuilder:
         if not user_query:
             return "Empty Chat"
         if llm:
+            logger.debug("Using LLM for title generation")
             try:
                 response = llm.invoke([
                     {"role": "user", "content": f"Generate a concise chat title for: {user_query}"}
@@ -192,8 +194,9 @@ class ConversationDataBuilder:
                     title = f"Chat - {user_query[:50]}..." if len(user_query) > 50 else f"Chat - {user_query}"
                 return title
             except Exception as e:
-                logger.error(f"LLM title generation failed: {e}")
+                # LLM title generation failed, using fallback
                 return f"Chat - {user_query[:50]}..." if len(user_query) > 50 else f"Chat - {user_query}"
+        logger.debug("Using query-based title generation (no LLM provided)")
         if len(user_query) > 50:
             return f"{user_query[:50]}..."
         else:
@@ -211,6 +214,7 @@ class ConversationDataBuilder:
         """
         # Create the item structure using conversationId as primary key
         # No separate 'id' field needed - conversationId serves as the primary key
+        logger.info(f"Constructing DynamoDB item for conversation: {datas.get('conversationId', 'unknown')}")
         item = {
             "conversationId": str(datas.get('conversationId', '')),
             "assistantId": datas.get('assistantId', ''),
@@ -245,7 +249,6 @@ def extract_user_email_from_event(event: Dict[str, Any]) -> str:
     This consolidates the redundant user email extraction logic
     that appears multiple times in the original code.
     """
-    user_email = 'unknown@example.com'  # Default fallback
     
     try:
         # Method 1: From authentication middleware
@@ -254,13 +257,13 @@ def extract_user_email_from_event(event: Dict[str, Any]) -> str:
             user_info = auth_info.get('user_info', {})
             user_email = user_info.get('email', '')
             if user_email:
-                logger.info(f"Found email from auth middleware: {user_email}")
+                logger.debug("Email extracted from auth middleware")
                 return user_email
         
         # Method 2: From requestContext (for REST APIs)
         user_email = event.get('requestContext', {}).get('authorizer', {}).get('email', '')
         if user_email:
-            logger.info(f"Found email in requestContext: {user_email}")
+            logger.debug("Email extracted from requestContext")
             return user_email
         
         # Method 3: Extract from JWT token directly as fallback
@@ -271,17 +274,16 @@ def extract_user_email_from_event(event: Dict[str, Any]) -> str:
                 user_info = extract_user_info(token)
                 user_email = user_info.get('email', '')
                 if user_email:
-                    logger.info(f"Found email from JWT token: {user_email}")
+                    logger.debug("Email extracted from JWT token")
                     return user_email
         except ImportError:
             logger.warning("Cognito auth helpers not available for JWT extraction")
             
     except Exception as e:
-        logger.error(f"Error extracting user email: {e}")
+        pass
     
     # Final fallback
     if not user_email or user_email == '':
-        user_email = 'unknown@example.com'
         logger.warning("Could not extract user email, using fallback")
     
     return user_email

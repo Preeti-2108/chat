@@ -42,8 +42,7 @@ def default(event, context):
         action = body.get('action')
         
         # Add debug logging to see what we received
-        print(f"DEBUG - Default handler called with body: {json.dumps(body, indent=2)}")
-        print(f"DEBUG - Action: {action}")
+        # Debug logging removed for security
         
         if not action:
             # Return an error response for missing action field

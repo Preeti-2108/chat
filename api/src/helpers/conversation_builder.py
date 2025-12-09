@@ -1,7 +1,7 @@
 """
 Conversation Data Builder Helper
 Handles construction of conversation data structures and DynamoDB items.
-Reduces redundancy in data structure creation.
+Reduces redundancy in data structure creation. 
 """
 
 import uuid

@@ -106,15 +106,6 @@ ENABLE_WEBSOCKET_STREAMING = os.getenv('ENABLE_WEBSOCKET_STREAMING', 'true').low
 ASSISTANT_ENDPOINT = os.getenv('ASSISTANT_ENDPOINT')
 ASSISTANT_PRODUCT_KEY = os.getenv('ASSISTANT_PRODUCT_KEY')
 
-logger.info(f"AWS Region: {AWS_REGION}")
-logger.info(f"Knowledge Base ID: {KNOWLEDGE_BASE_ID}")
-logger.info(f"Azure OpenAI Model: {AZURE_OPENAI_MODEL}")
-logger.info(f"Base URL for Azure OpenAI: {BASE_URL}")
-logger.info(f"Azure OpenAI Endpoint configured: {AZURE_OPENAI_API_ENDPOINT}")
-logger.info(f"Azure OpenAI API Key configured: {AZURE_OPENAI_API_KEY}")
-logger.info(f"Azure OpenAI Temperature: {AZURE_OPENAI_TEMPERATURE}")
-logger.info(f"Azure OpenAI Max Tokens: {AZURE_OPENAI_MAX_TOKENS}")
-
 # State interface for LangGraph workflow
 class State(Dict[str, Any]):
     """State object for LangGraph workflow"""
@@ -177,7 +168,7 @@ class BedrockKnowledgeBaseWorkflow:
             logger.info(f"🔧 Setting up Azure OpenAI with deployment: {AZURE_OPENAI_MODEL}")
             logger.info(f"🔧 Azure OpenAI Endpoint: {AZURE_OPENAI_API_ENDPOINT}")
             logger.info(f"🔧 Azure OpenAI API Version: {AZURE_OPENAI_API_VERSION}")
-            logger.info(f"🔧 Azure OpenAI API Key (first 8 chars): {AZURE_OPENAI_API_KEY[:8]}...")
+            logger.info("🔧 Azure OpenAI API Key configured: [REDACTED]")
             
             llm = AzureChatOpenAI(
                 deployment_name=AZURE_OPENAI_MODEL,
@@ -239,7 +230,7 @@ class BedrockKnowledgeBaseWorkflow:
         Node 0: Detect if query is simple and can be handled without RAG/LLM
         """
         user_query = state.get("user_query", "")
-        logger.info(f"🧠 Detecting intent for query: '{user_query[:50]}...'")
+        logger.info("🧠 Detecting intent for query")
         
         # Use document analyzer's skip_rag method for comprehensive analysis
         skip_decision = document_analyzer.should_skip_rag(user_query)
@@ -264,16 +255,16 @@ class BedrockKnowledgeBaseWorkflow:
         Node: Dynamically rewrite query for better document retrieval
         """
         user_query = state.get("user_query", "")
-        logger.info(f"🔧 [REWRITE_QUERY_NODE] EXECUTING! Query: '{user_query[:50]}...'")
+        logger.info("🔧 [REWRITE_QUERY_NODE] EXECUTING!")
         logger.info(f"🔧 [REWRITE_QUERY_NODE] State keys: {list(state.keys())}")
         
         # Use the dynamic query rewriter with safe fallback
         rewritten_query = safe_rewrite_query(self.query_rewriter, user_query)
         
         if rewritten_query != user_query:
-            logger.info(f"✅ [REWRITE_QUERY_NODE] Query optimized: '{user_query}' → '{rewritten_query}'")
+            logger.info("✅ [REWRITE_QUERY_NODE] Query optimized")
         else:
-            logger.info(f"💡 [REWRITE_QUERY_NODE] Query unchanged: '{user_query}'")
+            logger.info("💡 [REWRITE_QUERY_NODE] Query unchanged")
             
         state["rewritten_query"] = rewritten_query
         logger.info(f"🔧 [REWRITE_QUERY_NODE] COMPLETED! Rewritten query set in state")
@@ -287,10 +278,10 @@ class BedrockKnowledgeBaseWorkflow:
         user_query = state.get("user_query", "")
         
         if skip_rag:
-            logger.info(f"🚀 Routing to SIMPLE query handler for: '{user_query[:30]}...'")
+            logger.info("🚀 Routing to SIMPLE query handler")
             return "simple"
         else:
-            logger.info(f"🔍 Routing to QUERY REWRITER for complex query: '{user_query[:30]}...'")
+            logger.info("🔍 Routing to QUERY REWRITER for complex query")
             return "complex"
     
     def handle_simple_query(self, state: State) -> State:
@@ -364,8 +355,8 @@ class BedrockKnowledgeBaseWorkflow:
         original_query = state.get("user_query", "")
         
         logger.info(f"🔍 [RETRIEVE_FROM_KB] QUERY ANALYSIS:")
-        logger.info(f"🔍   Original query: '{original_query}'")
-        logger.info(f"🔍   Retrieval query: '{retrieval_query}'")
+        logger.info("🔍   Original query provided")
+        logger.info("🔍   Retrieval query prepared")
         logger.info(f"🔍   Query was rewritten: {retrieval_query != original_query}")
         
         if state.get("rewritten_query"):
@@ -384,7 +375,7 @@ class BedrockKnowledgeBaseWorkflow:
         ]
         
         if retrieval_query.lower() in [q.lower() for q in test_queries]:
-            logger.info(f"🔍 ⚠️  DEBUGGING KNOWN PROBLEMATIC QUERY: '{retrieval_query}'")
+            logger.info("🔍 ⚠️  DEBUGGING KNOWN PROBLEMATIC QUERY")
         context_documents = []
         
         if self.bedrock_agent_client and retrieval_query and KNOWLEDGE_BASE_ID:
@@ -409,7 +400,7 @@ class BedrockKnowledgeBaseWorkflow:
                 
                 # 🔍 DEBUG: Log detailed Bedrock response
                 logger.info(f"🔍 BEDROCK RESPONSE DEBUG:")
-                logger.info(f"🔍 Query used: '{retrieval_query}'")
+                logger.info("🔍 Query sent to Bedrock Knowledge Base")
                 
                 if 'retrievalResults' in response:
                     results = response['retrievalResults']
@@ -658,7 +649,7 @@ class BedrockKnowledgeBaseWorkflow:
             # Execute the workflow with memory using stream pattern (following reference code)
             # CRITICAL: Use conversation_id as thread_id for memory consistency across POST and PUT
             thread_id = conversation_id or str(uuid.uuid4())
-            logger.info(f"🚀 [WORKFLOW DEBUG] Starting LangGraph execution with memory: thread_id={thread_id}, conversation_id={conversation_id}, user_query='{user_query[:30]}...'")
+            logger.info(f"🚀 [WORKFLOW DEBUG] Starting LangGraph execution with memory: thread_id={thread_id}, conversation_id={conversation_id}")
             logger.info(f"🧠 [MEMORY CONSISTENCY] thread_id == conversation_id: {thread_id == conversation_id}")
             
             # Load existing conversation context for debugging
@@ -847,7 +838,7 @@ def start_chat(event, context):
         user_info = event.get('auth', {}).get('user_info', {})
         email = user_info.get('email') or user_info.get('username', 'unknown@example.com')
         user_id = user_info.get('user_id', 'unknown')
-        logger.info(f"Creating item for authenticated user: {email} (ID: {user_id})")
+        logger.info("Creating item for authenticated user")
 
         # Generate session_id and create clean trace
         session_id = str(uuid.uuid4())
@@ -875,7 +866,7 @@ def start_chat(event, context):
         # Extract user email using helper
         user_email = extract_user_email_from_event(event)
         if user_query:
-            logger.info(f"Processing chat query with LangGraph workflow: {user_query[:100]}...")
+            logger.info("Processing chat query with LangGraph workflow")
             logger.info(f"Using vector DB: {vector_db}")
             try:
                 # Prepare WebSocket connection info for streaming
@@ -888,7 +879,7 @@ def start_chat(event, context):
                 if workflow_result.get('success', False):
                     # Use helper to build success case data structure
                     validation_schema['datas'] = conversation_builder.build_success_case_data(
-                        workflow_result, user_query, user_email, llm=bedrock_workflow.chat_model
+                        workflow_result, user_query, user_email, llm=bedrock_workflow.chat_model, assistant_id=assistant_id
                     )
                     logger.info("✅ [POST HANDLER] LangGraph workflow completed successfully")
                     # --- Langfuse Trace Output Update ---
@@ -958,7 +949,7 @@ def start_chat(event, context):
         # Construct the new item to be inserted using helper
         try:
             new_item = conversation_builder.construct_new_dynamodb_item(validation_schema['datas'])
-            logger.debug('New item to be inserted: %s', new_item)
+            logger.info('New item to be inserted: %s', new_item)
         except Exception as construct_err:
             logger.error(f"Error constructing new item: {str(construct_err)}")
             response_result = Responses.result_response(STATUS_ERROR, False, 'Error constructing item.')

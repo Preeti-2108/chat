@@ -50,7 +50,7 @@ class WordLevelStreamingHandler:
             
             send_to_client(self.connection_id, json.dumps(streaming_payload), self.websocket_url)
             self.chunk_count += 1
-            logger.debug(f"Sent word chunk {self.chunk_count}: '{chunk}' to {self.connection_id}")
+            logger.debug(f"Sent word chunk {self.chunk_count}")
             
         except Exception as e:
             logger.error(f"Error sending word chunk: {str(e)}")
@@ -77,7 +77,7 @@ class WordLevelStreamingHandler:
             
             send_to_client(self.connection_id, json.dumps(start_payload), self.websocket_url)
             self.start_signal_sent = True
-            logger.info(f"Sent word-level streaming start signal to {self.connection_id}")
+            logger.info("Sent word-level streaming start signal")
         except Exception as e:
             logger.error(f"Error sending streaming start signal: {str(e)}")
     
@@ -90,7 +90,7 @@ class WordLevelStreamingHandler:
                 "streaming_mode": "word_level"
             }
             send_to_client(self.connection_id, json.dumps(error_payload), self.websocket_url)
-            logger.error(f"Sent streaming error signal to {self.connection_id}: {error_message}")
+            logger.error(f"Sent streaming error signal: {error_message}")
         except Exception as e:
             logger.error(f"Error sending streaming error signal: {str(e)}")
     
@@ -99,7 +99,7 @@ class WordLevelStreamingHandler:
         try:
             self.full_response += text
             self.send_streaming_chunk(text)
-            logger.info(f"Sent additional text content to {self.connection_id}: {text[:50]}...")
+            logger.info(f"Sent additional text content: {len(text)} characters")
         except Exception as e:
             logger.error(f"Error sending text content: {str(e)}")
     
@@ -140,7 +140,7 @@ class WordLevelStreamingHandler:
             # Send final chunk
             self.send_streaming_chunk("", is_final=True)
             
-            logger.info(f"Completed word-level streaming for {self.connection_id} with {chunk_count} chunks")
+            logger.info(f"Completed word-level streaming with {chunk_count} chunks")
             return self.full_response
             
         except Exception as e:
@@ -154,7 +154,7 @@ class WordLevelStreamingHandler:
         try:
             self.send_streaming_chunk(text)
             self.last_send_time = datetime.now().timestamp()
-            logger.debug(f"Sent immediate chunk: '{text}' to {self.connection_id}")
+            logger.debug("Sent immediate chunk")
         except Exception as e:
             logger.error(f"Error sending immediate chunk: {str(e)}")
     

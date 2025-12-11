@@ -83,7 +83,7 @@ def delete(event, context):
     Returns:
         dict: A response object with status code and message.
     """
-    logger.debug('Event: %s', event)  
+    # Event logged at debug level  
     logger.info('Inside delete function') 
         
     table_name = os.getenv('TABLE')
@@ -100,13 +100,13 @@ def delete(event, context):
 
     try:
         event_info = extract_event_info(event)
-        logger.info("Event Info: %s", event_info)
+        # Event info extracted
 
         url = event_info.get("url")
         connectionId = event_info.get("connectionId")
 
-        logger.info("URL: %s", url)
-        logger.info("Connection ID: %s", connectionId)
+        # URL extracted
+        # Connection ID extracted
         if not connectionId:
             logger.error("No connection ID found in event. Connection ID is required")
             return {
@@ -135,7 +135,7 @@ def delete(event, context):
         username = user_info.get('username', 'unknown')
         user_id = user_info.get('user_id', 'unknown')
 
-    logger.info(f"Retrieving item for authenticated user: {email} (ID: {user_id});");
+    logger.info("Retrieving item for authenticated user");
 
     try:
         body = json.loads(event.get("body", "{}"))
@@ -181,7 +181,7 @@ def delete(event, context):
         validation_schema = validate_request_datas_schema_pydantic(action, datas, logger)
         if not validation_schema['success']:
             response_result = Responses.result_response(422, False, 'Validation errors.', validation_schema)
-            logger.debug('Validation failed: %s', validation_schema)
+            logger.debug('Validation failed')
             send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
             return {
                 'statusCode': 422,
@@ -198,11 +198,11 @@ def delete(event, context):
 
     try:
         id = validation_schema['datas'].get('id')
-        logger.info("conversation id: %s", id)
+        logger.info("Processing delete request")
         
         existing_item = table.get_item(Key={"conversationId": id})
         if 'Item' not in existing_item or existing_item['Item'] is None:
-            logger.error(f"Chat conversation with ID {id} not found.")
+            logger.error("Chat conversation not found")
             response_result = Responses.result_response(404, False, f'Chat conversation with ID {id} not found.')
             logger.info("response: %s", response_result)
             send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
@@ -218,7 +218,7 @@ def delete(event, context):
                 ExpressionAttributeValues={":inactive": False}
             )
             response_result = Responses.result_response(200, True, f'Chat conversation with ID {id} successfully marked as inactive.')
-            logger.info("response: %s", response_result)
+            logger.info("Item successfully marked as inactive")
             send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
             return {
                 'statusCode': 200,

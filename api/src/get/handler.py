@@ -82,7 +82,7 @@ def get(event, context):
     :param context: The context in which the function is executed, providing runtime information.
     :return: A dictionary containing the HTTP status code and a message indicating the result of the operation.
     """
-    logger.debug('Event: %s', event)  
+    # Event logged at debug level  
     logger.info('Inside get function')  
 
     table_name = os.getenv('TABLE')
@@ -101,13 +101,13 @@ def get(event, context):
     try:
         # Extracting event information
         event_info = extract_event_info(event)
-        logger.info("Event Info: %s", event_info)
+        # Event info extracted
 
         url = event_info.get("url")
         connectionId = event_info.get("connectionId")
 
-        logger.info("URL: %s", url)
-        logger.info("Connection ID: %s", connectionId)
+        # URL extracted
+        # Connection ID extracted
         if not connectionId:
             logger.error("No connection ID found in event. Connection ID is required")
             return {
@@ -136,7 +136,7 @@ def get(event, context):
         username = user_info.get('username', 'unknown')
         user_id = user_info.get('user_id', 'unknown')
 
-    logger.info(f"Retrieving item for authenticated user: {email} (ID: {user_id})")
+    logger.info("Retrieving item for authenticated user")
 
     try:
         body = json.loads(event.get("body", "{}"))
@@ -150,9 +150,9 @@ def get(event, context):
             }
         else:
             action = body.get("action")
-            logger.info("Action: %s", action)
+            # Action extracted
             datas = body.get("datas", {})
-            logger.info("Datas: %s", datas)
+            # Request data extracted
             if not action:
                 logger.error("No action found in request body.")
                 response_result = Responses.result_response(400, False, message="Missing action")
@@ -182,7 +182,7 @@ def get(event, context):
         validation_schema = validate_request_datas_schema_pydantic(action, datas, logger)
         if not validation_schema['success']:
             response_result = Responses.result_response(422, False, 'Validation errors.', validation_schema)
-            logger.debug('Validation failed: %s', validation_schema)
+            logger.debug('Validation failed')
             send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
             return {
                 'statusCode': 422,
@@ -199,7 +199,7 @@ def get(event, context):
 
     try:
         id = validation_schema['datas'].get('id')
-        logger.info("conversation id: %s", id)
+        logger.info("Processing conversation request")
 
         response = table.get_item(Key={"conversationId": id})
 
@@ -222,7 +222,7 @@ def get(event, context):
                 # Create the same format as LIST handler
                 formatted_result = {"item": [conversation], "count": 1}
                 serializable_result = decimal_to_json_serializable(formatted_result)
-                logger.info("response: %s", serializable_result)
+                logger.info("Item found and returned")
                 response_result = Responses.result_response(200, True, f'Item with ID {id} found.', serializable_result)
                 send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
                 return {
@@ -231,7 +231,7 @@ def get(event, context):
                 }
             else:
                 response_result = Responses.result_response(403, False, f'Item with ID {id} found but not owned by {email}.')
-                logger.info("response: %s", response_result)
+                logger.info("Item found but access denied")
                 send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
                 return {
                     'statusCode': 403,
@@ -239,7 +239,7 @@ def get(event, context):
                 }
         else:
             response_result = Responses.result_response(404, False, f'Item with ID {id} not found.')
-            logger.info("response: %s", response_result)
+            logger.info("Item not found")
             send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
             return {
                 'statusCode': 404,

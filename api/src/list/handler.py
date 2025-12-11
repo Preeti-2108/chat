@@ -47,14 +47,14 @@ def list(event, context):
     :param context: The context in which the function is executed, providing runtime information.
     :return: A dictionary containing the HTTP status code and a message indicating the result of the operation.
     """
-    logger.debug('logging event: %s', event)  # Log the incoming event
+    # Event logged at debug level
     logger.info('Inside list function')  # Log entry into the function
 
     # Get user's scopes for additional permission checks
     user_scopes = get_user_scopes(event)
     user_permissions = get_user_resource_permissions(event)
-    logger.info(f"User scopes: {user_scopes}")
-    logger.info(f"User permissions: {user_permissions}")
+    logger.info("User scopes validated")
+    logger.info("User permissions validated")
 
     # Define status codes for different outcomes
     STATUS_ERROR = 500
@@ -129,7 +129,7 @@ def list(event, context):
         user_info = get_authenticated_user(event)
         email = get_user_email(event) or "system@example.com"
         
-        logger.info(f"List operation performed by user: {user_info.get('username')} ({email})")
+        logger.info("List operation performed by authenticated user")
 
         # Convert query string format to dictionary if datas is a string
         if isinstance(datas, str):

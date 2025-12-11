@@ -32,7 +32,7 @@ def send_message(event, context):
         user_info = event.get('auth', {}).get('user_info', {})
         username = user_info.get('username', 'unknown')
         
-        logger.info(f"Message send request from authenticated user: {username}")
+        logger.info("Message send request from authenticated user")
         
         # Here you would implement your message sending logic
         # For example: send to other WebSocket connections, queue processing, etc.

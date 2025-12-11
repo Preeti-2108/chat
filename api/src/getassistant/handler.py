@@ -84,7 +84,7 @@ def getassistant(event, context):
     :param context: The context in which the function is executed, providing runtime information.
     :return: A dictionary containing the HTTP status code and a message indicating the result of the operation.
     """
-    logger.debug('Event: %s', event)  
+    # Event logged at debug level  
     logger.info('Inside getassistant function')  
 
     table_name = os.getenv('TABLE')
@@ -131,7 +131,7 @@ def getassistant(event, context):
         username = user_info.get('username', 'unknown')
         user_id = user_info.get('user_id', 'unknown')
 
-    logger.info(f"Retrieving item for authenticated user: {email} (ID: {user_id})")
+    logger.info("Retrieving item for authenticated user")
 
     try:
         body = json.loads(event.get("body", "{}"))
@@ -175,7 +175,7 @@ def getassistant(event, context):
         validation_schema = validate_request_datas_schema_pydantic(action, datas, logger)
         if not validation_schema['success']:
             response_result = Responses.result_response(422, False, 'Validation errors.', validation_schema)
-            logger.debug('Validation failed: %s', validation_schema)
+            logger.debug('Validation failed')
             send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
             return {
                 'statusCode': 422,
@@ -192,7 +192,7 @@ def getassistant(event, context):
 
     try:
         id = validation_schema['datas'].get('id')
-        logger.info("assistant id: %s", id)
+        logger.info("Processing assistant request")
 
         all_items = []
         last_evaluated_key = None
@@ -222,7 +222,7 @@ def getassistant(event, context):
             if not last_evaluated_key:
                 break
                 
-        logger.info(f"Paginated scan complete: Found {len(all_items)} total items with assistantId {id} in {scan_count} batches")
+        logger.info(f"Paginated scan complete: Found {len(all_items)} total items in {scan_count} batches")
 
         if len(all_items) > 0:
             formatted_items = []
@@ -245,11 +245,11 @@ def getassistant(event, context):
                     formatted_items.append(conversation)
 
                 formatted_items.sort(key=lambda x: x["createdAt"], reverse=True)
-                logger.info(f"Formatted items: {formatted_items}")
+                logger.info(f"Formatted items count: {len(formatted_items)}")
 
                 serializable_items = decimal_to_json_serializable(formatted_items)
                 formatted_result = {"item": serializable_items, "count": len(user_items)}
-                logger.info(f"Formatted result: {formatted_result}")
+                logger.info("Result formatted successfully")
 
                 response_result = Responses.result_response(200, True, f'Item with ID {id} found.', formatted_result)
                 send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
@@ -260,7 +260,7 @@ def getassistant(event, context):
             else:
                 empty_result = {"item": [], "count": 0}
                 response_result = Responses.result_response(200, True, f'No items found for assistant ID {id}.', empty_result)
-                logger.info("Items found but none owned by user, returning empty response: %s", response_result)
+                logger.info("Items found but none owned by user, returning empty response")
                 send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
                 return {
                     'statusCode': 200,
@@ -268,7 +268,7 @@ def getassistant(event, context):
                 }
         else:
             response_result = Responses.result_response(404, False, f'Assistant with ID {id} not found.')
-            logger.info("response: %s", response_result)
+            logger.info("Response prepared successfully")
             send_to_client(connectionId, json.dumps(construct_response(response_result)), url)
             return {
                 'statusCode': 404,

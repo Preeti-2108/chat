@@ -1,6 +1,6 @@
-aws-cdk-lib>=2.232.1,<3.0.0
-constructs>=10.4.3,<11.0.0
-aws-cdk.aws-apigatewayv2-integrations-alpha
-zipp>=3.23.0
-urllib3>=2.6.1
-boto3
+aws-cdk-lib==2.232.1
+constructs==10.4.3
+aws-cdk.aws-apigatewayv2-integrations-alpha==2.114.1a0
+zipp==3.23.0
+urllib3==2.6.1
+boto3==1.42.5

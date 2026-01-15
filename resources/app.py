@@ -1,4 +1,4 @@
-from aws_cdk import App
+from aws_cdk import App, Tags, Environment
 from resources_stack import ResourcesStack
 import os
 import boto3
@@ -20,6 +20,10 @@ user_pool_id = get_env_var("COGNITO_POOL_ID")
 environment = os.getenv("TF_VAR_ENV", "dev")
 sqs_queue_name = "AUDIT_QUEUE"
 dead_letter_queue_name = "AUDIT_DLQ"
+
+# Get AWS region and account from environment
+aws_account_id = os.getenv("AWS_ACCOUNT_ID")
+aws_region = os.getenv("AWS_DEFAULT_REGION") or os.getenv("AWS_REGION") or os.getenv("REGION", "eu-north-1")
  
  
 def does_dynamodb_table_exist(name):
@@ -72,6 +76,14 @@ resources_stack = ResourcesStack(
     create_secret=create_secret,
     create_sqs_queues=create_sqs_queues,
     create_connections_table=create_connections_table,
+    env=Environment(account=aws_account_id, region=aws_region) if aws_account_id else None
 )
- 
+
+# Add tags to all resources in the stack
+Tags.of(resources_stack).add("IaC-Tool", "CDK")
+Tags.of(resources_stack).add("ManagedBy", "AWS-CDK")
+Tags.of(resources_stack).add("Environment", environment)
+Tags.of(resources_stack).add("Project", api_name)
+Tags.of(resources_stack).add("Stack", "Resources")
+
 app.synth()

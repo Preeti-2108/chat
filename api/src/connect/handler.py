@@ -6,6 +6,7 @@ import time
 from botocore.exceptions import ClientError
 from src.helpers.cognito_auth import extract_token_from_event, validate_cognito_token
 from src.helpers.api_responses import Responses
+from src.helpers.websocket_security import get_secure_websocket_url, SecurityError
 
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))
@@ -208,15 +209,23 @@ def _send_error_message_to_client(event, connection_id: str, warning_message: st
         warning_message: Message d'avertissement à envoyer
     """
     try:
-        # Construire l'endpoint de l'API Gateway Management API
+        # SECURITY FIX: Use secure URL construction instead of trusting event data
         domain_name = event.get('requestContext', {}).get('domainName')
         stage = event.get('requestContext', {}).get('stage')
         
         if not domain_name or not stage:
             logger.warning("Cannot send message: missing domain or stage information")
             return
-            
-        endpoint_url = f"https://{domain_name}/{stage}"
+        
+        # Use secure URL construction with validation
+        try:
+            endpoint_url = get_secure_websocket_url(domain_name, stage)
+            if not endpoint_url:
+                logger.error("WebSocket URL validation failed - cannot send error message")
+                return
+        except SecurityError as e:
+            logger.error(f"SECURITY WARNING: Cannot send error message due to URL validation failure: {e}")
+            return
         
         # Créer le client API Gateway Management API
         apigateway_management = boto3.client(

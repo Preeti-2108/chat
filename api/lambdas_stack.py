@@ -264,6 +264,25 @@ class LambdasStack(Stack):
         websocket_endpoint = ws_stage.url
         for name, lambda_func in lambdas.items():
             lambda_func.add_environment("WEBSOCKET_ENDPOINT_URL", websocket_endpoint)
+            
+            # SECURITY FIX: Configure exact domains for SSRF protection
+            # Following AWS/Stripe/OpenAI security standards - only exact domain matches
+            # Extract the actual domain from the WebSocket endpoint using urllib
+            from urllib.parse import urlparse
+            try:
+                parsed_url = urlparse(websocket_endpoint)
+                actual_domain = parsed_url.hostname
+                if actual_domain:
+                    # Only allow the exact domain of this API Gateway
+                    lambda_func.add_environment("ALLOWED_WEBSOCKET_HOSTS", actual_domain)
+                    print(f"SECURITY: WebSocket whitelist configured for exact domain: {actual_domain}")
+                else:
+                    raise ValueError("No hostname found in WebSocket URL")
+            except Exception as e:
+                # Fallback - require manual configuration
+                lambda_func.add_environment("ALLOWED_WEBSOCKET_HOSTS", "")
+                print(f"WARNING: Could not extract domain from {websocket_endpoint}: {e}")
+                print("Please configure ALLOWED_WEBSOCKET_HOSTS manually")
 
         CfnOutput(
             self, "WebSocketApiEndpoint",

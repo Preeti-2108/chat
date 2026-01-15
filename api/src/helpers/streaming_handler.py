@@ -9,6 +9,7 @@ import logging
 from datetime import datetime
 from typing import List, Any
 from src.handler_websocket.handler import send_to_client
+from src.helpers.websocket_security import validate_websocket_url, SecurityError
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,18 @@ class WordLevelStreamingHandler:
     
     def __init__(self, connection_id: str, websocket_url: str, conversation_id: str = None, trace_id: str = None):
         self.connection_id = connection_id
-        self.websocket_url = websocket_url
+        
+        # SECURITY FIX: Validate WebSocket URL to prevent SSRF attacks
+        try:
+            self.websocket_url = validate_websocket_url(websocket_url)
+            if not self.websocket_url:
+                raise SecurityError("WebSocket URL validation failed")
+            logger.info(f"Validated WebSocket URL for streaming: {self.websocket_url}")
+        except SecurityError as e:
+            logger.error(f"SECURITY WARNING: Streaming handler URL validation failed: {e}")
+            # Refuse to initialize with invalid URL
+            raise ValueError(f"Invalid WebSocket URL provided: {websocket_url}")
+        
         self.conversation_id = conversation_id
         self.trace_id = trace_id
         self.full_response = ""
@@ -242,13 +254,23 @@ def send_immediate_streaming_signals(connection_id: str, websocket_url: str, con
     This should be called before any processing begins.
     """
     try:
+        # SECURITY FIX: Validate WebSocket URL before using it
+        try:
+            validated_url = validate_websocket_url(websocket_url)
+            if not validated_url:
+                logger.error(f"SECURITY WARNING: Invalid WebSocket URL in streaming signals: {websocket_url}")
+                return  # Refuse to send signals to invalid URLs
+        except SecurityError as e:
+            logger.error(f"SECURITY WARNING: WebSocket URL validation failed in streaming signals: {e}")
+            return  # Refuse to send signals to invalid URLs
+        
         # Send thinking signal immediately
         thinking_payload = {
             "type": "streaming_thinking",
             "message": "Processing your request...",
             "streaming_mode": "word_level"
         }
-        send_to_client(connection_id, json.dumps(thinking_payload), websocket_url)
+        send_to_client(connection_id, json.dumps(thinking_payload), validated_url)
         logger.info("⚡ IMMEDIATE thinking signal sent")
         
         # Send start signal immediately
@@ -261,7 +283,7 @@ def send_immediate_streaming_signals(connection_id: str, websocket_url: str, con
         if conversation_id:
             start_payload["conversation_id"] = conversation_id
             
-        send_to_client(connection_id, json.dumps(start_payload), websocket_url)
+        send_to_client(connection_id, json.dumps(start_payload), validated_url)
         logger.info("⚡ IMMEDIATE streaming start signal sent")
         
     except Exception as e:

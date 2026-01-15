@@ -17,9 +17,10 @@ cryptography==46.0.3
 zipp==3.23.0
 
 ##Langchain and LangGraph requirements
-langchain-core==0.2.43
-langchain-openai==0.1.25
-langchain==0.2.17
-langgraph==0.1.19
+# SECURITY: Updated to fix CVE-2024-XXXX (Deserialization vulnerability in langchain-core < 0.3.81)
+langchain-core==0.3.83
+langchain-openai==0.3.35
+langchain==0.3.27
+langgraph==0.3.34
 # Version pinned to match lock file for reproducibility
 langfuse==3.10.5

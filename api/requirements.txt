@@ -23,5 +23,5 @@ langchain-openai==0.3.35
 langchain==0.3.27
 langgraph==0.3.34
 # Version pinned to match lock file for reproducibility  
-# Updated from 3.10.5to 3.11.2 for stability and Lambda compatibility fixes
-langfuse==3.11.2
+# Using 2.58.3 for stable API compatibility in Lambda environment
+langfuse==2.58.3

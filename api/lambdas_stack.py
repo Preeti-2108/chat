@@ -6,13 +6,16 @@ from aws_cdk import (
     aws_apigatewayv2_integrations_alpha as integrations_alpha,
     aws_cognito as cognito,
     aws_iam as iam,
+    aws_ec2 as ec2,
     Duration,
     CfnOutput,
-    aws_ecr as ecr
+    aws_ecr as ecr,
+    Tags
 )
 from constructs import Construct
 import boto3
 import os
+from vpc_config import get_vpc_config_from_secrets_manager
 
 def get_cognito_client_ids(user_pool_id):
     client = boto3.client('cognito-idp')
@@ -56,6 +59,41 @@ class LambdasStack(Stack):
         **kwargs
     ):
         super().__init__(scope, id, **kwargs)
+
+        # Get VPC configuration from Secrets Manager
+        vpc_config = get_vpc_config_from_secrets_manager()
+        security_groups = []
+        vpc_subnets = None
+        vpc = None
+
+        if vpc_config['security_groups'] and vpc_config['subnets'] and vpc_config.get('vpc_id'):
+            # Import VPC using the real VPC ID
+            vpc = ec2.Vpc.from_lookup(
+                self, "ImportedVPC",
+                vpc_id=vpc_config['vpc_id']
+            )
+
+            # Import security groups with VPC reference
+            for idx, sg_id in enumerate(vpc_config['security_groups']):
+                security_groups.append(
+                    ec2.SecurityGroup.from_security_group_id(
+                        self, f"SecurityGroup{idx}",
+                        security_group_id=sg_id
+                    )
+                )
+
+            # Import subnets
+            subnets = [
+                ec2.Subnet.from_subnet_id(self, f"Subnet{idx}", subnet_id=subnet_id)
+                for idx, subnet_id in enumerate(vpc_config['subnets'])
+            ]
+
+            # Create subnet selection
+            vpc_subnets = ec2.SubnetSelection(subnets=subnets)
+
+            print(f"✅ VPC configuration loaded: VPC={vpc_config['vpc_id']}, SG={len(security_groups)}, Subnets={len(subnets)}")
+        else:
+            print("⚠️  No VPC configuration found - Lambdas will run without VPC")
 
         lambda_env = {
             "TABLE": table_name,
@@ -102,17 +140,26 @@ class LambdasStack(Stack):
 
         lambdas = {}
         for name, handler in handlers.items():
-            lambdas[name] = _lambda.DockerImageFunction(
-                self, name,
-                code=_lambda.DockerImageCode.from_ecr(
+            lambda_kwargs = {
+                "code": _lambda.DockerImageCode.from_ecr(
                     repository=repo,
                     tag_or_digest=image_tag,
                     cmd=[handler],
                 ),
-                environment=lambda_env,
-                timeout=Duration.seconds(30),
-                # Add more memory if needed for dependencies
-                memory_size=512,
+                "environment": lambda_env,
+                "timeout": Duration.seconds(30),
+                "memory_size": 512,
+            }
+
+            # Add VPC configuration if available
+            if vpc and security_groups and vpc_subnets:
+                lambda_kwargs["vpc"] = vpc
+                lambda_kwargs["security_groups"] = security_groups
+                lambda_kwargs["vpc_subnets"] = vpc_subnets
+
+            lambdas[name] = _lambda.DockerImageFunction(
+                self, name,
+                **lambda_kwargs
             )
 
             # More specific IAM permissions for main table
@@ -174,6 +221,13 @@ class LambdasStack(Stack):
                 resources=[f"arn:aws:bedrock:{self.region}:{self.account}:knowledge-base/*"]
             ))
 
+            # Add tags to Lambda function
+            Tags.of(lambdas[name]).add("IaC-Tool", "CDK")
+            Tags.of(lambdas[name]).add("ManagedBy", "AWS-CDK")
+            Tags.of(lambdas[name]).add("Environment", env)
+            Tags.of(lambdas[name]).add("Project", api_name)
+            Tags.of(lambdas[name]).add("Stack", "Lambdas")
+
         # WebSocket API
         ws_api = apigwv2_alpha.WebSocketApi(
             self, "WebSocketApi",
@@ -194,6 +248,13 @@ class LambdasStack(Stack):
                 )
             ),
         )
+
+        # Add tags to WebSocket API
+        Tags.of(ws_api).add("IaC-Tool", "CDK")
+        Tags.of(ws_api).add("ManagedBy", "AWS-CDK")
+        Tags.of(ws_api).add("Environment", env)
+        Tags.of(ws_api).add("Project", api_name)
+        Tags.of(ws_api).add("Stack", "Lambdas")
 
         # Custom WebSocket routes for each handler
         apigwv2_alpha.WebSocketRoute(

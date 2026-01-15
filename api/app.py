@@ -65,8 +65,8 @@ lambdas_stack = LambdasStack(
     langfuse_secret_key=LANGFUSE_SECRET_KEY,
     langfuse_host=LANGFUSE_HOST,
     langfuse_environment=LANGFUSE_ENVIRONMENT,
-    env=ENV,
-    environment=Environment(account=aws_account_id, region=aws_region)
+    deployment_env=ENV,
+    env=Environment(account=aws_account_id, region=aws_region)
 )
 
 # Add tags to all resources in the stack

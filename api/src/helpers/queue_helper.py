@@ -47,8 +47,6 @@ def send_message_to_queue(message_body):
     try:
         # Call the SQS send_message API and wait for the result
         response = sqs.send_message(**params)
-        # Log the message body for debugging
-        logger.info(f"Message body: {json.dumps(message_body, default=str)}")
         return response
     except Exception as error:
         # Log the error message if the API call fails

@@ -55,7 +55,7 @@ class LambdasStack(Stack):
         langfuse_secret_key: str = None,
         langfuse_host: str = None,
         langfuse_environment: str = None,
-        env: str = "dev",
+        deployment_env: str = "dev",
         **kwargs
     ):
         super().__init__(scope, id, **kwargs)
@@ -113,7 +113,7 @@ class LambdasStack(Stack):
             "BASE_URL": base_url,
             "ASSISTANT_ENDPOINT": assistant_endpoint,
             "ASSISTANT_PRODUCT_KEY": assistant_product_key,
-            "ENV": env
+            "ENV": deployment_env
         }
         
         # Add connections table environment variable if provided
@@ -224,7 +224,7 @@ class LambdasStack(Stack):
             # Add tags to Lambda function
             Tags.of(lambdas[name]).add("IaC-Tool", "CDK")
             Tags.of(lambdas[name]).add("ManagedBy", "AWS-CDK")
-            Tags.of(lambdas[name]).add("Environment", env)
+            Tags.of(lambdas[name]).add("Environment", deployment_env)
             Tags.of(lambdas[name]).add("Project", api_name)
             Tags.of(lambdas[name]).add("Stack", "Lambdas")
 
@@ -252,7 +252,7 @@ class LambdasStack(Stack):
         # Add tags to WebSocket API
         Tags.of(ws_api).add("IaC-Tool", "CDK")
         Tags.of(ws_api).add("ManagedBy", "AWS-CDK")
-        Tags.of(ws_api).add("Environment", env)
+        Tags.of(ws_api).add("Environment", deployment_env)
         Tags.of(ws_api).add("Project", api_name)
         Tags.of(ws_api).add("Stack", "Lambdas")
 

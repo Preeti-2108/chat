@@ -63,8 +63,6 @@ def connect(event, context, token=None):
             logger.warning(warning_message)
             logger.warning(f"Available parameters: {list(query_params.keys())}")
             logger.warning("Expected parameters: 'authentication' in query string, or 'Authorization' header")
-            logger.warning(f"Full event queryStringParameters: {event.get('queryStringParameters')}")
-            logger.warning(f"Full event headers: {event.get('headers')}")
             
             # Essayer d'envoyer le message d'erreur puis retourner 401
             try:

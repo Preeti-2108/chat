@@ -411,15 +411,10 @@ class BedrockKnowledgeBaseWorkflow:
                         content = result.get('content', {}).get('text', '')[:200]  # First 200 chars
                         location = result.get('location', {})
                         uri = location.get('s3Location', {}).get('uri', 'No URI')
-                        
+
                         logger.info(f"🔍 Result {i+1}: Score={score:.4f}")
                         logger.info(f"🔍   URI: {uri}")
-                        logger.info(f"🔍   Content preview: '{content}...'")
-                        
-                        # Check for French content
-                        french_indicators = ['licence', 'support des', 'windows', 'microsoft']
-                        has_french = any(indicator in content.lower() for indicator in french_indicators)
-                        logger.info(f"🔍   Contains French indicators: {has_french}")
+                        logger.info(f"🔍   Content length: {len(content)} chars")
                         logger.info(f"🔍   ---")
                 else:
                     logger.warning(f"🔍 No retrievalResults in Bedrock response!")
@@ -518,7 +513,6 @@ class BedrockKnowledgeBaseWorkflow:
                     
                     # Process streaming response
                     logger.info("🤖 [STREAMING] Starting word-level streaming...")
-                    logger.info(f"🤖 [STREAMING] Messages sent to model: {[msg.content[:50] + '...' for msg in messages]}")
                     ai_response = streaming_handler.process_word_streaming(
                         self.chat_model.stream(messages)
                     )
@@ -747,7 +741,6 @@ def start_chat(event, context):
     :param context: The context in which the function is executed.
     :return: A dictionary containing the status code and body message.
     """
-    logger.debug('logging event: %s', event)  # Log the incoming event
     logger.info('Inside create function')  # Log entry into the function
     
     # Define status codes
@@ -992,7 +985,7 @@ def start_chat(event, context):
 
     except Exception as err:
         # Handle general errors
-        logger.error(f"Error occurred: {str(err)}, Event: {json.dumps(event)}")
+        logger.error(f"Error occurred: {str(err)}")
         response_result = Responses.result_response(STATUS_ERROR, False, 'Error during the execution.')
 
     # Send the response to the client only if streaming wasn't already handled

@@ -11,7 +11,10 @@
       "Bash(aws lambda get-function:*)",
       "Bash(aws cloudformation continue-update-rollback:*)",
       "Bash(aws cloudformation wait:*)",
-      "Bash(gh pr list:*)"
+      "Bash(gh pr list:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nfix: correct CI/CD pipeline stages for sequential deployment\n\n- Changed deploy_lambdas_dev stage from ''deploy_resources'' to ''deploy_lambdas''\n- Changed deploy_lambdas_prod stage from ''deploy_resources'' to ''deploy_lambdas''\n\nThis fix ensures that lambda deployments wait for resource deployments\nto complete, preventing concurrent CloudFormation updates that cause\nUPDATE_ROLLBACK_FAILED errors.\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git push:*)"
     ],
     "deny": [],
     "ask": []

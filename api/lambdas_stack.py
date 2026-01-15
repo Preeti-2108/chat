@@ -114,6 +114,10 @@ class LambdasStack(Stack):
             "ASSISTANT_ENDPOINT": assistant_endpoint,
             "ASSISTANT_PRODUCT_KEY": assistant_product_key,
             "ENV": deployment_env,
+            "LANGFUSE_PUBLIC_KEY": langfuse_public_key,
+            "LANGFUSE_SECRET_KEY": langfuse_secret_key,
+            "LANGFUSE_HOST": langfuse_host,
+            "LANGFUSE_ENVIRONMENT": langfuse_environment,
             # Logging configuration
             "LOG_LEVEL": str(os.environ.get("LOG_LEVEL", "INFO")),
             

@@ -2,7 +2,7 @@ import boto3
 import os
 import logging
 from botocore.exceptions import ClientError
-from src.helpers.websocket_security import get_secure_websocket_url, SecurityError
+
 
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))
@@ -18,8 +18,7 @@ def extract_event_info(event):
     Extracts and returns essential information from an AWS API Gateway event.
     
     This function retrieves the domain name, stage, and connection ID from the event's
-    request context. It constructs a URL using the domain name and stage if both are available,
-    with SSRF protection by validating the URL against a whitelist.
+    request context. It constructs a URL using the domain name and stage if both are available.
     Additionally, it attempts to fetch an access token from a DynamoDB table using the connection ID.
     
     Parameters:
@@ -32,20 +31,11 @@ def extract_event_info(event):
     domain_name = event.get('requestContext', {}).get('domainName')
     stage = event.get('requestContext', {}).get('stage')
     
-    # SECURITY FIX: Use secure URL construction with validation to prevent SSRF attacks
+    # Construct WebSocket URL from domain and stage
     url = None
     if domain_name and stage:
-        try:
-            # Use the secure function that validates against whitelist
-            url = get_secure_websocket_url(domain_name, stage)
-            if url:
-                logger.info(f"Validated WebSocket URL: {url}")
-            else:
-                logger.error(f"WebSocket URL validation failed for domain: {domain_name}, stage: {stage}")
-        except SecurityError as e:
-            logger.error(f"SECURITY WARNING: WebSocket URL validation failed: {e}")
-            # In case of security error, we don't provide the URL
-            url = None
+        url = f'https://{domain_name}/{stage}'
+        logger.info(f"WebSocket URL: {url}")
     
     # Extract connection ID from the event's request context
     connection_id = event.get('requestContext', {}).get('connectionId')

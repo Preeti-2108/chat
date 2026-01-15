@@ -6,7 +6,7 @@ import os
 import logging
 from botocore.exceptions import ClientError
 from jwt import PyJWKClient, decode as jwt_decode, InvalidTokenError, PyJWKError
-from src.helpers.websocket_security import validate_websocket_url, SecurityError
+
 
 # Configure logging to display debug-level messages
 logging.basicConfig(level=logging.DEBUG)
@@ -200,23 +200,8 @@ def send_to_client(connection_id, message, url=None):
         message (str): The message to send to the client.
         url (str, optional): The WebSocket endpoint URL. Defaults to the configured endpoint.
     """
-    # SECURITY FIX: Validate the URL to prevent SSRF attacks
-    endpoint_url = None
-    
-    if url:
-        try:
-            # Validate the provided URL against whitelist
-            validated_url = validate_websocket_url(url)
-            endpoint_url = validated_url
-            logging.debug(f"Using validated URL: {validated_url}")
-        except SecurityError as e:
-            logging.error(f"SECURITY WARNING: WebSocket URL validation failed: {e}")
-            logging.error(f"Falling back to configured endpoint URL for security")
-            # Fall back to the server-configured endpoint URL
-            endpoint_url = websocket_endpoint_url
-    else:
-        # Use the server-configured endpoint URL
-        endpoint_url = websocket_endpoint_url
+    # Use provided URL or fall back to configured endpoint
+    endpoint_url = url if url else websocket_endpoint_url
     
     if not endpoint_url:
         logging.error("No valid WebSocket endpoint URL available")

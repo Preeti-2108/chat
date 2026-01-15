@@ -4,7 +4,14 @@
       "Bash(git checkout:*)",
       "Bash(npm install)",
       "Bash(npm run asyncapi)",
-      "Bash(asyncapi generate:*)"
+      "Bash(asyncapi generate:*)",
+      "Bash(aws cloudformation describe-stacks:*)",
+      "Bash(aws cloudformation describe-stack-events:*)",
+      "Bash(aws lambda list-functions:*)",
+      "Bash(aws lambda get-function:*)",
+      "Bash(aws cloudformation continue-update-rollback:*)",
+      "Bash(aws cloudformation wait:*)",
+      "Bash(gh pr list:*)"
     ],
     "deny": [],
     "ask": []

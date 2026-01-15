@@ -80,13 +80,8 @@ def is_allowed_url(url: str) -> bool:
             if hostname == allowed_clean:
                 logger.debug(f"URL {url} is allowed (exact match with {allowed})")
                 return True
-            
-            # Also check full URL match (with protocol)
-            if url.startswith(allowed) or url_with_protocol.startswith(allowed):
-                logger.debug(f"URL {url} is allowed (prefix match with {allowed})")
-                return True
         
-        logger.warning(f"URL {url} is not in the allowed hosts whitelist. Allowed hosts: {ALLOWED_HOSTS}")
+        logger.warning(f"URL {url} is not in the allowed hosts whitelist.")
         return False
         
     except Exception as e:

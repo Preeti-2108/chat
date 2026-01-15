@@ -205,10 +205,10 @@ def send_to_client(connection_id, message, url=None):
         validated_url = validate_and_get_url(url, fallback_url=websocket_endpoint_url)
     except ValueError as e:
         logging.error(f"SSRF protection: {str(e)}")
-        validated_url = websocket_endpoint_url
-        if not validated_url:
+        if not websocket_endpoint_url:
             logging.error("No valid WebSocket endpoint URL available")
             raise ValueError("No valid WebSocket endpoint URL available")
+        validated_url = websocket_endpoint_url
     
     # Initialize the API Gateway Management API client
     client = boto3.client(

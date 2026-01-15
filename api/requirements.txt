@@ -23,5 +23,5 @@ langchain-openai==0.3.35
 langchain==0.3.27
 langgraph==0.3.34
 # Version pinned to match lock file for reproducibility  
-# Using 2.58.3 for stable API compatibility in Lambda environment
-langfuse==2.58.3
+# Using 2.44.0 for stable API compatibility in Lambda environment
+langfuse==2.44.0

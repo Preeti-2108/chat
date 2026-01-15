@@ -76,14 +76,9 @@ def is_allowed_url(url: str) -> bool:
             # Remove protocol from allowed host for comparison if present
             allowed_clean = allowed.replace('wss://', '').replace('ws://', '').strip()
             
-            # Check if hostname matches (exact match)
+            # Check if hostname matches (exact match only - no subdomain matching for security)
             if hostname == allowed_clean:
                 logger.debug(f"URL {url} is allowed (exact match with {allowed})")
-                return True
-            
-            # Check if hostname is a subdomain of allowed host
-            if hostname.endswith('.' + allowed_clean):
-                logger.debug(f"URL {url} is allowed (subdomain match with {allowed})")
                 return True
             
             # Also check full URL match (with protocol)

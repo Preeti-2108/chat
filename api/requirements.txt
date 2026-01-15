@@ -1,5 +1,5 @@
 setuptools>=80.9.0
-urllib3==2.6.1
+urllib3==2.6.3
 PyJWT[crypto]==2.10.1
 jsonschema==4.25.1
 text-unidecode==1.3

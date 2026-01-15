@@ -88,7 +88,7 @@ def is_allowed_websocket_url(url: str) -> bool:
         parsed_url = urlparse(url)
         
         # Ensure the URL uses HTTPS (wss:// URLs are converted to https:// by urlparse)
-        if parsed_url.scheme != "wss":
+        if parsed_url.scheme not in ('https', 'wss'):
             logger.error(f"Invalid URL scheme: {parsed_url.scheme}. Only HTTPS/WSS URLs are allowed")
             return False
         

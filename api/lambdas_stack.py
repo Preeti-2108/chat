@@ -113,7 +113,16 @@ class LambdasStack(Stack):
             "BASE_URL": base_url,
             "ASSISTANT_ENDPOINT": assistant_endpoint,
             "ASSISTANT_PRODUCT_KEY": assistant_product_key,
-            "ENV": deployment_env
+            "ENV": deployment_env,
+            # Logging configuration
+            "LOG_LEVEL": str(os.environ.get("LOG_LEVEL", "INFO")),
+            
+            # SSRF Protection - WebSocket URL validation
+            # Comma-separated list of allowed WebSocket hosts
+            "ALLOWED_WEBSOCKET_HOSTS": str(os.environ.get("ALLOWED_WEBSOCKET_HOSTS", "apiportal1689852356.azure-api.net")),
+            # Default allowed host (can be overridden)
+            "DEFAULT_ALLOWED_WEBSOCKET_HOST": str(os.environ.get("DEFAULT_ALLOWED_WEBSOCKET_HOST", "apiportal1689852356.azure-api.net"))
+
         }
         
         # Add connections table environment variable if provided

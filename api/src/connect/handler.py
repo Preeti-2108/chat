@@ -6,7 +6,7 @@ import time
 from botocore.exceptions import ClientError
 from src.helpers.cognito_auth import extract_token_from_event, validate_cognito_token
 from src.helpers.api_responses import Responses
-
+from src.helpers.security.url_validator import is_allowed_url
 
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))
@@ -217,6 +217,10 @@ def _send_error_message_to_client(event, connection_id: str, warning_message: st
         
         # Use secure URL construction
         endpoint_url = f'https://{domain_name}/{stage}'
+
+        if not is_allowed_url(endpoint_url):
+            logger.error(f"SSRF protection: Endpoint URL {endpoint_url} is not in the allowed hosts whitelist")
+            return
         
         # Créer le client API Gateway Management API
         apigateway_management = boto3.client(

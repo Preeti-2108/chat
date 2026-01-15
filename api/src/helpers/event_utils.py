@@ -2,6 +2,7 @@ import boto3
 import os
 import logging
 from botocore.exceptions import ClientError
+from src.helpers.security.url_validator import is_allowed_url
 
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,10 @@ def extract_event_info(event):
     if domain_name and stage:
         url = f'https://{domain_name}/{stage}'
         logger.info(f"WebSocket URL: {url}")
+    
+    if url and not is_allowed_url(url):
+        logger.warning(f"Constructed URL {url} is not in the allowed hosts whitelist. Using None as fallback.")
+        url = None
     
     # Extract connection ID from the event's request context
     connection_id = event.get('requestContext', {}).get('connectionId')

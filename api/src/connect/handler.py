@@ -254,4 +254,3 @@ def _send_error_message_to_client(event, connection_id: str, warning_message: st
     except Exception as e:
         logger.error(f"Failed to send error message to client {connection_id}: {str(e)}")
         # Ne pas lever l'exception car on veut quand même retourner 401
-        

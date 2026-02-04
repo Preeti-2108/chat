@@ -1,8 +1,8 @@
 <policies>
     <inbound>
         <base />
-        <rate-limit-by-key calls="100" renewal-period="1" counter-key="@(context.Request.IpAddress)" />
-        <rate-limit-by-key calls="100" renewal-period="1" counter-key="@(context.Subscription.Key)" />
+        <rate-limit-by-key calls="10" renewal-period="1" counter-key="@(context.Request.IpAddress)" />
+        <rate-limit-by-key calls="10" renewal-period="1" counter-key="@(context.Subscription.Key)" />
         <choose>
             <when condition="@(context.Request.Url.Query.ContainsKey("authorization"))">
                 <set-variable name="authToken" value="@(context.Request.Url.Query.GetValueOrDefault("authorization", ""))" />

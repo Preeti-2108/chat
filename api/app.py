@@ -1,4 +1,4 @@
-from aws_cdk import App
+from aws_cdk import App, Tags, Environment
 from lambdas_stack import LambdasStack
 import os
 
@@ -34,6 +34,8 @@ LANGFUSE_HOST = os.getenv("LANGFUSE_HOST")
 LANGFUSE_ENVIRONMENT = os.getenv("LANGFUSE_ENVIRONMENT", "development")
 ENV = os.getenv("ENV", "dev")
 
+# Get AWS region from environment
+aws_region = os.getenv("AWS_DEFAULT_REGION") or os.getenv("AWS_REGION") or os.getenv("REGION", "eu-north-1")
 
 # Construct connections table name
 connections_table_name = f"{table_name}-CONNECTIONS"
@@ -63,7 +65,15 @@ lambdas_stack = LambdasStack(
     langfuse_secret_key=LANGFUSE_SECRET_KEY,
     langfuse_host=LANGFUSE_HOST,
     langfuse_environment=LANGFUSE_ENVIRONMENT,
-    env=ENV
+    deployment_env=ENV,
+    env=Environment(account=aws_account_id, region=aws_region)
 )
+
+# Add tags to all resources in the stack
+Tags.of(lambdas_stack).add("IaC-Tool", "CDK")
+Tags.of(lambdas_stack).add("ManagedBy", "AWS-CDK")
+Tags.of(lambdas_stack).add("Environment", ENV)
+Tags.of(lambdas_stack).add("Project", api_name)
+Tags.of(lambdas_stack).add("Stack", "Lambdas")
 
 app.synth()

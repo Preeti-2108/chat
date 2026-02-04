@@ -6,6 +6,7 @@ import os
 import logging
 from botocore.exceptions import ClientError
 from jwt import PyJWKClient, decode as jwt_decode, InvalidTokenError, PyJWKError
+from src.helpers.security.url_validator import validate_and_get_url, is_allowed_url
 
 # Configure logging to display debug-level messages
 logging.basicConfig(level=logging.DEBUG)
@@ -199,10 +200,20 @@ def send_to_client(connection_id, message, url=None):
         message (str): The message to send to the client.
         url (str, optional): The WebSocket endpoint URL. Defaults to the configured endpoint.
     """
+    # Use provided URL or fall back to configured endpoint
+    try:
+        validated_url = validate_and_get_url(url, fallback_url=websocket_endpoint_url)
+    except ValueError as e:
+        logging.error(f"SSRF protection: {str(e)}")
+        if not websocket_endpoint_url:
+            logging.error("No valid WebSocket endpoint URL available")
+            raise ValueError("No valid WebSocket endpoint URL available")
+        validated_url = websocket_endpoint_url
+    
     # Initialize the API Gateway Management API client
     client = boto3.client(
         'apigatewaymanagementapi',
-        endpoint_url=url or websocket_endpoint_url
+        endpoint_url=validated_url
     )
     try:
         # Post the message to the specified WebSocket connection

@@ -51,12 +51,9 @@ def authenticate_websocket(required_groups: Optional[list] = None,
                 token = extract_token_from_event(event)
                 if not token:
                     logger.warning(f"No authentication token provided for connection {connection_id}")
-                    logger.debug(f"Event query params: {event.get('queryStringParameters')}")
-                    logger.debug(f"Event headers: {event.get('headers')}")
-                    logger.debug(f"Event multiValueHeaders: {event.get('multiValueHeaders')}")
                     return _send_auth_error(
-                        connection_id, 
-                        url, 
+                        connection_id,
+                        url,
                         "Authentication required. Please provide a valid JWT token in 'authentication' parameter or Authorization header.",
                         401
                     )

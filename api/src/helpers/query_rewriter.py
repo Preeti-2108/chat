@@ -127,7 +127,7 @@ def safe_rewrite_query(rewriter, user_query: str) -> str:
         rewritten = result.get("rewritten_query", "").strip()
         
         if rewritten and len(rewritten) > 3 and rewritten != user_query:
-            logger.info(f"Query rewritten: '{user_query}' -> '{rewritten}'")
+            logger.info("Query rewritten successfully")
             return rewritten
         else:
             return user_query

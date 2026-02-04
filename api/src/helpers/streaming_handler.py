@@ -21,6 +21,7 @@ class WordLevelStreamingHandler:
     def __init__(self, connection_id: str, websocket_url: str, conversation_id: str = None, trace_id: str = None):
         self.connection_id = connection_id
         self.websocket_url = websocket_url
+        
         self.conversation_id = conversation_id
         self.trace_id = trace_id
         self.full_response = ""
@@ -261,7 +262,7 @@ def send_immediate_streaming_signals(connection_id: str, websocket_url: str, con
         if conversation_id:
             start_payload["conversation_id"] = conversation_id
             
-        send_to_client(connection_id, json.dumps(start_payload), websocket_url)
+        send_to_client(connection_id, json.dumps(start_payload), validated_url)
         logger.info("⚡ IMMEDIATE streaming start signal sent")
         
     except Exception as e:

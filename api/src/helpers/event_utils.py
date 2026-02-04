@@ -2,6 +2,8 @@ import boto3
 import os
 import logging
 from botocore.exceptions import ClientError
+from src.helpers.security.url_validator import is_allowed_url
+
 
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))
@@ -24,14 +26,21 @@ def extract_event_info(event):
     event (dict): The event dictionary containing request context information.
     
     Returns:
-    dict: A dictionary containing the constructed URL, connection ID, and access token.
+    dict: A dictionary containing the validated URL, connection ID, and access token.
     """
     # Extract domain name and stage from the event's request context
     domain_name = event.get('requestContext', {}).get('domainName')
     stage = event.get('requestContext', {}).get('stage')
     
-    # Construct the URL using domain name and stage if both are present
-    url = f'https://{domain_name}/{stage}' if domain_name and stage else None
+    # Construct WebSocket URL from domain and stage
+    url = None
+    if domain_name and stage:
+        url = f'https://{domain_name}/{stage}'
+        logger.info(f"WebSocket URL: {url}")
+    
+    if url and not is_allowed_url(url):
+        logger.warning(f"Constructed URL {url} is not in the allowed hosts whitelist. Using None as fallback.")
+        url = None
     
     # Extract connection ID from the event's request context
     connection_id = event.get('requestContext', {}).get('connectionId')

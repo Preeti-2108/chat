@@ -31,7 +31,7 @@ class DocumentAnalyzer:
         """
         # First check if it's a simple conversational query
         if is_simple_query(user_query):
-            logger.info(f"Detected simple conversational query: '{user_query[:50]}...'")
+            logger.info("Detected simple conversational query")
             return 'simple'
         
         query_lower = user_query.lower()
@@ -405,8 +405,7 @@ class DocumentAnalyzer:
             # Enhanced logging for debugging
             title = metadata.get('title', 'N/A')
             logger.info(f"Document {i}: Title='{title}', Score={score:.3f}, Content_length={len(content_text)}")
-            logger.debug(f"Document {i} content preview: {content_text[:200]}...")
-                    
+
         logger.info(f"Retrieved {len(context_documents)} documents from Knowledge Base")
         return context_documents
 
@@ -522,7 +521,6 @@ def build_context_aware_prompt(system_instructions: str,
         logger.info(f"Context documents found: {len(context_documents)}")
         logger.info(f"Selected documents: {len(selected_docs)}")
         logger.info(f"Context content length: {len(context)} characters")
-        logger.info(f"First 200 chars of context: {context[:200]}...")
         
 
         
@@ -563,7 +561,7 @@ Please answer based on the available context if it's relevant to the question. I
                 logger.info(f"⚠️ [RELEVANCE] Lower relevance ({relevance_score:.3f}) - using flexible approach")
 
             # Log key information for debugging
-            logger.info(f"🤖 [PROMPT] Query: '{user_query}', Context: {len(context)} chars, Docs: {len(selected_docs)}")
+            logger.info(f"🤖 [PROMPT] Context: {len(context)} chars, Docs: {len(selected_docs)}")
         else:
             # No meaningful content found in documents
             logger.warning("Documents retrieved but no meaningful content found")
